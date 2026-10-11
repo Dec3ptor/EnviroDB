@@ -1,0 +1,19 @@
+Site,Date Sampled,Analyte,Result,Units,Detection Limit
+US1,14/04/2026,Dissolved Zinc,0.0018,g/m3,0.001
+US1,14/04/2026,Total Suspended Solids,<3,g/m3,3
+US1,14/04/2026,pH,7.2,pH units,
+DS1,14/04/2026,Dissolved Zinc,0.0051,g/m3,0.001
+DS1,14/04/2026,Total Suspended Solids,8,g/m3,3
+DS1,14/04/2026,pH,7.4,pH units,
+US1,12/05/2026,Dissolved Zinc,0.0018,g/m3,0.001
+US1,12/05/2026,Total Suspended Solids,<3,g/m3,3
+US1,12/05/2026,pH,7.2,pH units,
+DS1,12/05/2026,Dissolved Zinc,0.0051,g/m3,0.001
+DS1,12/05/2026,Total Suspended Solids,8,g/m3,3
+DS1,12/05/2026,pH,7.4,pH units,
+US1,09/06/2026,Dissolved Zinc,0.0018,g/m3,0.001
+US1,09/06/2026,Total Suspended Solids,<3,g/m3,3
+US1,09/06/2026,pH,7.2,pH units,
+DS1,09/06/2026,Dissolved Zinc,0.0051,g/m3,0.001
+DS1,09/06/2026,Total Suspended Solids,8,g/m3,3
+DS1,09/06/2026,pH,7.4,pH units,

@@ -1,0 +1,288 @@
+import Dexie from 'dexie';
+import { db, DATA_TABLES, ensureBuiltIns, saveSettings, type DataTable } from './db';
+import type { Project } from './types';
+import { uid } from '../lib/ids';
+import { todayStr } from '../lib/dates';
+
+export const BACKUP_APP = 'EnviroDB';
+export const BACKUP_VERSION = 1;
+
+export interface WorkspaceBackup {
+  app: typeof BACKUP_APP;
+  kind: 'workspace' | 'project';
+  version: number;
+  exportedAt: string;
+  data: Partial<Record<DataTable, unknown[]>>;
+}
+
+export async function exportWorkspace(): Promise<WorkspaceBackup> {
+  const data: WorkspaceBackup['data'] = {};
+  await db.transaction('r', DATA_TABLES.map((t) => db.table(t)), async () => {
+    for (const t of DATA_TABLES) {
+      let rows = await db.table(t).toArray();
+      if (t === 'guidelineSets' || t === 'templates') rows = rows.filter((r: { builtIn?: boolean }) => !r.builtIn);
+      data[t] = rows;
+    }
+  });
+  return { app: BACKUP_APP, kind: 'workspace', version: BACKUP_VERSION, exportedAt: new Date().toISOString(), data };
+}
+
+export function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = safeFileName(fileName);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+/** File names restricted to plain ASCII (macrons and en dashes make some browsers fall back to "download"). */
+export function safeFileName(s: string) {
+  return s
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2012-\u2015]/g, '-')
+    .replace(/[^\x20-\x7E]/g, '')
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 140);
+}
+
+export async function downloadWorkspaceBackup(): Promise<void> {
+  const backup = await exportWorkspace();
+  downloadBlob(new Blob([JSON.stringify(backup)], { type: 'application/json' }), `EnviroDB-backup-${todayStr()}.json`);
+  await saveSettings({ lastBackupAt: new Date().toISOString() });
+}
+
+function assertBackup(obj: unknown): asserts obj is WorkspaceBackup {
+  const b = obj as WorkspaceBackup;
+  if (!b || b.app !== BACKUP_APP || typeof b.data !== 'object') throw new Error('This file is not an EnviroDB backup or project file.');
+  if (b.version > BACKUP_VERSION) throw new Error('This file was created by a newer version of EnviroDB.');
+}
+
+/** Restore a workspace backup. 'replace' wipes current data first; 'merge' adds/overwrites by id. */
+export async function restoreWorkspace(obj: unknown, mode: 'replace' | 'merge'): Promise<void> {
+  assertBackup(obj);
+  if (obj.kind === 'project') {
+    await importProjectPackage(obj);
+    return;
+  }
+  await db.transaction('rw', DATA_TABLES.map((t) => db.table(t)), async () => {
+    if (mode === 'replace') for (const t of DATA_TABLES) await db.table(t).clear();
+    for (const t of DATA_TABLES) {
+      const rows = obj.data[t];
+      if (Array.isArray(rows) && rows.length) await db.table(t).bulkPut(rows);
+    }
+  });
+  await ensureBuiltIns();
+}
+
+// ------------------------------------------------------------ single-project packages (share with a colleague)
+
+export async function exportProjectPackage(projectId: string): Promise<WorkspaceBackup> {
+  const project = await db.projects.get(projectId);
+  if (!project) throw new Error('Project not found');
+  const [sites, samples, results, rules, notes, schedules, obligations, imports] = await Promise.all([
+    db.sites.where('projectId').equals(projectId).toArray(),
+    db.samples.where('projectId').equals(projectId).toArray(),
+    db.results.where('projectId').equals(projectId).toArray(),
+    db.rules.where('projectId').equals(projectId).toArray(),
+    db.notes.where('projectId').equals(projectId).toArray(),
+    db.schedules.where('projectId').equals(projectId).toArray(),
+    db.obligations.where('projectId').equals(projectId).toArray(),
+    db.imports.where('projectId').equals(projectId).toArray(),
+  ]);
+  const usedParams = new Set(results.map((r) => r.parameterId));
+  rules.forEach((r) => r.parameterId && usedParams.add(r.parameterId));
+  const parameters = (await db.parameters.toArray()).filter((p) => usedParams.has(p.id));
+  const setIds = new Set([...project.guidelineSetIds, ...rules.map((r) => r.guidelineSetId).filter(Boolean)] as string[]);
+  const guidelineSets = (await db.guidelineSets.toArray()).filter((g) => !g.builtIn && setIds.has(g.id));
+  const tplIds = new Set(obligations.map((o) => o.templateId).filter(Boolean) as string[]);
+  const templates = (await db.templates.toArray()).filter((t) => !t.builtIn && tplIds.has(t.id));
+  return {
+    app: BACKUP_APP,
+    kind: 'project',
+    version: BACKUP_VERSION,
+    exportedAt: new Date().toISOString(),
+    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates },
+  };
+}
+
+export async function downloadProjectPackage(projectId: string): Promise<void> {
+  const pkg = await exportProjectPackage(projectId);
+  const p = pkg.data.projects![0] as Project;
+  downloadBlob(new Blob([JSON.stringify(pkg)], { type: 'application/json' }), `${safeFileName(p.name)} - EnviroDB project.json`);
+}
+
+/** Import a project package. If the project already exists it is imported as a copy with new ids. */
+export async function importProjectPackage(obj: unknown): Promise<string> {
+  assertBackup(obj);
+  const d = obj.data;
+  const project = (d.projects?.[0] as Project | undefined) ?? null;
+  if (!project) throw new Error('The file contains no project.');
+  const exists = !!(await db.projects.get(project.id));
+  const map = new Map<string, string>();
+  const remap = (id: string | undefined) => {
+    if (!id || !exists) return id;
+    if (!map.has(id)) map.set(id, uid('x'));
+    return map.get(id)!;
+  };
+  type Row = Record<string, unknown> & { id: string };
+  const rows = (t: DataTable) => (d[t] ?? []) as Row[];
+  const newProjectId = remap(project.id)!;
+  await db.transaction('rw', DATA_TABLES.map((t) => db.table(t)), async () => {
+    // reference data: parameters keep ids (merge aliases), custom sets/templates are added if missing
+    for (const p of rows('parameters')) {
+      const cur = await db.parameters.get(p.id);
+      if (!cur) await db.parameters.put(p as never);
+      else await db.parameters.update(p.id, { aliases: Array.from(new Set([...cur.aliases, ...((p.aliases as string[]) ?? [])])) });
+    }
+    for (const g of rows('guidelineSets')) if (!(await db.guidelineSets.get(g.id))) await db.guidelineSets.put(g as never);
+    for (const t of rows('templates')) if (!(await db.templates.get(t.id))) await db.templates.put(t as never);
+
+    await db.projects.put({ ...project, id: newProjectId, name: exists ? `${project.name} (imported)` : project.name });
+    const put = async (t: DataTable, fix: (r: Row) => Row) => {
+      const list = rows(t).map(fix);
+      if (list.length) await db.table(t).bulkPut(list);
+    };
+    await put('sites', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId }));
+    await put('imports', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId }));
+    await put('samples', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId, siteId: remap(r.siteId as string)!, importId: remap(r.importId as string) }));
+    await put('results', (r) => ({
+      ...r, id: remap(r.id)!, projectId: newProjectId, sampleId: remap(r.sampleId as string)!, siteId: remap(r.siteId as string)!, importId: remap(r.importId as string),
+    }));
+    await put('rules', (r) => ({
+      ...r, id: remap(r.id)!, projectId: newProjectId, siteIds: ((r.siteIds as string[]) ?? []).map((s) => remap(s)!), referenceSiteId: remap(r.referenceSiteId as string),
+    }));
+    await put('notes', (r) => {
+      const ruleId = remap(r.ruleId as string)!;
+      return { ...r, id: `${ruleId}|${r.key}`, projectId: newProjectId, ruleId };
+    });
+    await put('schedules', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId, siteIds: ((r.siteIds as string[]) ?? []).map((s) => remap(s)!) }));
+    await put('obligations', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId }));
+  });
+  return newProjectId;
+}
+
+export async function readJsonFile(file: File): Promise<unknown> {
+  const text = await file.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('Could not read the file – it is not valid JSON.');
+  }
+}
+
+// ------------------------------------------------------------ autosave to a file (File System Access API)
+// Lets the workspace be saved continuously into e.g. a OneDrive/SharePoint-synced folder.
+
+interface FsHandle {
+  name: string;
+  queryPermission(opts: { mode: 'readwrite' }): Promise<PermissionState>;
+  requestPermission(opts: { mode: 'readwrite' }): Promise<PermissionState>;
+  createWritable(): Promise<{ write(data: Blob | string): Promise<void>; close(): Promise<void> }>;
+  getFile(): Promise<File>;
+}
+
+type Picker = (opts: unknown) => Promise<FsHandle>;
+
+export const autosaveSupported = () => typeof (window as unknown as { showSaveFilePicker?: Picker }).showSaveFilePicker === 'function';
+
+export type AutosaveState = { status: 'off' } | { status: 'needs-permission' | 'on' | 'error'; fileName: string; lastSaved?: string; error?: string };
+
+let state: AutosaveState = { status: 'off' };
+let handle: FsHandle | null = null;
+const listeners = new Set<(s: AutosaveState) => void>();
+let timer: ReturnType<typeof setTimeout> | null = null;
+let writing = false;
+let pending = false;
+
+function setState(s: AutosaveState) {
+  state = s;
+  listeners.forEach((l) => l(s));
+}
+export const getAutosaveState = () => state;
+export function onAutosaveChange(fn: (s: AutosaveState) => void) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+async function write() {
+  if (!handle) return;
+  if (writing) {
+    pending = true;
+    return;
+  }
+  writing = true;
+  try {
+    const backup = await exportWorkspace();
+    const w = await handle.createWritable();
+    await w.write(JSON.stringify(backup));
+    await w.close();
+    const lastSaved = new Date().toISOString();
+    setState({ status: 'on', fileName: handle.name, lastSaved });
+    await db.meta.put({ key: 'autosaveLast', value: lastSaved });
+  } catch (e) {
+    setState({ status: 'error', fileName: handle.name, error: (e as Error).message });
+  } finally {
+    writing = false;
+    if (pending) {
+      pending = false;
+      scheduleAutosave();
+    }
+  }
+}
+
+export function scheduleAutosave(delay = 1500) {
+  if (!handle || state.status !== 'on') return;
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(write, delay);
+}
+
+export async function linkAutosaveFile(): Promise<void> {
+  const picker = (window as unknown as { showSaveFilePicker: Picker }).showSaveFilePicker;
+  const h = await picker({
+    suggestedName: 'EnviroDB-workspace.json',
+    types: [{ description: 'EnviroDB workspace', accept: { 'application/json': ['.json'] } }],
+  });
+  handle = h;
+  await db.meta.put({ key: 'autosaveHandle', value: h });
+  setState({ status: 'on', fileName: h.name });
+  await write();
+}
+
+export async function unlinkAutosaveFile(): Promise<void> {
+  handle = null;
+  await db.meta.delete('autosaveHandle');
+  setState({ status: 'off' });
+}
+
+/** Called on start-up: restore the handle; permission must be re-granted by a click. */
+export async function initAutosave(): Promise<void> {
+  try {
+    const rec = await db.meta.get('autosaveHandle');
+    const last = (await db.meta.get('autosaveLast'))?.value as string | undefined;
+    if (!rec?.value) return;
+    handle = rec.value as FsHandle;
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    setState({ status: perm === 'granted' ? 'on' : 'needs-permission', fileName: handle.name, lastSaved: last });
+  } catch {
+    setState({ status: 'off' });
+  }
+  // Save whenever any data table changes (ignore the meta table, which autosave itself writes).
+  Dexie.on('storagemutated', (parts) => {
+    if (Object.keys(parts).some((k) => !k.includes('/meta/') && /\/(projects|sites|parameters|samples|results|guidelineSets|rules|notes|schedules|obligations|imports|templates)\//.test(k))) scheduleAutosave();
+  });
+}
+
+export async function regrantAutosave(): Promise<void> {
+  if (!handle) return;
+  const perm = await handle.requestPermission({ mode: 'readwrite' });
+  if (perm === 'granted') {
+    setState({ status: 'on', fileName: handle.name });
+    await write();
+  }
+}
