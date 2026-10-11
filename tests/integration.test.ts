@@ -16,6 +16,8 @@ import { analyteMapKey } from '../src/importers/model';
 import { commitImport } from '../src/importers/commit';
 import { exportProjectPackage, importProjectPackage } from '../src/db/backup';
 import { AI_PROMPTS, DEFAULT_SECTIONS, buildAiInput, csvCell, withRequest } from '../src/lib/aiInput';
+import { flagResults, pivot } from '../src/lib/analysis';
+import { applyView, DEFAULT_SORT, passesFilter } from '../src/lib/tableView';
 
 async function loadBundle(projectId: string): Promise<ProjectBundle> {
   const project = (await db.projects.get(projectId))!;
@@ -179,6 +181,41 @@ describe('copy for AI input', () => {
     expect(t.endsWith('## My request\nWhich site has the highest zinc?\n')).toBe(true);
     expect(csvCell('a,b')).toBe('"a,b"');
     expect(csvCell('say "hi"')).toBe('"say ""hi"""');
+  });
+});
+
+describe('data table sort and filter', () => {
+  it('sorts by a parameter, filters by value, exceedances and text', async () => {
+    const b = await loadBundle(projectId);
+    const [start, end] = ['2025-07-01', '2026-06-30'];
+    const { rows } = pivot(b, { siteIds: [], paramIds: [], start, end });
+    const flags = flagResults(b, evaluateAll(b, start, end), b.project.guidelineSetIds, start, end);
+    const order = new Map(b.sites.map((s, i) => [s.id, i]));
+    const view = (o: Partial<Parameters<typeof applyView>[3]>) => applyView(rows, b.paramMap, flags, { sort: DEFAULT_SORT, filters: [], show: 'all', search: '', ...o }, order);
+    const tss = (r: (typeof rows)[number]) => r.cells.get('tss');
+
+    const byTss = view({ sort: { key: 'tss', dir: 'desc' } });
+    expect(byTss).toHaveLength(rows.length);
+    expect(tss(byTss[0])?.value).toBe(170);
+    const withTss = byTss.filter((r) => tss(r));
+    expect(byTss.slice(withTss.length).every((r) => !tss(r))).toBe(true); // blanks last
+    const vals = withTss.map((r) => r.cells.get('tss')!.value!);
+    expect(vals).toEqual([...vals].sort((a, c) => c - a));
+
+    expect(view({ filters: [{ paramId: 'tss', op: '>', value: 100 }] }).map((r) => tss(r)?.value).sort()).toEqual([141, 170]);
+    // "<3" is certainly below 5 but can't be said to be above 2
+    const nd = rows.find((r) => tss(r)?.qualifier === '<')!;
+    expect(passesFilter(nd, { paramId: 'tss', op: '<', value: 5 }, b.paramMap.get('tss'))).toBe(true);
+    expect(passesFilter(nd, { paramId: 'tss', op: '>', value: 2 }, b.paramMap.get('tss'))).toBe(false);
+    expect(view({ filters: [{ paramId: 'zn-d', op: 'nd' }] }).every((r) => r.cells.get('zn-d')?.qualifier === '<')).toBe(true);
+
+    const limit = view({ show: 'limit' });
+    expect(limit.length).toBeGreaterThan(0);
+    expect(limit.every((r) => Array.from(r.cells.values()).some((x) => flags.get(x.id)?.kind === 'limit'))).toBe(true);
+    expect(view({ show: 'exceed' }).length).toBeGreaterThanOrEqual(limit.length);
+    expect(view({ search: 'gw1' }).every((r) => r.site.code === 'GW1')).toBe(true);
+    const newest = view({ sort: { key: 'date', dir: 'desc' } });
+    expect(newest[0].sample.date >= newest[newest.length - 1].sample.date).toBe(true);
   });
 });
 

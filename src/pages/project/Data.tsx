@@ -1,10 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
-import { Accordion, Alert, Badge, Button, Card, Drawer, Group, Menu, SegmentedControl, Select, Stack, Table, Text, TextInput, ActionIcon, Textarea } from '@mantine/core';
+import { Accordion, Alert, Badge, Button, Card, Drawer, Group, Menu, NumberInput, Pill, Popover, SegmentedControl, Select, Stack, Table, Text, TextInput, ActionIcon, Textarea, UnstyledButton, CloseButton } from '@mantine/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconDeviceFloppy, IconFileTypeDocx, IconSparkles } from '@tabler/icons-react';
+import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconDeviceFloppy, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
 import { displayValue, evaluateAll, flagResults, pivot, type PivotRow } from '../../lib/analysis';
@@ -18,6 +18,8 @@ import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
 import { parseValue } from '../../lib/values';
 import { AiInputModal } from '../../components/AiInputModal';
+import { applyView, DEFAULT_SORT, describeFilter, FILTER_OPS, SHOW_ROWS, sortLabel, type FilterOp, type ShowRows, type SortKey, type SortState, type ValueFilter } from '../../lib/tableView';
+import type { Parameter } from '../../db/types';
 
 function Legend({ guidelineNames }: { guidelineNames: string[] }) {
   return (
@@ -140,7 +142,46 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
   );
 }
 
-function SamplesAsRows({ rows, columns, flags, onRow }: { rows: PivotRow[]; columns: ReturnType<typeof pivot>['columns']; flags: Map<string, { kind: string; messages: string[] }>; onRow: (s: Sample) => void }) {
+function SortHead({ label, title, sortKey, sort, onSort, onSortDir, onFilter }: { label: string; title?: string; sortKey: SortKey; sort: SortState; onSort: (k: SortKey) => void; onSortDir?: (k: SortKey, dir: SortState['dir']) => void; onFilter?: (k: string) => void }) {
+  const active = sort.key === sortKey;
+  return (
+    <Group gap={2} wrap="nowrap" align="flex-end">
+      <UnstyledButton className="th-sort" title={title ? `${title} – click to sort` : 'Click to sort'} onClick={() => onSort(sortKey)} aria-label={`Sort by ${title ?? label}`}>
+        {label}
+        {active && (sort.dir === 'asc' ? <IconArrowUp size={12} style={{ marginLeft: 2, verticalAlign: -1 }} /> : <IconArrowDown size={12} style={{ marginLeft: 2, verticalAlign: -1 }} />)}
+      </UnstyledButton>
+      {onSortDir && onFilter && (
+        <Menu position="bottom-end" withinPortal>
+          <Menu.Target>
+            <ActionIcon size={16} variant="subtle" color="gray" aria-label={`Sort or filter ${title ?? label}`}>
+              <IconChevronDown size={12} />
+            </ActionIcon>
+          </Menu.Target>
+          <Menu.Dropdown>
+            <Menu.Item leftSection={<IconSortDescending size={14} />} onClick={() => onSortDir(sortKey, 'desc')}>
+              Sort largest to smallest
+            </Menu.Item>
+            <Menu.Item leftSection={<IconSortAscending size={14} />} onClick={() => onSortDir(sortKey, 'asc')}>
+              Sort smallest to largest
+            </Menu.Item>
+            <Menu.Item leftSection={<IconFilter size={14} />} onClick={() => onFilter(sortKey)}>
+              Filter by value…
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
+      )}
+    </Group>
+  );
+}
+
+interface HeadProps {
+  sort: SortState;
+  onSort: (k: SortKey) => void;
+  onSortDir: (k: SortKey, dir: SortState['dir']) => void;
+  onFilter: (k: string) => void;
+}
+
+function SamplesAsRows({ rows, columns, flags, onRow, head }: { rows: PivotRow[]; columns: ReturnType<typeof pivot>['columns']; flags: Map<string, { kind: string; messages: string[] }>; onRow: (s: Sample) => void; head: HeadProps }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const v = useVirtualizer({ count: rows.length, getScrollElement: () => parentRef.current, estimateSize: () => 27, overscan: 12 });
   const items = v.getVirtualItems();
@@ -152,12 +193,14 @@ function SamplesAsRows({ rows, columns, flags, onRow }: { rows: PivotRow[]; colu
         <thead>
           <tr>
             <th className="sticky-col" style={{ minWidth: 110 }}>
-              Date
+              <SortHead label="Date" sortKey="date" sort={head.sort} onSort={head.onSort} />
             </th>
-            <th className="sticky-col-2">Site</th>
+            <th className="sticky-col-2">
+              <SortHead label="Site" sortKey="site" sort={head.sort} onSort={head.onSort} />
+            </th>
             {columns.map((p) => (
-              <th key={p.id} title={p.name} style={{ maxWidth: 140, whiteSpace: 'normal', minWidth: 80 }}>
-                {p.short ?? p.name}
+              <th key={p.id} style={{ maxWidth: 150, whiteSpace: 'normal', minWidth: 84 }}>
+                <SortHead label={p.short ?? p.name} title={p.name} sortKey={p.id} sort={head.sort} onSort={head.onSort} onSortDir={head.onSortDir} onFilter={head.onFilter} />
               </th>
             ))}
           </tr>
@@ -262,6 +305,36 @@ function ParamsAsRows({ rows, columns, flags, onRow }: { rows: PivotRow[]; colum
   );
 }
 
+function FilterEditor({ draft, columns, onChange, onApply }: { draft: ValueFilter; columns: Parameter[]; onChange: (f: ValueFilter) => void; onApply: (f: ValueFilter) => void }) {
+  const op = FILTER_OPS.find((o) => o.value === draft.op);
+  const p = columns.find((c) => c.id === draft.paramId);
+  const ready = !!draft.paramId && (!op?.needsValue || draft.value !== undefined);
+  return (
+    <Stack gap="xs" w={290}>
+      <Select label="Parameter" data={columns.map((c) => ({ value: c.id, label: c.name }))} value={draft.paramId || null} onChange={(v) => v && onChange({ ...draft, paramId: v })} searchable comboboxProps={{ withinPortal: false }} allowDeselect={false} />
+      <Select label="Show samples where it" data={FILTER_OPS.map((o) => ({ value: o.value, label: o.label }))} value={draft.op} onChange={(v) => v && onChange({ ...draft, op: v as FilterOp })} comboboxProps={{ withinPortal: false }} allowDeselect={false} />
+      {op?.needsValue && (
+        <NumberInput
+          label={`Value${p ? ` (${unitLabel(p.unit)})` : ''}`}
+          value={draft.value ?? ''}
+          onChange={(v) => onChange({ ...draft, value: v === '' ? undefined : Number(v) })}
+          decimalScale={8}
+          onKeyDown={(e) => e.key === 'Enter' && ready && onApply(draft)}
+          data-autofocus
+        />
+      )}
+      {op?.needsValue && (
+        <Text size="xs" c="dimmed">
+          Non-detects only count when the whole range fits, e.g. “&lt;0.5” passes “below 1” but not “above 0.1”.
+        </Text>
+      )}
+      <Button size="xs" disabled={!ready} onClick={() => onApply(draft)}>
+        Apply filter
+      </Button>
+    </Stack>
+  );
+}
+
 function ImportHistory() {
   const { imports } = useProject();
   if (!imports.length) return null;
@@ -336,10 +409,38 @@ export function DataTab() {
   const [layout, setLayout] = useState<'samplesAsRows' | 'parametersAsRows'>('samplesAsRows');
   const [selected, setSelected] = useState<Sample | null>(null);
   const withData = useMemo(() => new Set(index.paramIdsWithData), [index]);
+  const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
+  const [filters, setFilters] = useState<ValueFilter[]>([]);
+  const [show, setShow] = useState<ShowRows>('all');
+  const [search, setSearch] = useState('');
+  const [draft, setDraft] = useState<ValueFilter | null>(null);
 
   const { columns, rows } = useMemo(() => pivot(data, { siteIds, paramIds, start: period.start, end: period.end }), [data, siteIds, paramIds, period]);
   const flags = useMemo(() => flagResults(data, evaluateAll(data, period.start, period.end), setIds, period.start, period.end), [data, setIds, period]);
   const guidelineNames = setIds.map((id) => setMap.get(id)?.shortName ?? '').filter(Boolean);
+  const siteOrder = useMemo(() => new Map(sites.map((s, i) => [s.id, i])), [sites]);
+  const view = useMemo(() => applyView(rows, data.paramMap, flags, { sort, filters, show, search }, siteOrder), [rows, data.paramMap, flags, sort, filters, show, search, siteOrder]);
+  const narrowed = view.length !== rows.length;
+  const sorted = sort.key !== DEFAULT_SORT.key || sort.dir !== DEFAULT_SORT.dir;
+  const clearView = () => {
+    setFilters([]);
+    setShow('all');
+    setSearch('');
+    setSort(DEFAULT_SORT);
+  };
+  const head: HeadProps = {
+    sort,
+    onSort: (key) =>
+      setSort((s) => {
+        if (key === 'date') return { key, dir: s.key === 'date' && s.dir === 'asc' ? 'desc' : 'asc' };
+        const first = key === 'site' ? 'asc' : 'desc';
+        if (s.key !== key) return { key, dir: first };
+        if (s.dir === first) return { key, dir: first === 'asc' ? 'desc' : 'asc' };
+        return DEFAULT_SORT;
+      }),
+    onSortDir: (key, dir) => setSort({ key, dir }),
+    onFilter: (paramId) => setDraft({ paramId, op: '>' }),
+  };
   const settings = useSettings();
   const [wordBusy, setWordBusy] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
@@ -360,6 +461,7 @@ export function DataTab() {
           guidelineSetIds: setIds,
           highlight: true,
           splitBySite: layout !== 'samplesAsRows',
+          sampleIds: narrowed ? view.map((r) => r.sample.id) : undefined,
         },
       ];
       await exportReport('docx', { bundle: data, template: adhocTemplate('Results table', blocks), period: p, settings });
@@ -387,7 +489,7 @@ export function DataTab() {
   const exportArgs = {
     title: `${project.name} – monitoring results (${period.label})`,
     columns,
-    rows,
+    rows: view,
     flags,
     guidelineNames,
     layout,
@@ -433,11 +535,70 @@ export function DataTab() {
             </Menu.Dropdown>
           </Menu>
         </Group>
+        <Group align="flex-end" gap="sm" wrap="wrap" mt="sm">
+          <TextInput
+            leftSection={<IconSearch size={16} />}
+            placeholder="Search sample names, lab jobs, notes…"
+            aria-label="Search samples"
+            value={search}
+            onChange={(e) => setSearch(e.currentTarget.value)}
+            rightSection={search ? <CloseButton size="sm" aria-label="Clear search" onClick={() => setSearch('')} /> : null}
+            w={{ base: '100%', sm: 300 }}
+          />
+          <Select aria-label="Show" data={SHOW_ROWS} value={show} onChange={(v) => v && setShow(v as ShowRows)} allowDeselect={false} w={{ base: '100%', sm: 320 }} comboboxProps={{ width: 'max-content' }} />
+          <Popover opened={!!draft} onChange={(o) => !o && setDraft(null)} position="bottom-start" withArrow shadow="md" trapFocus>
+            <Popover.Target>
+              <Button variant="default" leftSection={<IconFilter size={16} />} onClick={() => setDraft(draft ? null : { paramId: columns[0]?.id ?? '', op: '>' })} disabled={!columns.length}>
+                Filter by value
+              </Button>
+            </Popover.Target>
+            <Popover.Dropdown>
+              {draft && (
+                <FilterEditor
+                  draft={draft}
+                  columns={columns}
+                  onChange={setDraft}
+                  onApply={(f) => {
+                    setFilters([...filters.filter((x) => !(x.paramId === f.paramId && x.op === f.op)), f]);
+                    setDraft(null);
+                  }}
+                />
+              )}
+            </Popover.Dropdown>
+          </Popover>
+        </Group>
+        {(filters.length > 0 || sorted || show !== 'all' || search) && (
+          <Group gap={6} mt="sm" wrap="wrap">
+            {sorted && (
+              <Pill withRemoveButton onRemove={() => setSort(DEFAULT_SORT)} removeButtonProps={{ 'aria-label': 'Clear sort' }}>
+                Sorted by {sortLabel(sort, data.paramMap)}
+              </Pill>
+            )}
+            {show !== 'all' && (
+              <Pill withRemoveButton onRemove={() => setShow('all')}>
+                {SHOW_ROWS.find((s) => s.value === show)?.label}
+              </Pill>
+            )}
+            {search && (
+              <Pill withRemoveButton onRemove={() => setSearch('')}>
+                Matching “{search}”
+              </Pill>
+            )}
+            {filters.map((f, i) => (
+              <Pill key={`${f.paramId}${f.op}`} withRemoveButton onRemove={() => setFilters(filters.filter((_, j) => j !== i))}>
+                {describeFilter(f, data.paramMap.get(f.paramId), unitLabel(data.paramMap.get(f.paramId)?.unit))}
+              </Pill>
+            ))}
+            <Button size="compact-xs" variant="subtle" onClick={clearView}>
+              Clear all
+            </Button>
+          </Group>
+        )}
       </Card>
       <Group justify="space-between">
         <Legend guidelineNames={guidelineNames} />
-        <Text size="sm" c="dimmed">
-          {rows.length} samples · {columns.length} parameters
+        <Text size="sm" c={narrowed ? undefined : 'dimmed'} fw={narrowed ? 600 : undefined}>
+          {narrowed ? `Showing ${view.length} of ${rows.length} samples` : `${rows.length} samples`} · {columns.length} parameters
         </Text>
       </Group>
       {project.hardnessAdjust && setIds.some((id) => setMap.get(id)?.values.some((v) => v.hardness)) && (
@@ -445,10 +606,19 @@ export function DataTab() {
           <Text size="xs">Hardness-dependent metals are compared with hardness-modified values where hardness was measured in the same sample (ANZECC 2000). Change this in Setup.</Text>
         </Alert>
       )}
-      {rows.length ? (
-        layout === 'samplesAsRows' ? <SamplesAsRows rows={rows} columns={columns} flags={flags} onRow={setSelected} /> : <ParamsAsRows rows={rows} columns={columns} flags={flags} onRow={setSelected} />
+      {view.length ? (
+        layout === 'samplesAsRows' ? <SamplesAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} head={head} /> : <ParamsAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} />
       ) : (
-        <EmptyState title="No results match the filters" />
+        <EmptyState
+          title={rows.length ? 'No samples match the filters' : 'No results match the filters'}
+          action={
+            narrowed ? (
+              <Button variant="light" onClick={clearView}>
+                Clear filters
+              </Button>
+            ) : undefined
+          }
+        />
       )}
       <ImportHistory />
       <SampleDrawer key={selected?.id ?? 'none'} sample={selected} onClose={() => setSelected(null)} />

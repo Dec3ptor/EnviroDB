@@ -235,3 +235,14 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* sortable column headers in the data table */
+.th-sort {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  white-space: normal;
+}
+.th-sort:hover {
+  text-decoration: underline;
+}

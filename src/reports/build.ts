@@ -221,11 +221,13 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     },
     resultsTable: (blk) => {
       const sites = blk.siteIds.length ? b.sites.filter((s) => blk.siteIds.includes(s.id)) : b.sites;
+      const only = blk.sampleIds ? new Set(blk.sampleIds) : null;
+      const blockSamples = only ? samplesInPeriod.filter((x) => only.has(x.id)) : samplesInPeriod;
       const sets = setsFor(blk.guidelineSetIds);
       const flags = blk.highlight ? flagsFor(sets.map((s) => s.id)) : new Map<string, CellFlag>();
       const groups: Array<{ label: string; samples: Sample[] }> = blk.splitBySite
-        ? sites.map((s) => ({ label: s.name ? `${s.code} (${s.name})` : s.code, samples: samplesInPeriod.filter((x) => x.siteId === s.id) })).filter((g) => g.samples.length)
-        : [{ label: '', samples: samplesInPeriod.filter((x) => sites.some((s) => s.id === x.siteId)) }];
+        ? sites.map((s) => ({ label: s.name ? `${s.code} (${s.name})` : s.code, samples: blockSamples.filter((x) => x.siteId === s.id) })).filter((g) => g.samples.length)
+        : [{ label: '', samples: blockSamples.filter((x) => sites.some((s) => s.id === x.siteId)) }];
       if (!groups.length || groups.every((g) => !g.samples.length)) {
         nodes.push({ t: 'p', runs: [{ text: 'No results for the selected sites in this period.', italic: true }] });
         return;

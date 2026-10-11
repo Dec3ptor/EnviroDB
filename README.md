@@ -20,6 +20,9 @@ It runs entirely in the browser and is hosted on GitHub Pages.
 
   Non-detects are handled conservatively, and metals guideline values can be
   hardness-modified using the measured hardness.
+- **Browse, sort and filter data.** Click a column to sort (e.g. highest TSS first), filter by
+  value (TSS > 100, zinc not detected…), show only samples with exceedances, search lab jobs
+  and notes, and export exactly what you see to Excel, CSV or Word.
 - **Compare with guidelines.** Built-in values are ANZG (2018) / ANZECC (2000) freshwater
   and marine toxicant values at 99/95/90/80 % species protection, the ANZECC NZ physical and
   chemical stressor values, and selected DWSNZ (2022) MAVs. You can also add your own

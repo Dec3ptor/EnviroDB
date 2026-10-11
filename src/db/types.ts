@@ -306,6 +306,8 @@ export interface ResultsTableBlock extends ReportBlockBase {
   guidelineSetIds: ID[] | null; // null = project default
   highlight: boolean;
   splitBySite: boolean;
+  /** Only these samples (quick exports of a filtered table). */
+  sampleIds?: string[];
 }
 export interface StatsTableBlock extends ReportBlockBase {
   type: 'statsTable';
