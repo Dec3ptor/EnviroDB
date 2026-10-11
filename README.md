@@ -119,17 +119,6 @@ revised default guideline values (e.g. boron 2021, which is included; zinc 2024;
 ammonia, which are bioavailability-based). Built-in sets are read-only. Duplicate one to edit it.
 Sources are listed on each set.
 
-## Deploying to GitHub Pages
-
-The repository includes a GitHub Actions workflow (`.github/workflows/deploy.yml`) that tests,
-builds and publishes the site whenever `main` changes.
-
-1. In the repository, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
-2. Merge to `main`, or run the *Deploy to GitHub Pages* workflow manually from the Actions tab.
-3. The site appears at `https://<your-user>.github.io/EnviroDB/`.
-
-The build uses relative paths and hash-based routing, so it works under any repository name.
-
 ## Development
 
 ```bash
