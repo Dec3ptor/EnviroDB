@@ -5,7 +5,7 @@ import { db, DEFAULT_SETTINGS, ensureBuiltIns } from '../src/db/db';
 import { createDemoProject } from '../src/db/demo';
 import { buildIndex } from '../src/lib/dataIndex';
 import { evaluateAll, type ProjectBundle } from '../src/lib/analysis';
-import { buildReport } from '../src/reports/build';
+import { buildReport, usableWidthMm } from '../src/reports/build';
 import { toPdfDefinition } from '../src/reports/pdf';
 import { docxBlob } from '../src/reports/docx';
 import { BUILT_IN_TEMPLATES } from '../src/data/templates';
@@ -75,6 +75,34 @@ describe('demo project', () => {
     expect(Array.isArray(dd.content) && dd.content.length).toBeGreaterThan(20);
     const blob = await docxBlob(doc);
     expect(blob.size).toBeGreaterThan(5000);
+  });
+
+  it('keeps every report table within the page width (model and PDF)', async () => {
+    const b = await loadBundle(projectId);
+    for (const template of BUILT_IN_TEMPLATES) {
+      const doc = buildReport({ bundle: b, template, period: { start: '2023-07-01', end: '2026-06-30', label: 'all' }, settings: DEFAULT_SETTINGS });
+      const usable = usableWidthMm(template);
+      const tables = doc.nodes.filter((n) => n.t === 'table');
+      expect(tables.length).toBeGreaterThan(0);
+      for (const n of tables) {
+        if (n.t !== 'table') continue;
+        const fixed = n.widths.reduce<number>((s, w) => s + (typeof w === 'number' ? w : 0), 0);
+        expect(fixed, `${template.name}: ${n.caption}`).toBeLessThanOrEqual(usable + 0.5);
+      }
+      // pdfmake adds 3pt padding each side plus a 0.4pt rule to every column
+      const contentPt = (usable * 72) / 25.4;
+      const walk = (x: unknown): void => {
+        if (Array.isArray(x)) return x.forEach(walk);
+        if (!x || typeof x !== 'object') return;
+        const o = x as { table?: { widths: Array<number | string> }; stack?: unknown[] };
+        if (o.table) {
+          const total = o.table.widths.reduce<number>((s, w) => s + (typeof w === 'number' ? w : 40) + 6.4, 0.4);
+          expect(total).toBeLessThanOrEqual(contentPt + 1);
+        }
+        if (o.stack) walk(o.stack);
+      };
+      walk(toPdfDefinition(doc).content);
+    }
   });
 
   it('round-trips a project package', async () => {

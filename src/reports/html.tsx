@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import type { Cell, DocNode, ReportDoc, Run } from './model';
 
 const PAGE_MM: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420] };
@@ -41,7 +41,7 @@ function skipSpanned(row: Cell[]): Cell[] {
   return out;
 }
 
-function Node({ n, mmToPx, accent }: { n: DocNode; mmToPx: (mm: number) => number; accent: string }) {
+function Node({ n, mmToPx, ptToPx, baseFont }: { n: DocNode; mmToPx: (mm: number) => number; ptToPx: (pt: number) => number; baseFont: number }) {
   switch (n.t) {
     case 'title':
       return (
@@ -108,14 +108,26 @@ function Node({ n, mmToPx, accent }: { n: DocNode; mmToPx: (mm: number) => numbe
         </figure>
       );
     case 'table': {
+      // Same geometry as the PDF: fixed column widths in mm, fonts in pt, scaled to the preview page.
+      const allNumeric = n.widths.every((w) => typeof w === 'number');
+      const totalMm = n.widths.reduce<number>((s, w) => s + (typeof w === 'number' ? w : 0), 0);
       return (
-        <div style={{ margin: '0.5em 0 0.9em', ['--report-accent' as string]: accent }}>
+        <div style={{ margin: '0.5em 0 0.9em' }}>
           {n.caption && (
             <div className="caption" style={{ fontWeight: 600, color: '#222', marginBottom: 2 }}>
               {n.caption}
             </div>
           )}
-          <table style={{ fontSize: n.fontSize ? `${n.fontSize}pt` : undefined }}>
+          <table
+            style={{
+              fontSize: ptToPx(n.fontSize ?? baseFont - 1),
+              width: allNumeric ? Math.min(mmToPx(totalMm), 100000) : '100%',
+              maxWidth: '100%',
+              tableLayout: 'fixed',
+              ['--cell-py' as string]: `${mmToPx(0.55)}px`,
+              ['--cell-px' as string]: `${mmToPx(1.05)}px`,
+            }}
+          >
             <colgroup>
               {n.widths.map((w, i) => (
                 <col key={i} style={{ width: typeof w === 'number' ? mmToPx(w) : undefined }} />
@@ -151,33 +163,47 @@ function Node({ n, mmToPx, accent }: { n: DocNode; mmToPx: (mm: number) => numbe
   }
 }
 
-/** On-screen preview of a report, laid out at roughly the real page width. */
+/** On-screen preview of a report: the page is drawn to scale and shrunk to fit the available width. */
 export function ReportPreview({ doc, scale = 1 }: { doc: ReportDoc; scale?: number }) {
   const t = doc.template;
   const [w, h] = PAGE_MM[t.pageSize] ?? PAGE_MM.A4;
   const pageW = t.orientation === 'landscape' ? h : w;
-  const pxPerMm = 3.2 * scale;
+  const box = useRef<HTMLDivElement>(null);
+  const [avail, setAvail] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setAvail(el.clientWidth));
+    ro.observe(el);
+    setAvail(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  const fit = avail ? Math.min(scale, Math.max(0.3, (avail - 4) / (pageW * 3.2))) : scale;
+  const pxPerMm = 3.2 * fit;
   const mmToPx = (mm: number) => mm * pxPerMm;
+  const ptToPx = (pt: number) => pt * 0.3528 * pxPerMm; // 1 pt = 0.3528 mm
   return (
-    <div
-      className="report-paper"
-      style={{
-        width: mmToPx(pageW),
-        maxWidth: '100%',
-        padding: mmToPx(t.marginMm),
-        fontSize: `${t.fontSize * 1.33 * scale}px`,
-        ['--report-accent' as string]: t.accent,
-      }}
-    >
-      {(doc.header || doc.footer) && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: '#777', borderBottom: '0.5px solid #ddd', paddingBottom: 4, marginBottom: 12 }}>
-          <span>{doc.header}</span>
-          <span>{doc.footer}</span>
-        </div>
-      )}
-      {doc.nodes.map((n, i) => (
-        <Node key={i} n={n} mmToPx={mmToPx} accent={t.accent} />
-      ))}
+    <div ref={box} style={{ width: '100%' }}>
+      <div
+        className="report-paper"
+        style={{
+          width: mmToPx(pageW),
+          maxWidth: '100%',
+          padding: mmToPx(t.marginMm),
+          fontSize: `${ptToPx(t.fontSize)}px`,
+          ['--report-accent' as string]: t.accent,
+        }}
+      >
+        {(doc.header || doc.footer) && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', color: '#777', borderBottom: '0.5px solid #ddd', paddingBottom: 4, marginBottom: 12 }}>
+            <span>{doc.header}</span>
+            <span>{doc.footer}</span>
+          </div>
+        )}
+        {doc.nodes.map((n, i) => (
+          <Node key={i} n={n} mmToPx={mmToPx} ptToPx={ptToPx} baseFont={t.fontSize} />
+        ))}
+      </div>
     </div>
   );
 }

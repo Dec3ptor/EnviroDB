@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Accordion, ActionIcon, Badge, Button, Card, Group, Menu, Select, Stack, Table, Text, Textarea, Popover } from '@mantine/core';
 import { modals } from '@mantine/modals';
-import { IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react';
+import { IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay, IconFileTypeDocx } from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
+import { adhocTemplate, exportReport } from '../../reports/export';
+import { useSettings } from '../../hooks/useSettings';
 import { useProject } from '../../hooks/useProjectData';
 import { DateField, EmptyState, LevelBadge, PeriodPicker, RuleStatusBadge, defaultPeriod, type PeriodValue } from '../../components/common';
 import { evaluateAll } from '../../lib/analysis';
@@ -9,7 +12,7 @@ import { formatDate } from '../../lib/dates';
 import { unitLabel } from '../../lib/units';
 import { fmtNum } from '../../lib/values';
 import { deleteRule, newRule, saveNote, saveRule } from '../../db/repo';
-import type { ExceedanceNote, Rule } from '../../db/types';
+import type { ExceedanceNote, ReportBlock, Rule } from '../../db/types';
 import type { Exceedance, RuleEvaluation } from '../../lib/compliance';
 import { RuleEditor } from './RuleEditor';
 import { uid } from '../../lib/ids';
@@ -148,6 +151,25 @@ export function ComplianceTab() {
   const evalMap = new Map(evals.map((e) => [e.rule.id, e]));
   const exceeded = evals.filter((e) => e.status === 'exceeded').length;
 
+  const settings = useSettings();
+  const [wordBusy, setWordBusy] = useState(false);
+  const exportWord = async () => {
+    setWordBusy(true);
+    try {
+      const blocks: ReportBlock[] = [
+        { id: 'h1', type: 'heading', text: `Compliance summary – ${period.label}`, level: 1 },
+        { id: 'c', type: 'complianceTable', ruleIds: [] },
+        { id: 'h2', type: 'heading', text: 'Exceedances and follow-up', level: 2 },
+        { id: 'e', type: 'exceedances', ruleIds: [], includeGuidelines: false, includeNotes: true },
+      ];
+      await exportReport('docx', { bundle: data, template: adhocTemplate('Compliance summary', blocks, 'portrait'), period, settings });
+    } catch (e) {
+      notifications.show({ title: 'Export failed', message: (e as Error).message, color: 'red' });
+    } finally {
+      setWordBusy(false);
+    }
+  };
+
   const addPreset = async (p: Preset) => {
     const made = p.make(project.id);
     if (made.length === 1) setEditing(made[0]);
@@ -165,6 +187,11 @@ export function ComplianceTab() {
             <Badge size="lg" color={exceeded ? 'red' : 'green'} variant="light">
               {exceeded ? `${exceeded} of ${evals.length} rules exceeded` : `All ${evals.length} active rules complied`}
             </Badge>
+          )}
+          {rules.length > 0 && (
+            <Button variant="default" leftSection={<IconFileTypeDocx size={16} />} loading={wordBusy} onClick={exportWord}>
+              Word
+            </Button>
           )}
           <Menu position="bottom-end" width={360}>
             <Menu.Target>

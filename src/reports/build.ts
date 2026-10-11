@@ -10,6 +10,7 @@ import { unitLabel } from '../lib/units';
 import { fmtNum } from '../lib/values';
 import { buildChartSpec, chartOption } from '../charts/timeSeries';
 import { FILLS, fillPlaceholders, parseMarkup, type Cell, type DocNode, type ReportDoc } from './model';
+import { CELL_PAD_MM, longestWordMm, textWidthMm } from './measure';
 
 export interface BuildOptions {
   bundle: ProjectBundle;
@@ -83,7 +84,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   let figNo = 0;
   const nodes: DocNode[] = [];
   const width = usableWidthMm(t);
-  const big = Math.max(7, t.fontSize - 2);
+  const big = Math.max(7, t.fontSize - 2.5); // font size for large data tables
 
   const tableCaption = (s: string) => (numbering ? `Table ${++tableNo}: ${s}` : s);
   const figCaption = (s: string) => (numbering ? `Figure ${++figNo}: ${s}` : s);
@@ -152,7 +153,18 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         { text: String(e.exceedances.length), align: 'right', bold: e.exceedances.length > 0 },
         { text: STATUS_META[e.status].label, bold: true, fill: e.status === 'compliant' ? FILLS.ok : e.status === 'exceeded' ? FILLS.limit : e.status === 'inconclusive' ? FILLS.check : undefined },
       ]);
-      nodes.push({ t: 'table', caption: tableCaption(`Compliance with consent conditions, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths: [width * 0.16, '*', width * 0.1, width * 0.09, width * 0.11, width * 0.11], fontSize: t.fontSize - 1 });
+      // size the short columns to their content so headers never break mid-word
+      const fs = t.fontSize - 1;
+      const fit = (texts: string[], bold = false, lo = 10, hi = 40) => Math.min(hi, Math.max(lo, ...texts.map((x) => longestWordMm(x, fs, bold)))) + CELL_PAD_MM;
+      const widths = [
+        Math.min(34, Math.max(18, ...body.map((r) => textWidthMm(r[0].text, fs)))) + CELL_PAD_MM,
+        '*' as const,
+        Math.min(26, Math.max(12, ...['Level', ...list.map((e) => e.rule.level)].map((x) => textWidthMm(x, fs, true)))) + CELL_PAD_MM,
+        fit(['Assessed'], true),
+        fit(['Exceedances'], true),
+        fit(['Outcome', ...list.map((e) => STATUS_META[e.status].label)], true),
+      ];
+      nodes.push({ t: 'table', caption: tableCaption(`Compliance with consent conditions, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths, fontSize: fs });
     },
     exceedances: (blk) => {
       const list = blk.ruleIds.length ? evals.filter((e) => blk.ruleIds.includes(e.rule.id)) : evals;
@@ -199,8 +211,13 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         { text: r.rule },
         ...(blk.includeNotes ? [{ text: r.note }] : []),
       ]);
-      const widths: Array<number | '*'> = blk.includeNotes ? [width * 0.11, width * 0.07, width * 0.15, width * 0.11, width * 0.18, width * 0.12, '*'] : [width * 0.12, width * 0.08, width * 0.2, width * 0.13, '*', width * 0.16];
-      nodes.push({ t: 'table', caption: tableCaption(`Exceedances recorded, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths, fontSize: t.fontSize - 1 });
+      const fs = t.fontSize - 1;
+      const dateW = textWidthMm('00 Mmm 0000', fs) + CELL_PAD_MM; // dates on one line
+      const siteW = Math.min(20, Math.max(10, ...rows.map((r) => textWidthMm(r.site, fs)))) + CELL_PAD_MM;
+      const resultW = Math.min(30, Math.max(14, ...rows.map((r) => textWidthMm(r.value, fs, true)))) + CELL_PAD_MM;
+      const ruleW = Math.min(32, Math.max(16, ...rows.map((r) => textWidthMm(r.rule, fs)))) + CELL_PAD_MM;
+      const widths: Array<number | '*'> = blk.includeNotes ? [dateW, siteW, width * 0.16, resultW, width * 0.17, ruleW, '*'] : [dateW, siteW, width * 0.2, resultW, '*', ruleW];
+      nodes.push({ t: 'table', caption: tableCaption(`Exceedances recorded, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths, fontSize: fs });
     },
     resultsTable: (blk) => {
       const sites = blk.siteIds.length ? b.sites.filter((s) => blk.siteIds.includes(s.id)) : b.sites;
@@ -215,36 +232,102 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       }
       const siteCode = (id: string) => b.siteMap.get(id)?.code ?? '';
       const title = fill(blk.title) || 'Monitoring results';
+      const pt = big;
+      const PAD = CELL_PAD_MM;
+      const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+      const valueCell = (s: Sample, p: Parameter): Cell => {
+        const r = resultOf(s, p.id);
+        if (!r) return { text: '–', align: 'center', color: '#999999' };
+        const f = flags.get(r.id);
+        return { text: displayValue(r, p).text, align: 'right', fill: flagFill(f), bold: !!f && f.kind !== 'check' };
+      };
+      const dateHead = (s: Sample) => formatDate(s.date, { format: 'D MMM YYYY' });
       for (const g of groups) {
         const params = paramList(blk.parameterIds, g.samples);
         if (!params.length) continue;
+        const label = (i: number, n: number) => [title, g.label].filter(Boolean).join(' – ') + (n > 1 ? ` (${i + 1} of ${n})` : '');
         if (blk.layout === 'parametersAsRows') {
-          const fixed = 40 + 14 + 15 * sets.length;
-          const per = Math.max(2, Math.floor((width - fixed) / 15));
+          // Fixed columns sized to their content, then as many sample columns as fit.
+          let paramW = clamp(Math.max(...params.map((p) => textWidthMm(p.name, pt))) + PAD, 26, 44);
+          const unitW = clamp(Math.max(...params.map((p) => textWidthMm(unitLabel(p.unit), pt))) + PAD, 9, 20);
+          const setW = sets.map((s) => clamp(Math.max(longestWordMm(s.shortName, pt, true), ...params.map((p) => textWidthMm(guidelineText(s, p), pt))) + PAD, 11, 22));
+          const sampleNeed = Math.max(
+            11,
+            longestWordMm(dateHead(g.samples[0]), pt, true) + PAD,
+            ...g.samples.map((s) => textWidthMm(siteCode(s.siteId), pt, true) + PAD),
+            ...g.samples.flatMap((s) => params.map((p) => textWidthMm(valueCell(s, p).text, pt, true) + PAD)),
+          );
+          let fixed = paramW + unitW + setW.reduce((a, x) => a + x, 0);
+          if (width - fixed < sampleNeed * 2) {
+            paramW = 26;
+            fixed = paramW + unitW + setW.reduce((a, x) => a + x, 0);
+          }
+          const maxPer = Math.max(1, Math.floor((width - fixed) / sampleNeed));
+          // spread samples evenly over the tables (e.g. 6 + 6 rather than 8 + 4)
+          const per = Math.ceil(g.samples.length / Math.ceil(g.samples.length / maxPer));
           const parts = chunk(g.samples, per);
           parts.forEach((part, i) => {
-            const head: Cell[][] = [
-              [{ text: 'Parameter' }, { text: 'Unit' }, ...sets.map((s) => ({ text: s.shortName, align: 'center' as const })), ...part.map((s) => ({ text: siteCode(s.siteId), align: 'center' as const }))],
-              [{ text: '' }, { text: '' }, ...sets.map(() => ({ text: '' })), ...part.map((s) => ({ text: formatDate(s.date, { format: 'DD/MM/YYYY' }), align: 'center' as const }))],
-            ];
+            const sampleW = (width - fixed) / part.length > sampleNeed * 1.6 ? sampleNeed * 1.6 : (width - fixed) / part.length;
+            const head: Cell[][] = blk.splitBySite
+              ? [[{ text: 'Parameter' }, { text: 'Unit' }, ...sets.map((s) => ({ text: s.shortName, align: 'center' as const })), ...part.map((s) => ({ text: dateHead(s), align: 'center' as const }))]]
+              : [
+                  [{ text: 'Parameter' }, { text: 'Unit' }, ...sets.map((s) => ({ text: s.shortName, align: 'center' as const })), ...part.map((s) => ({ text: siteCode(s.siteId), align: 'center' as const }))],
+                  [{ text: '' }, { text: '' }, ...sets.map(() => ({ text: '' })), ...part.map((s) => ({ text: dateHead(s), align: 'center' as const }))],
+                ];
             const body: Cell[][] = params.map((p) => [
               { text: p.name },
               { text: unitLabel(p.unit) },
               ...sets.map((s) => ({ text: guidelineText(s, p), align: 'center' as const, fill: FILLS.guidelineRow })),
-              ...part.map((s) => {
-                const r = resultOf(s, p.id);
-                if (!r) return { text: '–', align: 'center' as const, color: '#999999' };
-                const f = flags.get(r.id);
-                return { text: displayValue(r, p).text, align: 'right' as const, fill: flagFill(f), bold: !!f && f.kind !== 'check' };
-              }),
+              ...part.map((s) => valueCell(s, p)),
             ]);
-            const label = [title, g.label].filter(Boolean).join(' – ') + (parts.length > 1 ? ` (${i + 1} of ${parts.length})` : '');
-            nodes.push({ t: 'table', caption: tableCaption(label), head, body, widths: [40, 14, ...sets.map(() => 15), ...part.map(() => '*' as const)], fontSize: big, notes: i === parts.length - 1 ? resultNotes(sets, blk.highlight) : undefined });
+            nodes.push({
+              t: 'table',
+              caption: tableCaption(label(i, parts.length)),
+              head,
+              body,
+              widths: [paramW, unitW, ...setW, ...part.map(() => sampleW)],
+              fontSize: pt,
+              notes: i === parts.length - 1 ? resultNotes(sets, blk.highlight) : undefined,
+            });
           });
         } else {
-          const per = Math.max(2, Math.floor((width - 36) / 15));
-          const parts = chunk(params, per);
-          parts.forEach((part, i) => {
+          // Samples down the rows: date + site, then as many parameter columns as fit.
+          const dateW = textWidthMm('00/00/0000', pt) + PAD;
+          const siteW = clamp(Math.max(...g.samples.map((s) => textWidthMm(siteCode(s.siteId), pt))) + PAD, 9, 20);
+          const avail = width - dateW - siteW;
+          const need = params.map((p) =>
+            Math.max(
+              11,
+              longestWordMm(p.short ?? p.name, pt, true) + PAD,
+              textWidthMm(unitLabel(p.unit), pt) + PAD,
+              ...sets.map((s) => textWidthMm(guidelineText(s, p), pt) + PAD),
+              ...g.samples.map((s) => textWidthMm(valueCell(s, p).text, pt, true) + PAD),
+            ),
+          );
+          const pack = (maxCount: number) => {
+            const out: number[][] = [];
+            let cur: number[] = [];
+            let used = 0;
+            need.forEach((w, k) => {
+              if (cur.length && (used + w > avail || cur.length >= maxCount)) {
+                out.push(cur);
+                cur = [];
+                used = 0;
+              }
+              cur.push(k);
+              used += w;
+            });
+            if (cur.length) out.push(cur);
+            return out;
+          };
+          // as few tables as possible, with the parameters spread evenly between them
+          const greedy = pack(Infinity);
+          const balanced = greedy.length > 1 ? pack(Math.ceil(params.length / greedy.length)) : greedy;
+          const parts = balanced.length === greedy.length ? balanced : greedy;
+          parts.forEach((idx, i) => {
+            const part = idx.map((k) => params[k]);
+            const sum = idx.reduce((a, k) => a + need[k], 0);
+            const extra = Math.max(0, Math.min(avail - sum, idx.length * 8)) / idx.length;
             const head: Cell[][] = [
               [{ text: 'Date' }, { text: 'Site' }, ...part.map((p) => ({ text: p.short ?? p.name, align: 'center' as const }))],
               [{ text: '' }, { text: '' }, ...part.map((p) => ({ text: unitLabel(p.unit), align: 'center' as const }))],
@@ -254,20 +337,18 @@ export function buildReport(opts: BuildOptions): ReportDoc {
               if (!part.some((p) => guidelineFor(s, p.id, p.unit))) continue;
               body.push([{ text: s.shortName, colSpan: 2, italic: true, fill: FILLS.guidelineRow }, { text: '' }, ...part.map((p) => ({ text: guidelineText(s, p), align: 'center' as const, italic: true, fill: FILLS.guidelineRow }))]);
             }
-            for (const s of g.samples) {
-              body.push([
-                { text: formatDate(s.date, { format: 'DD/MM/YYYY' }) },
-                { text: siteCode(s.siteId) },
-                ...part.map((p) => {
-                  const r = resultOf(s, p.id);
-                  if (!r) return { text: '–', align: 'center' as const, color: '#999999' };
-                  const f = flags.get(r.id);
-                  return { text: displayValue(r, p).text, align: 'right' as const, fill: flagFill(f), bold: !!f && f.kind !== 'check' };
-                }),
-              ]);
-            }
-            const label = [title, g.label].filter(Boolean).join(' – ') + (parts.length > 1 ? ` (${i + 1} of ${parts.length})` : '');
-            nodes.push({ t: 'table', caption: tableCaption(label), head, body, widths: [20, 14, ...part.map(() => '*' as const)], fontSize: big, notes: i === parts.length - 1 ? resultNotes(sets, blk.highlight) : undefined });
+            const guidelineRows = body.length;
+            for (const s of g.samples) body.push([{ text: formatDate(s.date, { format: 'DD/MM/YYYY' }) }, { text: siteCode(s.siteId) }, ...part.map((p) => valueCell(s, p))]);
+            nodes.push({
+              t: 'table',
+              caption: tableCaption(label(i, parts.length)),
+              head,
+              body,
+              widths: [dateW, siteW, ...idx.map((k) => need[k] + extra)],
+              fontSize: pt,
+              keepRows: guidelineRows + 2,
+              notes: i === parts.length - 1 ? resultNotes(sets, blk.highlight) : undefined,
+            });
           });
         }
       }
@@ -307,7 +388,13 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         caption: tableCaption(fill(blk.title) || 'Summary statistics'),
         head,
         body,
-        widths: [42, 14, 14, ...shown.map(() => '*' as const)],
+        widths: (() => {
+          const pW = Math.min(44, Math.max(26, ...rows.map((r) => textWidthMm(r.param.name, big, true))) + CELL_PAD_MM);
+          const uW = Math.min(20, Math.max(9, ...rows.map((r) => textWidthMm(unitLabel(r.param.unit), big))) + CELL_PAD_MM);
+          const sW = Math.min(20, Math.max(9, ...rows.map((r) => textWidthMm(r.site.code, big))) + CELL_PAD_MM);
+          const rest = (width - pW - uW - sW) / shown.length;
+          return [pW, uW, sW, ...shown.map(() => rest)];
+        })(),
         fontSize: big,
         notes: [`Statistics treat non-detects as ${project.ndHandling === 'half' ? 'half the detection limit' : project.ndHandling === 'zero' ? 'zero' : 'the detection limit'}. Percentiles: ${project.percentileMethod === 'hazen' ? 'Hazen method' : 'Excel PERCENTILE.INC'}.${blk.stats.includes('exceed') ? ' Exceed. = results exceeding consent limits, triggers or the default guideline values.' : ''}`],
       });

@@ -110,11 +110,12 @@ function nodeToDocx(n: DocNode, doc: ReportDoc, contentWidthMm: number): Array<P
       const flexCount = n.widths.filter((w) => typeof w !== 'number').length;
       const flex = flexCount ? Math.max(8, (contentWidthMm - fixed) / flexCount) : 0;
       const colsMm = n.widths.map((w) => (typeof w === 'number' ? w : flex));
-      const scale = Math.min(1, contentWidthMm / colsMm.reduce((s, x) => s + x, 0));
+      const totalMm = colsMm.reduce((s, x) => s + x, 0);
+      const scale = Math.min(1, contentWidthMm / totalMm);
       out.push(
         new Table({
           layout: TableLayoutType.FIXED,
-          width: { size: Math.round(contentWidthMm * TWIP_PER_MM), type: WidthType.DXA },
+          width: { size: Math.round(Math.min(contentWidthMm, totalMm) * TWIP_PER_MM), type: WidthType.DXA },
           columnWidths: colsMm.map((mm) => Math.round(mm * scale * TWIP_PER_MM)),
           rows: [...n.head.map((r) => docRow(r, true, t.accent, size)), ...n.body.map((r) => docRow(r, false, t.accent, size))],
         }),

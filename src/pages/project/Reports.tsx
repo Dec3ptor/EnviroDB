@@ -14,8 +14,8 @@ import { buildReport } from '../../reports/build';
 import { ReportPreview } from '../../reports/html';
 import type { ReportDoc } from '../../reports/model';
 import { cmToPx, renderChartPng } from '../../charts/render';
+import { exportReport } from '../../reports/export';
 import { saveObligation } from '../../db/repo';
-import { downloadBlob } from '../../db/backup';
 import type { TextBlock } from '../../db/types';
 
 export function ReportsTab() {
@@ -95,14 +95,7 @@ export function ReportsTab() {
     if (!template) return;
     setBusy(kind);
     try {
-      const full = buildReport({ bundle: data, template, period, settings, promptTexts: prompts, renderChart: (opt, w, hh) => renderChartPng(opt, cmToPx(w), cmToPx(hh), 3) });
-      if (kind === 'pdf') {
-        const { downloadPdf } = await import('../../reports/pdf');
-        await downloadPdf(full);
-      } else {
-        const { docxBlob } = await import('../../reports/docx');
-        downloadBlob(await docxBlob(full), `${full.fileName}.docx`);
-      }
+      await exportReport(kind, { bundle: data, template, period, settings, promptTexts: prompts });
     } catch (e) {
       notifications.show({ title: 'Export failed', message: (e as Error).message, color: 'red' });
     } finally {
@@ -143,14 +136,17 @@ export function ReportsTab() {
                 description={template?.description}
               />
               <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} extra={oblPresets} width="100%" />
-              <Group gap="xs" grow>
-                <Button leftSection={<IconFileTypePdf size={18} />} loading={busy === 'pdf'} onClick={() => exportDoc('pdf')} disabled={!template}>
-                  PDF
+              <Stack gap={6}>
+                <Button fullWidth leftSection={<IconFileTypeDocx size={18} />} loading={busy === 'docx'} onClick={() => exportDoc('docx')} disabled={!template}>
+                  Download Word (.docx)
                 </Button>
-                <Button variant="light" leftSection={<IconFileTypeDocx size={18} />} loading={busy === 'docx'} onClick={() => exportDoc('docx')} disabled={!template}>
-                  Word
+                <Button fullWidth variant="light" leftSection={<IconFileTypePdf size={18} />} loading={busy === 'pdf'} onClick={() => exportDoc('pdf')} disabled={!template}>
+                  Download PDF
                 </Button>
-              </Group>
+                <Text size="xs" c="dimmed">
+                  Word (.docx) is fully editable – headings use Word's Heading styles, so you can add a table of contents or paste into your own report template.
+                </Text>
+              </Stack>
               {obligation && (
                 <Group justify="space-between">
                   {submitted ? (

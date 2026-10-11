@@ -51,6 +51,21 @@ function rowCells(row: Cell[], header: boolean, accent: string): TableCell[] {
   return out;
 }
 
+const CELL_PAD_PT = 3; // left and right cell padding (see table layout below)
+const RULE_PT = 0.4;
+
+/**
+ * Column widths in points. The builder gives full column widths (mm, including padding); pdfmake wants the
+ * content width only and adds padding + rules itself, so subtract them – otherwise the table runs off the page.
+ */
+function fitWidths(widths: Array<number | '*' | 'auto'>, contentWidthPt: number): Array<number | '*' | 'auto'> {
+  const fixed = widths.reduce<number>((s, w) => s + (typeof w === 'number' ? w * MM : 0), 0);
+  const flex = widths.filter((w) => typeof w !== 'number').length;
+  const avail = contentWidthPt - RULE_PT - flex * 40;
+  const k = fixed > avail ? avail / fixed : 1;
+  return widths.map((w) => (typeof w === 'number' ? Math.max(6, w * MM * k - 2 * CELL_PAD_PT - RULE_PT) : w));
+}
+
 function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Content[] {
   const t = doc.template;
   switch (n.t) {
@@ -89,23 +104,23 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
     }
     case 'table': {
       const out: Content[] = [];
-      if (n.caption) out.push({ text: n.caption, style: 'tableCaption', keepWithNext: true } as Content);
+      if (n.caption) out.push({ text: n.caption, style: 'tableCaption', headlineLevel: 9 } as Content); // 9 = table caption (kept with its table)
       out.push({
         table: {
           headerRows: n.head.length,
-          keepWithHeaderRows: 1,
+          keepWithHeaderRows: n.keepRows ?? 1,
           dontBreakRows: true,
-          widths: n.widths.map((w) => (typeof w === 'number' ? w * MM : w)),
+          widths: fitWidths(n.widths, contentWidthPt),
           body: [...n.head.map((r) => rowCells(r, true, t.accent)), ...n.body.map((r) => rowCells(r, false, t.accent))],
         },
         fontSize: n.fontSize ?? t.fontSize - 1,
         layout: {
-          hLineWidth: () => 0.4,
-          vLineWidth: () => 0.4,
+          hLineWidth: () => RULE_PT,
+          vLineWidth: () => RULE_PT,
           hLineColor: () => '#b9b9b9',
           vLineColor: () => '#b9b9b9',
-          paddingLeft: () => 3,
-          paddingRight: () => 3,
+          paddingLeft: () => CELL_PAD_PT,
+          paddingRight: () => CELL_PAD_PT,
           paddingTop: () => 1.5,
           paddingBottom: () => 1.5,
         },
@@ -144,7 +159,13 @@ export function toPdfDefinition(doc: ReportDoc): TDocumentDefinitions {
       tableCaption: { fontSize: t.fontSize - 1, bold: true, color: '#222222', margin: [0, 4, 0, 3] },
       note: { fontSize: t.fontSize - 2.5, color: '#555555' },
     },
-    pageBreakBefore: (current) => current.headlineLevel === 1 && current.startPosition.verticalRatio > 0.85,
+    // Never leave a heading or table title alone at the bottom of a page: break before it when nothing but
+    // other headings/titles (or a table that has moved to the next page) follows it on the same page.
+    pageBreakBefore: (current, following) => {
+      if (!current.headlineLevel) return false;
+      const content = following.filter((n) => !n.table && !n.headlineLevel && !n.stack);
+      return content.length === 0 || current.startPosition.verticalRatio > 0.92;
+    },
   };
 }
 

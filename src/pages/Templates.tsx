@@ -6,7 +6,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconArrowDown, IconArrowUp, IconCopy, IconDeviceFloppy, IconPlus, IconTrash, IconPhoto, IconStar, IconTemplate } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowUp, IconCopy, IconDeviceFloppy, IconPlus, IconTrash, IconPhoto, IconStar, IconTemplate, IconFileTypeDocx, IconFileTypePdf } from '@tabler/icons-react';
 import { db, saveSettings } from '../db/db';
 import type { ReportBlock, ReportBlockType, ReportTemplate } from '../db/types';
 import { deleteTemplate, duplicateTemplate, saveTemplate } from '../db/repo';
@@ -18,6 +18,7 @@ import { useSettings } from '../hooks/useSettings';
 import { buildReport } from '../reports/build';
 import { ReportPreview } from '../reports/html';
 import { cmToPx, renderChartPng } from '../charts/render';
+import { exportReport, type ExportKind } from '../reports/export';
 
 export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string }> = {
   title: { label: 'Title page', help: 'Report title, subtitle and project details' },
@@ -190,9 +191,30 @@ function Preview({ template }: { template: ReportTemplate }) {
     }, 450);
     return () => clearTimeout(h);
   }, [data, template, period, settings]);
+  const [exporting, setExporting] = useState<ExportKind | null>(null);
+  const run = async (kind: ExportKind) => {
+    setExporting(kind);
+    try {
+      await exportReport(kind, { bundle: data, template, period, settings });
+    } catch (e) {
+      notifications.show({ title: 'Export failed', message: (e as Error).message, color: 'red' });
+    } finally {
+      setExporting(null);
+    }
+  };
   return (
     <Stack gap="xs">
-      <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={data.project.yearStartMonth} />
+      <Group align="flex-end" justify="space-between" wrap="wrap">
+        <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={data.project.yearStartMonth} />
+        <Group gap="xs">
+          <Button size="xs" leftSection={<IconFileTypeDocx size={16} />} loading={exporting === 'docx'} onClick={() => run('docx')}>
+            Download Word
+          </Button>
+          <Button size="xs" variant="light" leftSection={<IconFileTypePdf size={16} />} loading={exporting === 'pdf'} onClick={() => run('pdf')}>
+            Download PDF
+          </Button>
+        </Group>
+      </Group>
       <div style={{ opacity: busy ? 0.6 : 1 }}>{doc ? <ReportPreview doc={doc} scale={0.75} /> : <Loader />}</div>
     </Stack>
   );

@@ -21,7 +21,7 @@ export type DocNode =
   | { t: 'h'; level: 1 | 2 | 3; text: string; number?: string }
   | { t: 'p'; runs: Run[] }
   | { t: 'ul'; items: Run[][] }
-  | { t: 'table'; caption?: string; head: Cell[][]; body: Cell[][]; widths: Array<number | '*' | 'auto'>; fontSize?: number; notes?: string[] }
+  | { t: 'table'; caption?: string; head: Cell[][]; body: Cell[][]; widths: Array<number | '*' | 'auto'>; fontSize?: number; notes?: string[]; keepRows?: number }
   | { t: 'image'; dataUrl: string; widthCm: number; heightCm: number; caption?: string }
   | { t: 'note'; text: string }
   | { t: 'pagebreak' };

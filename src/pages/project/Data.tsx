@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconDeviceFloppy } from '@tabler/icons-react';
+import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconDeviceFloppy, IconFileTypeDocx } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
 import { displayValue, evaluateAll, flagResults, pivot, type PivotRow } from '../../lib/analysis';
@@ -13,7 +13,9 @@ import { unitLabel } from '../../lib/units';
 import { exportPivotCsv, exportPivotXlsx } from '../../reports/excel';
 import { deleteImport, deleteSamples } from '../../db/repo';
 import { db } from '../../db/db';
-import type { Result, Sample } from '../../db/types';
+import type { ReportBlock, Result, Sample } from '../../db/types';
+import { adhocTemplate, exportReport } from '../../reports/export';
+import { useSettings } from '../../hooks/useSettings';
 import { parseValue } from '../../lib/values';
 
 function Legend({ guidelineNames }: { guidelineNames: string[] }) {
@@ -337,6 +339,34 @@ export function DataTab() {
   const { columns, rows } = useMemo(() => pivot(data, { siteIds, paramIds, start: period.start, end: period.end }), [data, siteIds, paramIds, period]);
   const flags = useMemo(() => flagResults(data, evaluateAll(data, period.start, period.end), setIds, period.start, period.end), [data, setIds, period]);
   const guidelineNames = setIds.map((id) => setMap.get(id)?.shortName ?? '').filter(Boolean);
+  const settings = useSettings();
+  const [wordBusy, setWordBusy] = useState(false);
+  const exportWord = async () => {
+    setWordBusy(true);
+    try {
+      // "All data" → use the actual date range of the data
+      const p = period.key === 'all' ? { ...period, start: index.dates.min?.slice(0, 10) ?? period.start, end: index.dates.max?.slice(0, 10) ?? period.end, label: 'all data' } : period;
+      const blocks: ReportBlock[] = [
+        { id: 'h', type: 'heading', text: `Monitoring results – ${p.label}`, level: 1 },
+        {
+          id: 'r',
+          type: 'resultsTable',
+          title: 'Monitoring results',
+          siteIds,
+          parameterIds: paramIds,
+          layout: layout === 'samplesAsRows' ? 'parametersAsColumns' : 'parametersAsRows',
+          guidelineSetIds: setIds,
+          highlight: true,
+          splitBySite: layout !== 'samplesAsRows',
+        },
+      ];
+      await exportReport('docx', { bundle: data, template: adhocTemplate('Results table', blocks), period: p, settings });
+    } catch (e) {
+      notifications.show({ title: 'Export failed', message: (e as Error).message, color: 'red' });
+    } finally {
+      setWordBusy(false);
+    }
+  };
 
   if (!data.samples.length)
     return (
@@ -380,11 +410,14 @@ export function DataTab() {
           />
           <Menu>
             <Menu.Target>
-              <Button variant="default" leftSection={<IconDownload size={16} />}>
+              <Button variant="default" leftSection={<IconDownload size={16} />} loading={wordBusy}>
                 Export
               </Button>
             </Menu.Target>
             <Menu.Dropdown>
+              <Menu.Item leftSection={<IconFileTypeDocx size={16} />} onClick={exportWord}>
+                Word (formatted tables, landscape)
+              </Menu.Item>
               <Menu.Item leftSection={<IconFileSpreadsheet size={16} />} onClick={() => exportPivotXlsx(exportArgs)}>
                 Excel (with highlighting)
               </Menu.Item>
