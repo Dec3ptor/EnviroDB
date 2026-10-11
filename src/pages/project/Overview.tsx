@@ -7,7 +7,7 @@ import { defaultPeriod, LevelBadge, PeriodPicker, RuleStatusBadge, StatTile, typ
 import { displayValue, evaluateAll, flagResults, keyParameters, type CellFlag } from '../../lib/analysis';
 import { reviewCell, reviewLines, samplingRounds, type ReviewCell } from '../../lib/latest';
 import { addMonths, daysUntil, formatDate, formatMonthYear, MONTH_SHORT, relativeDays, todayStr } from '../../lib/dates';
-import { nextObligation, OBLIGATION_STATUS } from '../../lib/schedule';
+import { byDueDate, nextObligation, OBLIGATION_STATUS } from '../../lib/schedule';
 import { buildChartSpec, chartOption } from '../../charts/timeSeries';
 import { EChart } from '../../charts/EChart';
 import { unitLabel } from '../../lib/units';
@@ -290,7 +290,7 @@ export function OverviewTab() {
     .filter((o) => o.active)
     .map((o) => ({ o, n: nextObligation(o) }))
     .filter((x) => x.n)
-    .sort((a, b) => (a.n!.dueDate < b.n!.dueDate ? -1 : 1))[0];
+    .sort((a, b) => byDueDate(a.n!, b.n!) || a.o.name.localeCompare(b.o.name))[0];
 
   return (
     <Stack gap="lg">

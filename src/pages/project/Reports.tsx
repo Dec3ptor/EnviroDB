@@ -1,22 +1,51 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Anchor, Button, Card, Grid, Group, Loader, Select, Stack, Text, Textarea, Title, Badge, ScrollArea } from '@mantine/core';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Anchor, Badge, Button, Card, Grid, Group, Loader, Modal, Select, Stack, Tabs, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
-import { IconCheck, IconFileTypeDocx, IconFileTypePdf, IconTemplate } from '@tabler/icons-react';
+import { IconCheck, IconDeviceFloppy, IconFileTypeDocx, IconFileTypePdf, IconLayoutList, IconSettings, IconTemplate } from '@tabler/icons-react';
 import { db } from '../../db/db';
 import { useProject } from '../../hooks/useProjectData';
 import { useSettings } from '../../hooks/useSettings';
 import { PeriodPicker, defaultPeriod, type PeriodValue } from '../../components/common';
 import { nextDueReport, obligationPeriod, obligationPresets } from '../../lib/schedule';
 import { formatDate, todayStr } from '../../lib/dates';
+import { uid } from '../../lib/ids';
 import { buildReport } from '../../reports/build';
-import { ReportPreview } from '../../reports/html';
+import { PdfPreview } from '../../reports/PdfPreview';
 import type { ReportDoc } from '../../reports/model';
 import { cmToPx, renderChartPng } from '../../charts/render';
 import { exportReport } from '../../reports/export';
-import { saveObligation } from '../../db/repo';
-import type { TextBlock } from '../../db/types';
+import { saveObligation, saveTemplate } from '../../db/repo';
+import type { ReportTemplate, TextBlock } from '../../db/types';
+import { SectionsEditor } from '../../components/report/SectionsEditor';
+import { PagesControl } from '../../components/report/PagesControl';
+import { JumpToPreview } from '../../components/report/JumpToPreview';
+
+const same = (a: ReportTemplate, b: ReportTemplate) => JSON.stringify({ ...a, updatedAt: '' }) === JSON.stringify({ ...b, updatedAt: '' });
+
+function SaveAsModal({ opened, onClose, initialName, onSave }: { opened: boolean; onClose: () => void; initialName: string; onSave: (name: string) => Promise<void> }) {
+  const [name, setName] = useState(initialName);
+  useEffect(() => setName(initialName), [initialName, opened]);
+  return (
+    <Modal opened={opened} onClose={onClose} title="Save as a new template">
+      <Stack gap="sm">
+        <TextInput label="Template name" value={name} onChange={(e) => setName(e.currentTarget.value)} data-autofocus onKeyDown={(e) => e.key === 'Enter' && name.trim() && void onSave(name.trim())} />
+        <Text size="xs" c="dimmed">
+          The new template appears in the template list for every project, and can be changed further on the Report templates page.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button leftSection={<IconDeviceFloppy size={16} />} disabled={!name.trim()} onClick={() => void onSave(name.trim())}>
+            Save template
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
+}
 
 export function ReportsTab() {
   const data = useProject();
@@ -48,7 +77,57 @@ export function ReportsTab() {
 
   const [period, setPeriod] = useState<PeriodValue>(initial.period);
   const [templateId, setTemplateId] = useState<string | null>(initial.templateId ?? settings.defaultTemplateId ?? 'tpl-annual');
-  const template = templates?.find((t) => t.id === templateId) ?? templates?.find((t) => t.id === 'tpl-annual');
+  const stored = templates?.find((t) => t.id === templateId) ?? templates?.find((t) => t.id === 'tpl-annual');
+
+  // Layout changes made here are kept (per project and template) until saved as a template or discarded.
+  const editKey = stored ? `layout:${project.id}:${stored.id}` : '';
+  const [edits, setEdits] = useState<{ key: string; t: ReportTemplate } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    if (editKey) void db.meta.get(editKey).then((r) => alive && setEdits(r ? { key: editKey, t: r.value as ReportTemplate } : null));
+    return () => {
+      alive = false;
+    };
+  }, [editKey]);
+  const working = edits && edits.key === editKey ? edits.t : null;
+  const template = working ?? stored;
+  const edited = !!(working && stored && !same(working, stored));
+  const changeTemplate = (t: ReportTemplate) => {
+    if (!editKey) return;
+    if (stored && same(t, stored)) {
+      setEdits(null);
+      void db.meta.delete(editKey);
+      return;
+    }
+    setEdits({ key: editKey, t });
+    void db.meta.put({ key: editKey, value: t });
+  };
+  const discard = () => {
+    setEdits(null);
+    if (editKey) void db.meta.delete(editKey);
+  };
+  const [saveAs, setSaveAs] = useState(false);
+  const saveAsNew = async (name: string) => {
+    if (!template) return;
+    const copy: ReportTemplate = { ...structuredClone(template), id: uid('tpl'), name, builtIn: false, updatedAt: new Date().toISOString() };
+    await saveTemplate(copy);
+    discard();
+    setTemplateId(copy.id);
+    setSaveAs(false);
+    notifications.show({ color: 'teal', title: 'Template saved', message: `“${name}” is now in your template list.` });
+  };
+  const saveOver = async () => {
+    if (!working || !stored || stored.builtIn) return;
+    await saveTemplate({ ...working, id: stored.id, builtIn: false, updatedAt: new Date().toISOString() });
+    discard();
+    notifications.show({ color: 'teal', message: `“${stored.name}” updated` });
+  };
+
+  const [tab, setTab] = useState<string | null>('report');
+  const settingsCard = useRef<HTMLDivElement>(null);
+  const previewCard = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState<string | null>(null);
+
   const draftKey = template ? `draft:${project.id}:${template.id}:${period.start}:${period.end}` : '';
   const [prompts, setPrompts] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -61,7 +140,7 @@ export function ReportsTab() {
   }, [draftKey]);
   const promptBlocks = (template?.blocks.filter((b) => b.type === 'text' && b.prompt) ?? []) as TextBlock[];
 
-  // Build the preview (debounced; graphs rendered at lower resolution)
+  // Build the report for the preview (debounced; graphs at a lower resolution than the export)
   const [doc, setDoc] = useState<ReportDoc | null>(null);
   const [building, setBuilding] = useState(false);
   useEffect(() => {
@@ -69,13 +148,11 @@ export function ReportsTab() {
     setBuilding(true);
     const h = setTimeout(() => {
       try {
-        setDoc(
-          buildReport({ bundle: data, template, period, settings, promptTexts: prompts, renderChart: (opt, w, hh) => renderChartPng(opt, cmToPx(w), cmToPx(hh), 1.5) }),
-        );
+        setDoc(buildReport({ bundle: data, template, period, settings, promptTexts: prompts, renderChart: (opt, w, hh) => renderChartPng(opt, cmToPx(w), cmToPx(hh), 1.5) }));
       } finally {
         setBuilding(false);
       }
-    }, 350);
+    }, 600);
     return () => clearTimeout(h);
   }, [data, template, period, settings, prompts]);
 
@@ -102,70 +179,131 @@ export function ReportsTab() {
     if (draftKey) void db.meta.put({ key: draftKey, value: next });
   };
 
-  if (!templates)
+  if (!templates || !template || !stored)
     return (
       <Group justify="center" p="xl">
         <Loader />
       </Group>
     );
 
+  const orientationControl = <PagesControl orientation={template.orientation} blocks={template.blocks} onChange={(orientation, blocks) => changeTemplate({ ...template, orientation, blocks })} />;
+
+  const editedBanner = edited && (
+    <Alert color="orange" variant="light" p="sm" title="Layout changed for this report">
+      <Text size="xs" mb={8}>
+        Your changes are kept for this project until you save or discard them. Save them as a template to reuse them.
+      </Text>
+      <Group gap={6}>
+        <Button size="xs" leftSection={<IconDeviceFloppy size={14} />} onClick={() => setSaveAs(true)}>
+          Save as new template
+        </Button>
+        {!stored.builtIn && (
+          <Button size="xs" variant="default" onClick={() => void saveOver()}>
+            Update “{stored.name}”
+          </Button>
+        )}
+        <Button size="xs" variant="subtle" color="gray" onClick={discard}>
+          Discard changes
+        </Button>
+      </Group>
+    </Alert>
+  );
+
   return (
     <Grid gutter="lg">
       <Grid.Col span={{ base: 12, lg: 4 }}>
-        <Stack gap="md" style={{ position: 'sticky', top: 70 }}>
-          <Card padding="md">
-            <Stack gap="sm">
-              <Title order={5}>Report settings</Title>
-              <Select
-                label="Template"
-                data={templates.map((t) => ({ value: t.id, label: t.builtIn ? t.name : `${t.name} (custom)` }))}
-                value={template?.id ?? null}
-                onChange={setTemplateId}
-                allowDeselect={false}
-                description={template?.description}
-              />
-              <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} extra={oblPresets} width="100%" />
-              <Stack gap={6}>
-                <Button fullWidth leftSection={<IconFileTypeDocx size={18} />} loading={busy === 'docx'} onClick={() => exportDoc('docx')} disabled={!template}>
-                  Download Word (.docx)
-                </Button>
-                <Button fullWidth variant="light" leftSection={<IconFileTypePdf size={18} />} loading={busy === 'pdf'} onClick={() => exportDoc('pdf')} disabled={!template}>
-                  Download PDF
-                </Button>
-                <Text size="xs" c="dimmed">
-                  Word (.docx) is fully editable – headings use Word's Heading styles, so you can add a table of contents or paste into your own report template.
-                </Text>
-              </Stack>
-              {obligation && (
-                <Group justify="space-between">
-                  {submitted ? (
-                    <Badge color="green" leftSection={<IconCheck size={12} />}>
-                      Submitted {formatDate(submitted.submittedOn)}
-                    </Badge>
-                  ) : (
-                    <Text size="xs" c="dimmed">
-                      Due {formatDate(obligationPeriod(obligation, obl!.index).dueDate)}
-                    </Text>
-                  )}
-                  {!submitted && (
-                    <Button
-                      size="compact-sm"
-                      variant="subtle"
-                      leftSection={<IconCheck size={14} />}
-                      onClick={() => saveObligation({ ...obligation, submissions: [...obligation.submissions, { periodStart: period.start, periodEnd: period.end, submittedOn: todayStr() }] })}
-                    >
-                      Mark submitted
+        <Stack gap="md">
+          <Card padding="md" ref={settingsCard} style={{ scrollMarginTop: 72 }}>
+            <Tabs value={tab} onChange={setTab}>
+              <Tabs.List grow mb="sm">
+                <Tabs.Tab value="report" leftSection={<IconSettings size={15} />}>
+                  Report
+                </Tabs.Tab>
+                <Tabs.Tab
+                  value="layout"
+                  leftSection={<IconLayoutList size={15} />}
+                  rightSection={
+                    edited ? (
+                      <Badge size="xs" color="orange" variant="filled">
+                        edited
+                      </Badge>
+                    ) : undefined
+                  }
+                >
+                  Edit layout
+                </Tabs.Tab>
+              </Tabs.List>
+
+              <Tabs.Panel value="report">
+                <Stack gap="sm">
+                  <Select
+                    label="Template"
+                    data={templates.map((t) => ({ value: t.id, label: t.builtIn ? t.name : `${t.name} (custom)` }))}
+                    value={stored.id}
+                    onChange={setTemplateId}
+                    allowDeselect={false}
+                    description={stored.description}
+                  />
+                  <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} extra={oblPresets} width="100%" />
+                  {orientationControl}
+                  {editedBanner}
+                  <Stack gap={6}>
+                    <Button fullWidth leftSection={<IconFileTypeDocx size={18} />} loading={busy === 'docx'} onClick={() => exportDoc('docx')}>
+                      Download Word (.docx)
                     </Button>
+                    <Button fullWidth variant="light" leftSection={<IconFileTypePdf size={18} />} loading={busy === 'pdf'} onClick={() => exportDoc('pdf')}>
+                      Download PDF
+                    </Button>
+                    <Text size="xs" c="dimmed">
+                      The preview shows the PDF exactly. The Word file has the same sections, page orientation and graphs, with headings in Word's Heading styles.
+                    </Text>
+                  </Stack>
+                  {obligation && (
+                    <Group justify="space-between">
+                      {submitted ? (
+                        <Badge color="green" leftSection={<IconCheck size={12} />}>
+                          Submitted {formatDate(submitted.submittedOn)}
+                        </Badge>
+                      ) : (
+                        <Text size="xs" c="dimmed">
+                          Due {formatDate(obligationPeriod(obligation, obl!.index).dueDate)}
+                        </Text>
+                      )}
+                      {!submitted && (
+                        <Button
+                          size="compact-sm"
+                          variant="subtle"
+                          leftSection={<IconCheck size={14} />}
+                          onClick={() => saveObligation({ ...obligation, submissions: [...obligation.submissions, { periodStart: period.start, periodEnd: period.end, submittedOn: todayStr() }] })}
+                        >
+                          Mark submitted
+                        </Button>
+                      )}
+                    </Group>
                   )}
-                </Group>
-              )}
-              <Anchor component={Link} to={template ? `/templates/${template.id}` : '/templates'} size="sm">
-                <Group gap={4}>
-                  <IconTemplate size={14} />
-                  {template?.builtIn ? 'Customise this template' : 'Edit this template'}
-                </Group>
-              </Anchor>
-            </Stack>
+                  <Button variant="subtle" size="compact-sm" leftSection={<IconLayoutList size={14} />} onClick={() => setTab('layout')} style={{ alignSelf: 'flex-start' }}>
+                    Change sections, graphs and page layout
+                  </Button>
+                </Stack>
+              </Tabs.Panel>
+
+              <Tabs.Panel value="layout">
+                <Stack gap="sm">
+                  {orientationControl}
+                  {editedBanner}
+                  <Text size="xs" c="dimmed">
+                    Drag sections (or use the arrows) to reorder them, tap one to change it, and use ⋯ to duplicate, remove, start a new page or put a section on landscape pages.
+                  </Text>
+                  <SectionsEditor blocks={template.blocks} onChange={(blocks) => changeTemplate({ ...template, blocks })} orientation={template.orientation} open={open} onOpen={setOpen} />
+                  <Anchor component={Link} to={`/templates/${stored.id}`} size="xs">
+                    <Group gap={4}>
+                      <IconTemplate size={13} />
+                      Margins, fonts, colours and logo are on the Report templates page
+                    </Group>
+                  </Anchor>
+                </Stack>
+              </Tabs.Panel>
+            </Tabs>
           </Card>
           {promptBlocks.length > 0 && (
             <Card padding="md">
@@ -177,8 +315,8 @@ export function ReportsTab() {
               </Text>
               <Stack gap="sm">
                 {promptBlocks.map((b) => {
-                  const idx = template!.blocks.findIndex((x) => x.id === b.id);
-                  const heading = [...template!.blocks.slice(0, idx)].reverse().find((x) => x.type === 'heading') as { text: string } | undefined;
+                  const idx = template.blocks.findIndex((x) => x.id === b.id);
+                  const heading = [...template.blocks.slice(0, idx)].reverse().find((x) => x.type === 'heading') as { text: string } | undefined;
                   return <Textarea key={b.id} label={heading?.text ?? 'Text'} autosize minRows={4} maxRows={14} value={prompts[b.id] ?? b.text} onChange={(e) => savePrompt(b.id, e.currentTarget.value)} />;
                 })}
               </Stack>
@@ -192,20 +330,12 @@ export function ReportsTab() {
         </Stack>
       </Grid.Col>
       <Grid.Col span={{ base: 12, lg: 8 }}>
-        <Card padding={0} bg="var(--mantine-color-gray-1)" style={{ overflow: 'hidden' }}>
-          <Group justify="space-between" px="md" py="xs">
-            <Text size="sm" c="dimmed">
-              Preview {building && <Loader size="xs" ml={6} />}
-            </Text>
-            <Text size="xs" c="dimmed">
-              Page breaks and exact layout are applied in the PDF / Word file
-            </Text>
-          </Group>
-          <ScrollArea h="calc(100vh - 230px)" type="auto">
-            <div style={{ padding: 16, opacity: building ? 0.6 : 1, transition: 'opacity 120ms' }}>{doc ? <ReportPreview doc={doc} scale={0.85} /> : <Loader m="xl" />}</div>
-          </ScrollArea>
+        <Card padding="sm" bg="var(--mantine-color-gray-1)" ref={previewCard} style={{ scrollMarginTop: 72 }}>
+          <PdfPreview doc={doc} building={building} />
         </Card>
       </Grid.Col>
+      <JumpToPreview preview={previewCard} back={settingsCard} />
+      <SaveAsModal opened={saveAs} onClose={() => setSaveAs(false)} initialName={`${stored.name} (edited)`} onSave={saveAsNew} />
     </Grid>
   );
 }

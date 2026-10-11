@@ -262,6 +262,11 @@ export type ReportBlockType =
 export interface ReportBlockBase {
   id: string;
   type: ReportBlockType;
+  /**
+   * Put this block – for a heading, its whole section – on pages of this orientation. The pages after it go back
+   * to the orientation before it, so the setting moves with the section.
+   */
+  pages?: 'portrait' | 'landscape';
 }
 
 export interface TitleBlock extends ReportBlockBase {
@@ -326,6 +331,10 @@ export interface ChartBlock extends ReportBlockBase {
   guidelineSetIds: ID[] | null;
   showRules: boolean;
   logScale: boolean;
+  /** 'full' = the page width (default), 'half' = two graphs side by side, 'custom' = widthCm × heightCm. */
+  size?: 'full' | 'half' | 'custom';
+  /** Height as a fraction of the width for 'full' and 'half' (default: heightCm ÷ widthCm). */
+  aspect?: number;
   widthCm: number;
   heightCm: number;
   caption?: string;
@@ -338,6 +347,8 @@ export interface SamplingTableBlock extends ReportBlockBase {
 }
 export interface PageBreakBlock extends ReportBlockBase {
   type: 'pageBreak';
+  /** Orientation of the pages from here on (unset = keep the current orientation). */
+  orientation?: 'portrait' | 'landscape';
 }
 
 export type ReportBlock =

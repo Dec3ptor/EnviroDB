@@ -53,10 +53,10 @@ const quarterly: ReportBlock[] = [
   { id: id('q'), type: 'heading', text: 'Compliance', level: 1 },
   { id: id('q'), type: 'complianceTable', ruleIds: [] },
   { id: id('q'), type: 'exceedances', ruleIds: [], includeGuidelines: true, includeNotes: true },
-  { id: id('q'), type: 'heading', text: 'Results', level: 1 },
+  { id: id('q'), type: 'heading', text: 'Results', level: 1, pages: 'landscape' },
   { id: id('q'), type: 'resultsTable', title: 'Results for the period', siteIds: [], parameterIds: [], layout: 'parametersAsColumns', guidelineSetIds: null, highlight: true, splitBySite: false },
   { id: id('q'), type: 'heading', text: 'Graphs', level: 1 },
-  { id: id('q'), type: 'chart', parameterIds: [], siteIds: [], range: 'years', years: 2, showGuidelines: true, guidelineSetIds: null, showRules: true, logScale: false, widthCm: 16, heightCm: 7, caption: '' },
+  { id: id('q'), type: 'chart', parameterIds: [], siteIds: [], range: 'years', years: 2, showGuidelines: true, guidelineSetIds: null, showRules: true, logScale: false, size: 'full', aspect: 0.5, widthCm: 16, heightCm: 8, caption: '' },
   { id: id('q'), type: 'heading', text: 'Comments', level: 1 },
   { id: id('q'), type: 'text', text: 'No issues were identified during the period.', prompt: true },
 ];
@@ -84,7 +84,7 @@ const appendix: ReportBlock[] = [
 
 export const BUILT_IN_TEMPLATES: ReportTemplate[] = [
   { ...base, id: 'tpl-annual', name: 'Annual compliance monitoring report', description: 'Full annual report: introduction, summary, sites, sampling, compliance, exceedances, results, statistics, graphs and conclusions.', blocks: annual },
-  { ...base, id: 'tpl-quarterly', name: 'Quarterly / interim data summary', description: 'Short summary of compliance and results for a quarter or other interim period.', blocks: quarterly, orientation: 'landscape' },
+  { ...base, id: 'tpl-quarterly', name: 'Quarterly / interim data summary', description: 'Short summary of compliance and results for a quarter or other interim period. The results table is on landscape pages.', blocks: quarterly },
   { ...base, id: 'tpl-notification', name: 'Exceedance notification', description: 'Brief notification to the regulator listing exceedances and actions taken.', blocks: notification },
   { ...base, id: 'tpl-appendix', name: 'Data appendix', description: 'Full results tables and statistics for appending to a report.', blocks: appendix, orientation: 'landscape' },
 ];

@@ -13,6 +13,7 @@ import {
   Paragraph,
   ShadingType,
   Table,
+  TableBorders,
   TableCell,
   TableLayoutType,
   TableRow,
@@ -24,6 +25,7 @@ import {
 } from 'docx';
 import type { Cell, DocNode, ReportDoc, Run } from './model';
 import { dataUrlToBytes } from '../charts/render';
+import { CHART_GAP_MM, type Orientation } from './build';
 
 const hex = (c?: string) => (c ? c.replace('#', '').toUpperCase() : undefined);
 const TWIP_PER_MM = 56.6929;
@@ -102,6 +104,30 @@ function nodeToDocx(n: DocNode, doc: ReportDoc, contentWidthMm: number): Array<P
       if (n.caption) out.push(new Paragraph({ style: 'Caption', children: [new TextRun({ text: n.caption })] }));
       return out;
     }
+    case 'figures': {
+      // graphs side by side: a borderless table, one cell per graph
+      const cols = n.items.length;
+      const colMm = Math.min(...n.items.map((it) => it.widthCm * 10), (contentWidthMm - CHART_GAP_MM * (cols - 1)) / cols);
+      const cellMm = (i: number) => colMm + (i < cols - 1 ? CHART_GAP_MM : 0);
+      const cells = n.items.map((it, i) => {
+        const wCm = Math.min(it.widthCm, colMm / 10);
+        const hCm = it.heightCm * (wCm / it.widthCm);
+        const children: Paragraph[] = [];
+        if (it.dataUrl) children.push(new Paragraph({ spacing: { before: 120, after: 40 }, children: [new ImageRun({ type: 'png', data: dataUrlToBytes(it.dataUrl), transformation: { width: Math.round(wCm * PX_PER_CM), height: Math.round(hCm * PX_PER_CM) } })] }));
+        if (it.caption) children.push(new Paragraph({ style: 'Caption', children: [new TextRun({ text: it.caption })] }));
+        return new TableCell({ width: { size: Math.round(cellMm(i) * TWIP_PER_MM), type: WidthType.DXA }, margins: { left: 0, right: i < cols - 1 ? Math.round(CHART_GAP_MM * TWIP_PER_MM) : 0 }, children: children.length ? children : [new Paragraph({})] });
+      });
+      return [
+        new Table({
+          layout: TableLayoutType.FIXED,
+          borders: TableBorders.NONE,
+          width: { size: Math.round(n.items.reduce((s, _, i) => s + cellMm(i), 0) * TWIP_PER_MM), type: WidthType.DXA },
+          columnWidths: n.items.map((_, i) => Math.round(cellMm(i) * TWIP_PER_MM)),
+          rows: [new TableRow({ children: cells, cantSplit: true })],
+        }),
+        new Paragraph({ children: [], spacing: { after: 60 } }),
+      ];
+    }
     case 'table': {
       const size = Math.round((n.fontSize ?? t.fontSize - 1) * 2);
       const out: Array<Paragraph | Table> = [];
@@ -140,17 +166,42 @@ function styles(accent: string, fontSize: number) {
   };
 }
 
-function section(doc: ReportDoc, children: Array<Paragraph | Table>): ISectionOptions {
+/** Split the report into Word sections wherever the page orientation changes. */
+function splitSections(doc: ReportDoc): Array<{ orientation: Orientation; nodes: DocNode[] }> {
+  const out: Array<{ orientation: Orientation; nodes: DocNode[] }> = [{ orientation: doc.template.orientation, nodes: [] }];
+  for (const n of doc.nodes) {
+    const cur = out[out.length - 1];
+    if (n.t === 'pagebreak' && n.orientation && n.orientation !== cur.orientation) {
+      out.push({ orientation: n.orientation, nodes: [] });
+      continue;
+    }
+    // a page break at the start of a section, after another page break or after a title page would leave a blank page
+    const prev = cur.nodes[cur.nodes.length - 1];
+    if (n.t === 'pagebreak' && (!prev || prev.t === 'pagebreak' || (prev.t === 'title' && prev.pageBreakAfter))) continue;
+    cur.nodes.push(n);
+  }
+  // a section break already starts a new page
+  out.forEach((s, i) => {
+    if (i === out.length - 1) return;
+    while (s.nodes[s.nodes.length - 1]?.t === 'pagebreak') s.nodes.pop();
+    const last = s.nodes[s.nodes.length - 1];
+    if (last?.t === 'title' && last.pageBreakAfter) s.nodes[s.nodes.length - 1] = { ...last, pageBreakAfter: false };
+  });
+  const kept = out.filter((s) => s.nodes.length);
+  return kept.length ? kept : [out[0]];
+}
+
+function section(doc: ReportDoc, children: Array<Paragraph | Table>, orientation: Orientation, first: boolean): ISectionOptions {
   const t = doc.template;
   const [w, h] = t.pageSize === 'A3' ? [297, 420] : [210, 297];
   const small = (t.fontSize - 2) * 2;
   return {
     properties: {
       page: {
-        size: { width: Math.round(w * TWIP_PER_MM), height: Math.round(h * TWIP_PER_MM), orientation: t.orientation === 'landscape' ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
+        size: { width: Math.round(w * TWIP_PER_MM), height: Math.round(h * TWIP_PER_MM), orientation: orientation === 'landscape' ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
         margin: { top: Math.round(t.marginMm * TWIP_PER_MM), bottom: Math.round(t.marginMm * TWIP_PER_MM), left: Math.round(t.marginMm * TWIP_PER_MM), right: Math.round(t.marginMm * TWIP_PER_MM) },
       },
-      titlePage: doc.nodes[0]?.t === 'title' && doc.nodes[0].pageBreakAfter,
+      titlePage: first && doc.nodes[0]?.t === 'title' && doc.nodes[0].pageBreakAfter,
     },
     headers: { default: new Header({ children: [new Paragraph({ children: [new TextRun({ text: doc.header, size: small, color: '777777' })] })] }), first: new Header({ children: [new Paragraph({ children: [] })] }) },
     footers: {
@@ -171,9 +222,11 @@ function section(doc: ReportDoc, children: Array<Paragraph | Table>): ISectionOp
 export async function docxBlob(doc: ReportDoc): Promise<Blob> {
   const t = doc.template;
   const [w, h] = t.pageSize === 'A3' ? [297, 420] : [210, 297];
-  const contentWidthMm = (t.orientation === 'landscape' ? h : w) - 2 * t.marginMm;
-  const children = doc.nodes.flatMap((n) => nodeToDocx(n, doc, contentWidthMm));
-  const d = new Document({ creator: 'EnviroDB', title: doc.title, description: doc.title, styles: styles(t.accent, t.fontSize), sections: [section(doc, children)] });
+  const sections = splitSections(doc).map((s, i) => {
+    const contentWidthMm = (s.orientation === 'landscape' ? h : w) - 2 * t.marginMm;
+    return section(doc, s.nodes.flatMap((n) => nodeToDocx(n, doc, contentWidthMm)), s.orientation, i === 0);
+  });
+  const d = new Document({ creator: 'EnviroDB', title: doc.title, description: doc.title, styles: styles(t.accent, t.fontSize), sections });
   return Packer.toBlob(d);
 }
 

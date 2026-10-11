@@ -35,7 +35,14 @@ It runs entirely in the browser and is hosted on GitHub Pages.
 - **Report** from customisable block-based templates (title page, automatic summary,
   compliance table, exceedances with your follow-up notes, results tables with highlighting,
   statistics, graphs, site and sampling tables, and your own text with `{{placeholders}}`).
-  Reports export to **PDF** and **Word**.
+  Reports export to **PDF** and **Word**. The preview shows the actual PDF pages, portrait
+  and landscape, so what you see is what you download.
+- **Change a report's layout on the spot.** On the Reports tab, *Edit layout* lets you drag
+  sections into a new order (a heading takes its whole section with it), add, duplicate or
+  remove sections, graphs and tables, start a section on a new page, and put the whole
+  report – or just one section, such as a wide results table – on landscape pages. Graphs
+  fill the page width, or sit two per row. Keep the changes for that project, save them as a
+  new template to reuse, or discard them.
 - **Review the latest results at a glance.** Each project's overview shows the latest sample at
   every site (or any recent month) with exceedances highlighted, values that are unusual for that
   site marked ▲/▼, and the previous result on hover.
@@ -88,6 +95,7 @@ stored by that provider, so check with your IT / data-governance team first.
 5. On the **Schedule** tab, add reporting obligations (e.g. annual report due 30 September for
    1 July – 30 June) and sampling schedules (e.g. monthly at SW1–SW3).
 6. On the **Reports** tab, pick a template and period, add your commentary, and download PDF or Word.
+   Use *Edit layout* to reorder sections or put some on landscape pages.
 
 ### Import formats
 
@@ -141,7 +149,8 @@ src/
   lib/         units, values, dates, statistics, matching, guidelines, compliance engine, schedules
   importers/   workbook reading, lab-certificate / master-sheet / long-table parsers, import commit
   charts/      ECharts time-series builder and PNG rendering
-  reports/     report document model, builder, HTML preview, PDF and Word renderers, Excel export
+  reports/     report document model, builder, PDF preview (pdf.js), PDF and Word renderers, Excel export
+  components/  shared UI, including the report sections editor
   pages/       dashboard, projects, project tabs, import wizard, guidelines, templates, settings
 tests/         unit and integration tests (fake IndexedDB)
 public/samples synthetic example files (one in a Hill Laboratories certificate layout)

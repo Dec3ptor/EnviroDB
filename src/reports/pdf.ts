@@ -1,11 +1,12 @@
 import type { Content, TDocumentDefinitions, TableCell } from 'pdfmake/interfaces';
 import type { Cell, DocNode, ReportDoc, Run } from './model';
+import { CHART_GAP_MM, type Orientation } from './build';
 import { downloadBlob } from '../db/backup';
 
 const MM = 2.834645669; // points per mm
 
 type PdfMake = {
-  createPdf(dd: TDocumentDefinitions): { download(name?: string): void; getBlob(cb: (b: Blob) => void): void };
+  createPdf(dd: TDocumentDefinitions): { download(name?: string): void; getBlob(cb: (b: Blob) => void): void; getBuffer(cb: (b: Uint8Array) => void): void };
   vfs?: Record<string, string>;
   addVirtualFileSystem?: (vfs: Record<string, string>) => void;
 };
@@ -82,8 +83,7 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
           table: { widths: [45 * MM, '*'], body: n.details.map(([k, v]) => [{ text: k, color: '#555555' }, { text: v }]) },
           layout: { hLineWidth: () => 0, vLineWidth: () => 0, paddingTop: () => 3, paddingBottom: () => 3, paddingLeft: () => 0 },
         } as Content);
-      if (n.pageBreakAfter) out.push({ text: '', pageBreak: 'after' });
-      return out;
+      return out; // a title page's page break is applied to the content that follows (see toPdfDefinition)
     }
     case 'h':
       return [{ text: `${n.number ? `${n.number}  ` : ''}${n.text}`, style: `h${n.level}`, headlineLevel: n.level } as Content];
@@ -94,13 +94,34 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
     case 'note':
       return [{ text: n.text, style: 'note' }];
     case 'pagebreak':
-      return [{ text: '', pageBreak: 'after' }];
+      return []; // applied to the content that follows (see toPdfDefinition)
     case 'image': {
       const w = Math.min(n.widthCm * 10 * MM, contentWidthPt);
       const out: Content[] = [];
       if (n.dataUrl) out.push({ image: n.dataUrl, width: w, margin: [0, 4, 0, 2] });
       if (n.caption) out.push({ text: n.caption, style: 'caption' });
       return [{ stack: out, unbreakable: true } as Content];
+    }
+    case 'figures': {
+      const gap = CHART_GAP_MM * MM;
+      const max = (contentWidthPt - gap * (n.items.length - 1)) / Math.max(1, n.items.length);
+      return [
+        {
+          stack: [
+            {
+              columns: n.items.map((it) => {
+                const w = Math.min(it.widthCm * 10 * MM, max);
+                const stack: Content[] = [];
+                if (it.dataUrl) stack.push({ image: it.dataUrl, width: w, margin: [0, 4, 0, 2] });
+                if (it.caption) stack.push({ text: it.caption, style: 'caption' });
+                return { width: w, stack };
+              }),
+              columnGap: gap,
+            },
+          ],
+          unbreakable: true,
+        } as Content,
+      ];
     }
     case 'table': {
       const out: Content[] = [];
@@ -132,15 +153,51 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
   }
 }
 
+function pageWidthPt(doc: ReportDoc, o: Orientation): number {
+  const t = doc.template;
+  const [w, h] = t.pageSize === 'A3' ? [297, 420] : [210, 297];
+  return (o === 'landscape' ? h : w) * MM;
+}
+
+/**
+ * The document content. Page breaks (including a title page's) are put on the content that follows them, so
+ * that several breaks in a row never leave a blank page and a change of orientation starts the new page.
+ */
+function pdfContent(doc: ReportDoc): { content: Content[]; firstOrientation: Orientation } {
+  const t = doc.template;
+  const margin = t.marginMm * MM;
+  const out: Content[] = [];
+  let orientation: Orientation = t.orientation;
+  let firstOrientation: Orientation = t.orientation;
+  let pending = null as { orientation?: Orientation } | null;
+  for (const n of doc.nodes) {
+    if (n.t === 'pagebreak') {
+      pending = { orientation: n.orientation ?? pending?.orientation };
+      continue;
+    }
+    const o = pending?.orientation ?? orientation;
+    const items = nodeContent(n, doc, pageWidthPt(doc, o) - 2 * margin);
+    if (pending && items.length) {
+      // a break before any content just sets the orientation of the first page
+      if (out.length) items[0] = { ...(items[0] as object), pageBreak: 'before', pageOrientation: o } as Content;
+      else firstOrientation = o;
+      orientation = o;
+      pending = null;
+    }
+    out.push(...items);
+    if (n.t === 'title' && n.pageBreakAfter) pending = {};
+  }
+  return { content: out, firstOrientation };
+}
+
 export function toPdfDefinition(doc: ReportDoc): TDocumentDefinitions {
   const t = doc.template;
-  const pageW = (t.pageSize === 'A3' ? (t.orientation === 'landscape' ? 420 : 297) : t.orientation === 'landscape' ? 297 : 210) * MM;
   const margin = t.marginMm * MM;
-  const contentWidth = pageW - 2 * margin;
   const titleOnOwnPage = doc.nodes[0]?.t === 'title' && doc.nodes[0].pageBreakAfter;
+  const { content, firstOrientation } = pdfContent(doc);
   return {
     pageSize: t.pageSize,
-    pageOrientation: t.orientation,
+    pageOrientation: firstOrientation,
     pageMargins: [margin, margin + 6, margin, margin + 4],
     info: { title: doc.title, author: doc.author, creator: 'EnviroDB' },
     header: (page: number) =>
@@ -149,7 +206,7 @@ export function toPdfDefinition(doc: ReportDoc): TDocumentDefinitions {
         : ({ columns: [{ text: doc.header, alignment: 'left' }, { text: '', alignment: 'right' }], margin: [margin, margin / 2, margin, 0], fontSize: t.fontSize - 2, color: '#777777' } as Content),
     footer: (page: number, pages: number) =>
       ({ columns: [{ text: doc.footer, alignment: 'left' }, { text: `Page ${page} of ${pages}`, alignment: 'right' }], margin: [margin, 6, margin, 0], fontSize: t.fontSize - 2, color: '#777777' }) as Content,
-    content: doc.nodes.flatMap((n) => nodeContent(n, doc, contentWidth)),
+    content,
     defaultStyle: { font: 'Roboto', fontSize: t.fontSize, lineHeight: 1.2 },
     styles: {
       h1: { fontSize: t.fontSize + 5, bold: true, color: t.accent, margin: [0, 12, 0, 6] },
@@ -176,4 +233,10 @@ export async function downloadPdf(doc: ReportDoc): Promise<void> {
 export async function pdfBlob(doc: ReportDoc): Promise<Blob> {
   const pdfMake = await loadPdfMake();
   return new Promise((resolve) => pdfMake.createPdf(toPdfDefinition(doc)).getBlob(resolve));
+}
+
+/** The PDF file's bytes (used for the on-screen preview). */
+export async function pdfBytes(doc: ReportDoc): Promise<Uint8Array> {
+  const pdfMake = await loadPdfMake();
+  return new Promise((resolve) => pdfMake.createPdf(toPdfDefinition(doc)).getBuffer(resolve));
 }

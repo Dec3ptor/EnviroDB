@@ -144,12 +144,15 @@ export function obligationPresets(obligations: ReportObligation[], today = today
 }
 
 /** The report to prepare next: of the active obligations, the unsubmitted period (already ended) that is due soonest. */
+/** Earliest due first; for the same due date, the period that started first (an annual report before a quarterly one). */
+export const byDueDate = (a: ObligationPeriod, b: ObligationPeriod) => a.dueDate.localeCompare(b.dueDate) || a.periodStart.localeCompare(b.periodStart);
+
 export function nextDueReport(obligations: ReportObligation[], today = todayStr()): { obligation: ReportObligation; period: ObligationPeriod } | null {
   const due = obligations
     .filter((o) => o.active)
     .map((o) => ({ obligation: o, period: nextObligation(o, today) }))
     .filter((x): x is { obligation: ReportObligation; period: ObligationPeriod } => !!x.period && x.period.status !== 'in-progress')
-    .sort((a, b) => (a.period.dueDate < b.period.dueDate ? -1 : 1));
+    .sort((a, b) => byDueDate(a.period, b.period) || a.obligation.name.localeCompare(b.obligation.name));
   return due[0] ?? null;
 }
 

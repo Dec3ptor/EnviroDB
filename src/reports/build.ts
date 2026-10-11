@@ -1,4 +1,4 @@
-import type { GuidelineSet, Parameter, ReportBlock, ReportTemplate, Result, Sample, Settings, Site } from '../db/types';
+import type { ChartBlock, GuidelineSet, Parameter, ReportBlock, ReportTemplate, Result, Sample, Settings, Site } from '../db/types';
 import type { ProjectBundle } from '../lib/analysis';
 import { displayValue, evaluateAll, flagResults, keyParameters, statsTable, type CellFlag } from '../lib/analysis';
 import type { RuleEvaluation } from '../lib/compliance';
@@ -24,10 +24,57 @@ export interface BuildOptions {
 
 const PAGE_MM: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420] };
 
-export function usableWidthMm(t: ReportTemplate): number {
-  const [w, h] = PAGE_MM[t.pageSize] ?? PAGE_MM.A4;
-  return (t.orientation === 'landscape' ? h : w) - 2 * t.marginMm;
+export type Orientation = 'portrait' | 'landscape';
+
+/**
+ * The orientation of the pages each block is on. A page break can turn the pages from there on; a block with its
+ * own `pages` setting – for a heading, its whole section – is on pages of that orientation, then the pages turn back.
+ */
+export function pageOrientations(blocks: ReportBlock[], base: Orientation): Orientation[] {
+  let cur = base;
+  const open: Array<{ level: number; restore: Orientation }> = []; // sections with their own orientation
+  return blocks.map((b) => {
+    if (b.type === 'heading' || b.type === 'title') {
+      const level = b.type === 'heading' ? b.level : 0;
+      while (open.length && open[open.length - 1].level >= level) cur = open.pop()!.restore;
+    }
+    if (b.type === 'pageBreak' && b.orientation) cur = b.orientation;
+    if (!b.pages) return cur;
+    if (b.type !== 'heading') return b.pages; // just this block
+    open.push({ level: b.level, restore: cur });
+    cur = b.pages;
+    return cur;
+  });
 }
+
+/** Width inside the margins, in mm. */
+export function usableWidthMm(t: ReportTemplate, orientation: Orientation = t.orientation): number {
+  const [w, h] = PAGE_MM[t.pageSize] ?? PAGE_MM.A4;
+  return (orientation === 'landscape' ? h : w) - 2 * t.marginMm;
+}
+
+/** Height inside the margins, less the header and footer, in mm. */
+export function usableHeightMm(t: ReportTemplate, orientation: Orientation = t.orientation): number {
+  const [w, h] = PAGE_MM[t.pageSize] ?? PAGE_MM.A4;
+  return (orientation === 'landscape' ? w : h) - 2 * t.marginMm - 4;
+}
+
+/** Graph size in cm for a chart block on a page of the given orientation. */
+export function chartSizeCm(blk: ChartBlock, t: ReportTemplate, orientation: Orientation): { widthCm: number; heightCm: number } {
+  const width = usableWidthMm(t, orientation);
+  const size = blk.size ?? 'full';
+  if (size === 'custom') {
+    const w = Math.min(blk.widthCm * 10, width);
+    return { widthCm: w / 10, heightCm: (blk.heightCm * 10 * (w / (blk.widthCm * 10))) / 10 };
+  }
+  const aspect = blk.aspect ?? (blk.widthCm > 0 ? blk.heightCm / blk.widthCm : 0.5);
+  const w = size === 'half' ? (width - CHART_GAP_MM) / 2 : width;
+  const h = Math.min(w * aspect, usableHeightMm(t, orientation) * 0.62); // leave room for a heading and caption
+  return { widthCm: w / 10, heightCm: h / 10 };
+}
+
+/** Space between graphs placed side by side (mm). */
+export const CHART_GAP_MM = 6;
 
 function chunk<T>(list: T[], n: number): T[][] {
   const out: T[][] = [];
@@ -83,7 +130,8 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   let tableNo = 0;
   let figNo = 0;
   const nodes: DocNode[] = [];
-  const width = usableWidthMm(t);
+  let orientation: Orientation = t.orientation;
+  let width = usableWidthMm(t, orientation);
   const big = Math.max(7, t.fontSize - 2.5); // font size for large data tables
 
   const tableCaption = (s: string) => (numbering ? `Table ${++tableNo}: ${s}` : s);
@@ -405,6 +453,8 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const pids = blk.parameterIds.length ? blk.parameterIds : keyParameters(b, 6);
       const cStart = blk.range === 'all' ? undefined : blk.range === 'years' ? addDays(addMonths(end, -12 * (blk.years ?? 3)), 1) : start;
       const sets = blk.showGuidelines ? setsFor(blk.guidelineSetIds) : [];
+      const size = chartSizeCm(blk, t, orientation);
+      const figures: Array<{ dataUrl: string; widthCm: number; heightCm: number; caption?: string }> = [];
       for (const pid of pids) {
         const p = b.paramMap.get(pid);
         if (!p) continue;
@@ -412,9 +462,11 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         if (!spec.series.length) continue;
         const caption = figCaption(`${p.name} at ${listText(spec.series.map((s) => s.name))}${blk.range === 'period' ? '' : `, ${formatDate(cStart ?? spec.series[0].points[0].date)} – ${formatDate(end)}`}${blk.caption ? `. ${fill(blk.caption)}` : ''}`);
         const option = chartOption({ ...spec, subtitle: undefined, title: `${p.name} (${unitLabel(p.unit)})` }, { forExport: true });
-        const dataUrl = opts.renderChart ? opts.renderChart(option, blk.widthCm, blk.heightCm) : '';
-        nodes.push({ t: 'image', dataUrl, widthCm: blk.widthCm, heightCm: blk.heightCm, caption });
+        const dataUrl = opts.renderChart ? opts.renderChart(option, size.widthCm, size.heightCm) : '';
+        figures.push({ dataUrl, ...size, caption });
       }
+      if (blk.size === 'half') chunk(figures, 2).forEach((items) => items.length && nodes.push({ t: 'figures', items }));
+      else figures.forEach((f) => nodes.push({ t: 'image', ...f }));
     },
     siteTable: () => {
       if (!b.sites.length) return;
@@ -451,13 +503,18 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       }
       nodes.push({ t: 'table', caption: tableCaption(`Samples collected, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths: required.size ? [width * 0.1, width * 0.1, width * 0.1, width * 0.1, '*'] : [width * 0.12, width * 0.12, '*'], fontSize: t.fontSize - 1 });
     },
-    pageBreak: () => nodes.push({ t: 'pagebreak' }),
+    pageBreak: () => {}, // see below
   };
 
-  for (const blk of t.blocks) {
+  const pages = pageOrientations(t.blocks, t.orientation);
+  t.blocks.forEach((blk, i) => {
+    // a new page where the orientation changes (a page break block always starts one)
+    if (blk.type === 'pageBreak' || pages[i] !== orientation) nodes.push({ t: 'pagebreak', orientation: pages[i] });
+    orientation = pages[i];
+    width = usableWidthMm(t, orientation);
     const h = blockHandlers[blk.type] as (x: ReportBlock) => void;
     h(blk);
-  }
+  });
 
   return {
     template: t,

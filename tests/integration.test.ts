@@ -3,8 +3,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { db, DEFAULT_SETTINGS, ensureBuiltIns } from '../src/db/db';
 import { createDemoProject } from '../src/db/demo';
-import { buildIndex } from '../src/lib/dataIndex';
-import { evaluateAll, type ProjectBundle } from '../src/lib/analysis';
+import { evaluateAll } from '../src/lib/analysis';
+import { loadBundle } from './helpers';
 import { buildReport, usableWidthMm } from '../src/reports/build';
 import { toPdfDefinition } from '../src/reports/pdf';
 import { docxBlob } from '../src/reports/docx';
@@ -19,30 +19,9 @@ import { AI_PROMPTS, DEFAULT_SECTIONS, buildAiInput, csvCell, withRequest } from
 import { flagResults, pivot } from '../src/lib/analysis';
 import { applyView, DEFAULT_SORT, passesFilter } from '../src/lib/tableView';
 import { reviewCell, reviewLines, samplingRounds } from '../src/lib/latest';
+import { nextDueReport } from '../src/lib/schedule';
+import { newObligation } from '../src/db/repo';
 
-async function loadBundle(projectId: string): Promise<ProjectBundle> {
-  const project = (await db.projects.get(projectId))!;
-  const sites = (await db.sites.where('projectId').equals(projectId).toArray()).sort((a, b) => a.order - b.order);
-  const samples = (await db.samples.where('projectId').equals(projectId).toArray()).sort((a, b) => (a.date < b.date ? -1 : 1));
-  const results = await db.results.where('projectId').equals(projectId).toArray();
-  const params = (await db.parameters.toArray()).sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
-  const sets = await db.guidelineSets.toArray();
-  return {
-    project,
-    sites,
-    siteMap: new Map(sites.map((s) => [s.id, s])),
-    samples,
-    params,
-    paramMap: new Map(params.map((p) => [p.id, p])),
-    guidelineSets: sets,
-    setMap: new Map(sets.map((s) => [s.id, s])),
-    rules: (await db.rules.where('projectId').equals(projectId).toArray()).sort((a, b) => a.order - b.order),
-    notes: await db.notes.where('projectId').equals(projectId).toArray(),
-    schedules: await db.schedules.where('projectId').equals(projectId).toArray(),
-    obligations: await db.obligations.where('projectId').equals(projectId).toArray(),
-    index: buildIndex(samples, results, sites, params),
-  };
-}
 
 let projectId = '';
 beforeAll(async () => {
@@ -85,16 +64,21 @@ describe('demo project', () => {
     const b = await loadBundle(projectId);
     for (const template of BUILT_IN_TEMPLATES) {
       const doc = buildReport({ bundle: b, template, period: { start: '2023-07-01', end: '2026-06-30', label: 'all' }, settings: DEFAULT_SETTINGS });
-      const usable = usableWidthMm(template);
-      const tables = doc.nodes.filter((n) => n.t === 'table');
-      expect(tables.length).toBeGreaterThan(0);
-      for (const n of tables) {
+      // each table must fit the pages it is on (sections can be on landscape pages)
+      let usable = usableWidthMm(template);
+      let tables = 0;
+      for (const n of doc.nodes) {
+        if (n.t === 'pagebreak' && n.orientation) usable = usableWidthMm(template, n.orientation);
         if (n.t !== 'table') continue;
+        tables++;
         const fixed = n.widths.reduce<number>((s, w) => s + (typeof w === 'number' ? w : 0), 0);
         expect(fixed, `${template.name}: ${n.caption}`).toBeLessThanOrEqual(usable + 0.5);
       }
+      expect(tables).toBeGreaterThan(0);
       // pdfmake adds 3pt padding each side plus a 0.4pt rule to every column
-      const contentPt = (usable * 72) / 25.4;
+      const def = toPdfDefinition(doc);
+      const pt = (o: 'portrait' | 'landscape') => (usableWidthMm(template, o) * 72) / 25.4;
+      let contentPt = pt(def.pageOrientation ?? template.orientation);
       const walk = (x: unknown): void => {
         if (Array.isArray(x)) return x.forEach(walk);
         if (!x || typeof x !== 'object') return;
@@ -105,7 +89,10 @@ describe('demo project', () => {
         }
         if (o.stack) walk(o.stack);
       };
-      walk(toPdfDefinition(doc).content);
+      for (const item of def.content as Array<{ pageOrientation?: 'portrait' | 'landscape' }>) {
+        if (item.pageOrientation) contentPt = pt(item.pageOrientation);
+        walk(item);
+      }
     }
   });
 
@@ -132,6 +119,20 @@ describe('demo project', () => {
     const rules = await db.rules.where('projectId').equals(copyId).toArray();
     const sites = new Set((await db.sites.where('projectId').equals(copyId).toArray()).map((s) => s.id));
     expect(rules.every((r) => r.siteIds.every((id) => sites.has(id)))).toBe(true);
+  });
+});
+
+describe('report due next', () => {
+  it('picks the same report every time when two are due on the same day', async () => {
+    const [a, q] = ['tpl-annual', 'tpl-quarterly'].map((id) => newObligation(projectId, { templateId: id }));
+    // the 2025/26 annual report and the Jul–Sep 2026 quarterly summary are both due 31 Oct 2026
+    const annualOb = { ...a, firstPeriodStart: '2024-07-01', firstPeriodEnd: '2025-06-30', firstDueDate: '2025-10-31', submissions: [{ periodStart: '2024-07-01', periodEnd: '2025-06-30', submittedOn: '2025-10-20' }] };
+    const quarterlyOb = { ...q, name: 'Quarterly data summary', every: 3, unit: 'month' as const, firstPeriodStart: '2026-07-01', firstPeriodEnd: '2026-09-30', firstDueDate: '2026-10-31' };
+    for (const list of [[annualOb, quarterlyOb], [quarterlyOb, annualOb]]) {
+      const next = nextDueReport(list, '2026-10-11');
+      expect(next?.obligation.templateId).toBe('tpl-annual');
+      expect(next?.period.dueDate).toBe('2026-10-31');
+    }
   });
 });
 
