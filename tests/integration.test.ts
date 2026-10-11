@@ -18,6 +18,7 @@ import { exportProjectPackage, importProjectPackage } from '../src/db/backup';
 import { AI_PROMPTS, DEFAULT_SECTIONS, buildAiInput, csvCell, withRequest } from '../src/lib/aiInput';
 import { flagResults, pivot } from '../src/lib/analysis';
 import { applyView, DEFAULT_SORT, passesFilter } from '../src/lib/tableView';
+import { reviewCell, reviewLines, samplingRounds } from '../src/lib/latest';
 
 async function loadBundle(projectId: string): Promise<ProjectBundle> {
   const project = (await db.projects.get(projectId))!;
@@ -216,6 +217,30 @@ describe('data table sort and filter', () => {
     expect(view({ search: 'gw1' }).every((r) => r.site.code === 'GW1')).toBe(true);
     const newest = view({ sort: { key: 'date', dir: 'desc' } });
     expect(newest[0].sample.date >= newest[newest.length - 1].sample.date).toBe(true);
+  });
+});
+
+describe('latest results review', () => {
+  it('finds rounds and puts each result in the context of the site history', async () => {
+    const b = await loadBundle(projectId);
+    const rounds = samplingRounds(b);
+    expect(rounds[0].key).toBe('latest');
+    expect(rounds[0].samples.map((s) => b.siteMap.get(s.siteId)!.code)).toEqual(['US1', 'DP1', 'DS1', 'GW1']);
+    expect(rounds[1].key > rounds[2].key).toBe(true); // newest month first
+    const may24 = samplingRounds(b, 60).find((r) => r.key === '2024-05')!;
+    const dp1 = may24.samples.find((s) => b.siteMap.get(s.siteId)!.code === 'DP1')!;
+    const tss = reviewCell(b, dp1, b.paramMap.get('tss')!)!;
+    expect(tss.value).toBe(312);
+    expect([tss.unusual, tss.record]).toEqual(['high', 'high']);
+    expect(tss.previous && tss.previous.date < dp1.date).toBe(true);
+    expect(tss.usual!.n).toBeGreaterThanOrEqual(6);
+    const lines = reviewLines(tss, b.paramMap.get('tss')!, 'DP1', 'mg/L');
+    expect(lines[0]).toMatch(/^Previous: \d+ mg\/L on .+ \(\+\d+(\.\d)?%\)$/);
+    expect(lines).toContain('Highest Total Suspended Solids on record at DP1');
+    // the very first sample has no history
+    const first = b.samples.find((s) => b.siteMap.get(s.siteId)!.code === 'DP1')!;
+    const firstCell = reviewCell(b, first, b.paramMap.get('tss')!)!;
+    expect([firstCell.previous, firstCell.usual, firstCell.unusual]).toEqual([undefined, undefined, undefined]);
   });
 });
 

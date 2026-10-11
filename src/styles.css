@@ -246,3 +246,16 @@ body {
 .th-sort:hover {
   text-decoration: underline;
 }
+
+/* latest results review: unusual-for-the-site markers */
+.lr-mark {
+  font-size: 9px;
+  margin-left: 3px;
+  vertical-align: 1px;
+}
+.lr-high {
+  color: var(--mantine-color-orange-7);
+}
+.lr-low {
+  color: var(--mantine-color-blue-6);
+}

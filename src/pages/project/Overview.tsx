@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Anchor, Badge, Button, Card, Checkbox, Grid, Group, SimpleGrid, Stack, Table, Text, Title, Tooltip, useComputedColorScheme } from '@mantine/core';
+import { Anchor, Badge, Button, Card, Checkbox, Grid, Group, SegmentedControl, Select, SimpleGrid, Stack, Switch, Table, Text, Title, Tooltip, useComputedColorScheme } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconArrowRight, IconCalendarDue, IconFlask, IconShieldCheck } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { defaultPeriod, LevelBadge, PeriodPicker, RuleStatusBadge, StatTile, type PeriodValue } from '../../components/common';
-import { displayValue, evaluateAll, flagResults, keyParameters } from '../../lib/analysis';
+import { displayValue, evaluateAll, flagResults, keyParameters, type CellFlag } from '../../lib/analysis';
+import { reviewCell, reviewLines, samplingRounds, type ReviewCell } from '../../lib/latest';
 import { addMonths, daysUntil, formatDate, formatMonthYear, MONTH_SHORT, relativeDays, todayStr } from '../../lib/dates';
 import { nextObligation, OBLIGATION_STATUS } from '../../lib/schedule';
 import { buildChartSpec, chartOption } from '../../charts/timeSeries';
@@ -113,79 +114,139 @@ function Coverage() {
   );
 }
 
-function LatestResults() {
+function LatestResultsReview() {
   const data = useProject();
-  const { sites, index, paramMap, project } = data;
-  const latest = useMemo(() => {
-    return sites
-      .map((site) => {
-        const ss = data.samples.filter((s) => s.siteId === site.id);
-        return { site, sample: ss[ss.length - 1] };
-      })
-      .filter((x) => x.sample);
-  }, [sites, data.samples]);
-  const keys = useMemo(() => keyParameters(data, 10), [data]);
+  const { sites, project, siteMap } = data;
+  const rounds = useMemo(() => samplingRounds(data), [data]);
+  const [roundKey, setRoundKey] = useState('latest');
+  const [scope, setScope] = useState<'all' | 'key'>('all');
+  const [issuesOnly, setIssuesOnly] = useState(false);
+  const round = rounds.find((r) => r.key === roundKey) ?? rounds[0];
   const flags = useMemo(() => {
-    if (!latest.length) return new Map();
-    const start = latest.reduce((m, x) => (x.sample.date < m ? x.sample.date : m), latest[0].sample.date).slice(0, 10);
-    const evals = evaluateAll(data, start, todayStr());
-    return flagResults(data, evals, project.guidelineSetIds, start, todayStr());
-  }, [data, latest, project.guidelineSetIds]);
-  if (!latest.length) return null;
+    if (!round) return new Map<string, CellFlag>();
+    const dates = round.samples.map((s) => s.date.slice(0, 10)).sort();
+    const [start, end] = [dates[0], dates[dates.length - 1]];
+    return flagResults(data, evaluateAll(data, start, end), project.guidelineSetIds, start, end);
+  }, [data, round, project.guidelineSetIds]);
+  const keys = useMemo(() => new Set(keyParameters(data, 12)), [data]);
+  const table = useMemo(() => {
+    if (!round) return [];
+    const measured = new Set(round.samples.flatMap((s) => (data.index.bySample.get(s.id) ?? []).map((r) => r.parameterId)));
+    return data.params
+      .filter((p) => measured.has(p.id) && (scope === 'all' || keys.has(p.id)))
+      .map((p) => {
+        const cells = round.samples.map((s) => reviewCell(data, s, p));
+        const issue = cells.some((c) => c && (flags.has(c.result.id) || c.unusual));
+        return { p, cells, issue };
+      });
+  }, [data, round, scope, keys, flags]);
+  if (!round) return null;
+  const all = table.flatMap((t) => t.cells).filter((c): c is ReviewCell => !!c);
+  const exceed = all.filter((c) => ['limit', 'guideline'].includes(flags.get(c.result.id)?.kind ?? '')).length;
+  const check = all.filter((c) => flags.get(c.result.id)?.kind === 'check').length;
+  const unusual = all.filter((c) => c.unusual).length;
+  const rows = issuesOnly ? table.filter((t) => t.issue) : table;
   return (
     <Card>
-      <Group justify="space-between" mb="xs">
-        <Title order={4}>Latest results</Title>
+      <Group justify="space-between" align="flex-end" mb="sm" wrap="wrap" gap="sm">
+        <div>
+          <Title order={4}>Latest results</Title>
+          <Group gap={6} mt={4}>
+            <Badge color={exceed ? 'red' : 'green'} variant="light">
+              {exceed ? `${exceed} exceedance${exceed === 1 ? '' : 's'}` : 'No exceedances'}
+            </Badge>
+            {check > 0 && (
+              <Badge color="grape" variant="light">
+                {check} detection limit issue{check === 1 ? '' : 's'}
+              </Badge>
+            )}
+            <Badge color={unusual ? 'orange' : 'gray'} variant="light">
+              {unusual ? `${unusual} unusual for the site` : 'Nothing unusual'}
+            </Badge>
+          </Group>
+        </div>
+        <Group gap="sm" align="flex-end" wrap="wrap">
+          <Select aria-label="Sampling round" data={rounds.map((r) => ({ value: r.key, label: r.label }))} value={round.key} onChange={(v) => v && setRoundKey(v)} allowDeselect={false} w={260} comboboxProps={{ width: 'max-content' }} />
+          <SegmentedControl
+            value={scope}
+            onChange={(v) => setScope(v as typeof scope)}
+            data={[
+              { value: 'all', label: 'All parameters' },
+              { value: 'key', label: 'Key parameters' },
+            ]}
+          />
+          <Switch label="Only show issues" checked={issuesOnly} onChange={(e) => setIssuesOnly(e.currentTarget.checked)} />
+        </Group>
+      </Group>
+      {rows.length ? (
+        <div style={{ maxHeight: 560, overflow: 'auto', border: '1px solid var(--edb-grid)', borderRadius: 8 }}>
+          <table className="edb-grid">
+            <thead>
+              <tr>
+                <th className="sticky-col" style={{ minWidth: 150 }}>
+                  Parameter
+                </th>
+                {round.samples.map((s) => (
+                  <th key={s.id} style={{ minWidth: 84 }}>
+                    {siteMap.get(s.siteId)?.code}
+                    <div style={{ fontWeight: 400, fontSize: 11, color: 'var(--edb-muted)' }}>{formatDate(s.date)}</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ p, cells }) => {
+                const unit = unitLabel(p.unit);
+                return (
+                  <tr key={p.id}>
+                    <td className="sticky-col" style={{ whiteSpace: 'normal', maxWidth: 260 }}>
+                      {p.name} <span style={{ color: 'var(--edb-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{unit}</span>
+                    </td>
+                    {cells.map((c, i) => {
+                      const sample = round.samples[i];
+                      if (!c) return <td key={sample.id} />;
+                      const f = flags.get(c.result.id);
+                      const cls = f ? (f.kind === 'limit' ? 'hl-limit' : f.kind === 'guideline' ? 'hl-guideline' : 'hl-check') : '';
+                      const lines = [...(f?.messages ?? []), ...reviewLines(c, p, siteMap.get(sample.siteId)?.code ?? '', unit)];
+                      return (
+                        <td key={sample.id} className={`num ${cls} ${c.result.qualifier === '<' ? 'nd' : ''}`}>
+                          <Tooltip label={lines.join('\n')} multiline w={300} style={{ whiteSpace: 'pre-line' }} openDelay={150}>
+                            <span>
+                              {displayValue(c.result, p).text}
+                              {c.unusual && (
+                                <span className={`lr-mark lr-${c.unusual}`} aria-label={`unusually ${c.unusual}`}>
+                                  {c.unusual === 'high' ? '▲' : '▼'}
+                                </span>
+                              )}
+                            </span>
+                          </Tooltip>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <Text size="sm" c="dimmed">
+          {issuesOnly ? 'No issues in this round.' : 'No results in this round.'}
+        </Text>
+      )}
+      <Group justify="space-between" mt="xs" wrap="wrap" gap="xs">
+        <Text size="xs" c="dimmed">
+          Red: consent limit exceeded · Amber: trigger or guideline exceeded · Purple: detection limit above the limit · ▲▼ unusually high or low for the site (outside 90% of its earlier results). Hover a value for the previous result.
+        </Text>
         <Anchor component={Link} to={`/projects/${project.id}/data`} size="sm">
           All data
         </Anchor>
       </Group>
-      <Table.ScrollContainer minWidth={400}>
-        <table className="edb-grid">
-          <thead>
-            <tr>
-              <th className="sticky-col">Parameter</th>
-              {latest.map((l) => (
-                <th key={l.site.id}>
-                  {l.site.code}
-                  <div style={{ fontWeight: 400, fontSize: 11, color: 'var(--edb-muted)' }}>{formatDate(l.sample.date)}</div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {keys.map((pid) => {
-              const p = paramMap.get(pid);
-              if (!p) return null;
-              return (
-                <tr key={pid}>
-                  <td className="sticky-col">
-                    {p.name} <span style={{ color: 'var(--edb-muted)', fontSize: 11 }}>{unitLabel(p.unit)}</span>
-                  </td>
-                  {latest.map((l) => {
-                    const r = (index.bySample.get(l.sample.id) ?? []).find((x) => x.parameterId === pid);
-                    if (!r) return <td key={l.site.id} />;
-                    const f = flags.get(r.id);
-                    const cls = f ? (f.kind === 'limit' ? 'hl-limit' : f.kind === 'guideline' ? 'hl-guideline' : 'hl-check') : '';
-                    const cell = (
-                      <td key={l.site.id} className={`num ${cls} ${r.qualifier === '<' ? 'nd' : ''}`}>
-                        {displayValue(r, p).text}
-                      </td>
-                    );
-                    return f ? (
-                      <Tooltip key={l.site.id} label={f.messages.join('\n')}>
-                        {cell}
-                      </Tooltip>
-                    ) : (
-                      cell
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Table.ScrollContainer>
+      {sites.length > round.samples.length && roundKey === 'latest' && (
+        <Text size="xs" c="dimmed" mt={4}>
+          No results yet for {sites.filter((s) => !round.samples.some((x) => x.siteId === s.id)).map((s) => s.code).join(', ')}.
+        </Text>
+      )}
     </Card>
   );
 }
@@ -257,6 +318,7 @@ export function OverviewTab() {
           onClick={() => navigate(`/projects/${project.id}/schedule`)}
         />
       </SimpleGrid>
+      <LatestResultsReview />
       <Grid gutter="lg">
         <Grid.Col span={{ base: 12, lg: 6 }}>
           <Card h="100%">
@@ -296,10 +358,9 @@ export function OverviewTab() {
           </Card>
         </Grid.Col>
         <Grid.Col span={{ base: 12, lg: 6 }}>
-          <LatestResults />
+          <Coverage />
         </Grid.Col>
       </Grid>
-      <Coverage />
       <Trends />
       {project.description && (
         <Card>

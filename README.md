@@ -34,6 +34,9 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   compliance table, exceedances with your follow-up notes, results tables with highlighting,
   statistics, graphs, site and sampling tables, and your own text with `{{placeholders}}`).
   Reports export to **PDF** and **Word**.
+- **Review the latest results at a glance.** Each project's overview shows the latest sample at
+  every site (or any recent month) with exceedances highlighted, values that are unusual for that
+  site marked ▲/▼, and the previous result on hover.
 - **Track deadlines.** The dashboard shows upcoming reports, sampling rounds still to do,
   recent exceedances and the status of each project. Deadlines can be exported to Outlook (.ics).
 - **Set up from consent documents with AI.** Copy EnviroDB's instructions into your AI tool
