@@ -9,6 +9,7 @@ import { AI_PROMPTS, AI_SECTION_LABELS, DEFAULT_SECTIONS, approxTokens, buildAiI
 import { nextDueReport, obligationPresets } from '../lib/schedule';
 import { formatDate } from '../lib/dates';
 import { downloadBlob } from '../db/backup';
+import { copyText } from '../lib/clipboard';
 import type { ReportObligation } from '../db/types';
 
 /** Starting selection, e.g. the filters of the page the window was opened from. */
@@ -45,29 +46,6 @@ function savePrefs(p: Prefs) {
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
   } catch {
     // not remembered – fine
-  }
-}
-
-/** Copy text to the clipboard, falling back to a hidden text area where the Clipboard API is blocked. */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
-    document.body.appendChild(ta);
-    ta.select();
-    let ok = false;
-    try {
-      ok = document.execCommand('copy');
-    } catch {
-      ok = false;
-    }
-    ta.remove();
-    return ok;
   }
 }
 

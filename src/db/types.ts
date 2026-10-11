@@ -26,6 +26,8 @@ export interface Project {
   yearStartMonth: number;
   /** Percentile method for statistics: Excel PERCENTILE.INC or Hazen (NPS-FM). */
   percentileMethod: 'excel' | 'hazen';
+  /** Consent requirements EnviroDB can't check automatically (narrative conditions, notification duties …). */
+  consentNotes?: string;
   createdAt: string;
   updatedAt: string;
 }

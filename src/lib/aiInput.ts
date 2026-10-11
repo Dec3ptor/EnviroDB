@@ -4,7 +4,7 @@
 
 import type { Result, Rule } from '../db/types';
 import { evaluateAll, pivot, statsTable, type ProjectBundle } from './analysis';
-import { describeRule, siteLabel, type Exceedance, type RuleStatus } from './compliance';
+import { exceededWhen, siteLabel, type Exceedance, type RuleStatus } from './compliance';
 import { formatDate, MONTH_LONG, todayStr } from './dates';
 import { guidelineFor } from './guidelines';
 import { frequencyLabel, nextObligation, OBLIGATION_STATUS } from './schedule';
@@ -183,12 +183,6 @@ function ruleDetails(rule: Rule, b: ProjectBundle): string[] {
   return out;
 }
 
-function exceededWhen(rule: Rule, b: ProjectBundle): string {
-  if (rule.kind !== 'guideline') return describeRule(rule, b.paramMap, b.sites, b.setMap);
-  const set = rule.guidelineSetId ? b.setMap.get(rule.guidelineSetId) : undefined;
-  const where = rule.siteIds.length ? rule.siteIds.map((id) => siteLabel(b.sites, id)).join(', ') : 'any site';
-  return `a result at ${where} is above its ${set?.name ?? 'guideline'} value${rule.hardnessAdjust ? ' (hardness-modified)' : ''}`;
-}
 
 function exceedanceResult(ex: Exceedance, rule: Rule): string {
   if (rule.kind !== 'threshold' && rule.kind !== 'guideline') return ex.detail;
@@ -245,6 +239,11 @@ export function buildAiInput(b: ProjectBundle, o: AiInputOptions): AiInput {
     if (project.description) L.push(`- Description: ${oneLine(project.description)}`);
   }
   L.push(`- The reporting year starts in ${MONTH_LONG[(project.yearStartMonth || 1) - 1]}.`);
+  const other = (project.consentNotes ?? '').split('\n').map((l) => l.replace(/^[-•]\s*/, '').trim()).filter(Boolean);
+  if (other.length) {
+    L.push("- Other consent requirements (EnviroDB doesn't check these):");
+    other.forEach((l) => L.push(`  - ${redact(l)}`));
+  }
 
   section('Monitoring sites');
   L.push(
@@ -259,7 +258,7 @@ export function buildAiInput(b: ProjectBundle, o: AiInputOptions): AiInput {
     if (!scope.pairs.length) L.push(b.rules.some((r) => r.active) ? 'None apply to the selected sites and parameters.' : 'No consent conditions or triggers are set up for this project in EnviroDB.');
     scope.pairs.forEach(({ rule }, i) => {
       L.push(`${i + 1}. ${redact(rule.name)}${rule.condition ? ` (${redact(rule.condition)})` : ''} – ${rule.level}`);
-      L.push(`   - Exceeded when: ${redact(exceededWhen(rule, b))}`);
+      L.push(`   - Exceeded when: ${redact(exceededWhen(rule, b.paramMap, b.sites, b.setMap))}`);
       ruleDetails(rule, b).forEach((t) => L.push(`   - ${t}`));
       if (rule.action) L.push(`   - Required response: ${redact(oneLine(rule.action))}`);
     });

@@ -21,6 +21,7 @@ function GettingStarted() {
     { done: schedules.length > 0 || obligations.length > 0, label: 'Add sampling frequency and reporting dates', to: `${base}/schedule` },
   ];
   if (steps.every((s) => s.done)) return null;
+  const needsRules = !rules.length || (!schedules.length && !obligations.length);
   return (
     <Card>
       <Title order={4} mb="xs">
@@ -36,6 +37,15 @@ function GettingStarted() {
           </Group>
         ))}
       </Stack>
+      {needsRules && (
+        <Text size="sm" mt="sm">
+          Tip:{' '}
+          <Anchor component={Link} to={`${base}/consent-setup`}>
+            set up the limits, triggers, sampling and reporting dates from your consent with an AI tool
+          </Anchor>
+          .
+        </Text>
+      )}
     </Card>
   );
 }

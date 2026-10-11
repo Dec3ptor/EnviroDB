@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Accordion, ActionIcon, Badge, Button, Card, Group, Menu, Select, Stack, Table, Text, Textarea, Popover } from '@mantine/core';
 import { modals } from '@mantine/modals';
+import { Link } from 'react-router-dom';
 import { IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay, IconFileTypeDocx, IconSparkles } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { adhocTemplate, exportReport } from '../../reports/export';
@@ -151,6 +152,8 @@ export function ComplianceTab() {
   const evals = useMemo(() => evaluateAll(data, period.start, period.end, rules.filter((r) => r.active)), [data, period, rules]);
   const evalMap = new Map(evals.map((e) => [e.rule.id, e]));
   const exceeded = evals.filter((e) => e.status === 'exceeded').length;
+  const withData = evals.filter((e) => e.status !== 'no-data').length;
+  const checkDl = evals.filter((e) => e.status === 'inconclusive').length;
 
   const settings = useSettings();
   const [wordBusy, setWordBusy] = useState(false);
@@ -186,8 +189,14 @@ export function ComplianceTab() {
         <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} />
         <Group gap="xs">
           {rules.length > 0 && (
-            <Badge size="lg" color={exceeded ? 'red' : 'green'} variant="light">
-              {exceeded ? `${exceeded} of ${evals.length} rules exceeded` : `All ${evals.length} active rules complied`}
+            <Badge size="lg" color={exceeded ? 'red' : checkDl ? 'yellow' : withData ? 'green' : 'gray'} variant="light">
+              {exceeded
+                ? `${exceeded} of ${withData} rules with data exceeded`
+                : checkDl
+                  ? `${checkDl} rule${checkDl === 1 ? '' : 's'} to check (detection limit)`
+                  : withData
+                    ? `All ${withData} rules with data complied`
+                    : 'No data in this period'}
             </Badge>
           )}
           {rules.length > 0 && (
@@ -205,6 +214,15 @@ export function ComplianceTab() {
               <Button leftSection={<IconPlus size={16} />}>Add rule</Button>
             </Menu.Target>
             <Menu.Dropdown>
+              <Menu.Item leftSection={<IconSparkles size={16} />} component={Link} to={`/projects/${project.id}/consent-setup`}>
+                <Text size="sm" fw={500}>
+                  From consent documents (with AI)
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Have an AI tool read the consent and set up all the rules
+                </Text>
+              </Menu.Item>
+              <Menu.Divider />
               {PRESETS.map((p) => (
                 <Menu.Item key={p.label} onClick={() => addPreset(p)}>
                   <Text size="sm" fw={500}>

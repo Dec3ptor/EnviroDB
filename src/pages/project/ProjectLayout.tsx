@@ -11,6 +11,7 @@ import { ScheduleTab } from './Schedule';
 import { ReportsTab } from './Reports';
 import { SetupTab } from './Setup';
 import { ImportWizard } from '../Import';
+import { ConsentSetupPage } from './ConsentSetup';
 import { downloadProjectPackage } from '../../db/backup';
 import { AiInputModal } from '../../components/AiInputModal';
 
@@ -102,6 +103,7 @@ export function ProjectLayout() {
         <Route path="reports" element={<ReportsTab />} />
         <Route path="setup" element={<SetupTab />} />
         <Route path="import" element={<ImportWizard projectId={projectId} />} />
+        <Route path="consent-setup" element={<ConsentSetupPage />} />
       </Routes>
     </ProjectDataProvider>
   );

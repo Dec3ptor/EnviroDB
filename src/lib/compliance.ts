@@ -90,6 +90,14 @@ export function describeRule(rule: Rule, params: Map<string, Parameter>, sites: 
   }
 }
 
+/** What counts as a breach, phrased to follow "Exceeded when:". */
+export function exceededWhen(rule: Rule, params: Map<string, Parameter>, sites: Site[], sets?: Map<string, GuidelineSet>): string {
+  if (rule.kind !== 'guideline') return describeRule(rule, params, sites, sets);
+  const set = rule.guidelineSetId ? sets?.get(rule.guidelineSetId) : undefined;
+  const where = rule.siteIds.length ? rule.siteIds.map((id) => siteLabel(sites, id)).join(', ') : 'any site';
+  return `a result at ${where} is above its ${set?.name ?? 'guideline'} value${rule.hardnessAdjust ? ' (hardness-modified)' : ''}`;
+}
+
 function sitesFor(rule: Rule, ctx: EvalContext): string[] {
   const ids = rule.siteIds.length ? rule.siteIds : ctx.sites.map((s) => s.id);
   return rule.kind === 'change' ? ids.filter((id) => id !== rule.referenceSiteId) : ids;

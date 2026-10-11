@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { ActionIcon, Autocomplete, Button, Card, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Table, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { useNavigate } from 'react-router-dom';
-import { IconArchive, IconArrowDown, IconArrowUp, IconDeviceFloppy, IconPlus, IconTrash, IconListDetails } from '@tabler/icons-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { IconArchive, IconArrowDown, IconArrowUp, IconDeviceFloppy, IconPlus, IconTrash, IconListDetails, IconSparkles } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { ProjectForm } from '../Projects';
 import { deleteProject, deleteSite, newSite, saveParameter, saveProject, saveSite } from '../../db/repo';
@@ -201,6 +201,19 @@ export function SetupTab() {
   };
   return (
     <Stack gap="lg">
+      <Card style={{ borderColor: 'var(--mantine-color-teal-4)' }}>
+        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+          <div style={{ flex: '1 1 320px' }}>
+            <Title order={4}>Set up from consent documents</Title>
+            <Text size="sm" c="dimmed">
+              Let an AI tool read the consent and turn its conditions into limits, triggers, sampling schedules and reporting dates. You review everything before it's imported.
+            </Text>
+          </div>
+          <Button component={Link} to={`/projects/${project.id}/consent-setup`} leftSection={<IconSparkles size={16} />}>
+            Set up with AI
+          </Button>
+        </Group>
+      </Card>
       <Card>
         <Group justify="space-between" mb="sm">
           <Title order={4}>Project details</Title>
@@ -209,6 +222,16 @@ export function SetupTab() {
           </Button>
         </Group>
         <ProjectForm value={p} onChange={setP} />
+        <Textarea
+          mt="sm"
+          label="Other consent requirements"
+          description="Requirements EnviroDB can't check automatically, e.g. narrative conditions, event-based sampling and notification duties. Included in Copy for AI input."
+          autosize
+          minRows={2}
+          maxRows={10}
+          value={p.consentNotes ?? ''}
+          onChange={(e) => setP({ ...p, consentNotes: e.currentTarget.value })}
+        />
         <Title order={5} mt="lg" mb="xs">
           Assessment settings
         </Title>

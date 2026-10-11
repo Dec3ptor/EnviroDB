@@ -33,6 +33,11 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   Reports export to **PDF** and **Word**.
 - **Track deadlines.** The dashboard shows upcoming reports, sampling rounds still to do,
   recent exceedances and the status of each project. Deadlines can be exported to Outlook (.ics).
+- **Set up from consent documents with AI.** Copy EnviroDB's instructions into your AI tool
+  with the consent attached, paste the answer back, then check the sites, limits, triggers,
+  sampling schedules and reporting dates it found (with the consent wording beside each) and
+  import them in one go. Unclear parameters are flagged for you to choose, and the import can be
+  undone.
 - **Ask an AI tool about your data.** *Copy for AI input* packages a project's results,
   statistics, compliance assessment, consent conditions, guideline values and reporting dates
   as text you can paste into Claude, ChatGPT, Copilot or similar with your question. Ready-made
