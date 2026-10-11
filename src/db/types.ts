@@ -313,6 +313,8 @@ export interface ResultsTableBlock extends ReportBlockBase {
   splitBySite: boolean;
   /** Only these samples (quick exports of a filtered table). */
   sampleIds?: string[];
+  /** Consent values to compare with, as columns beside the guideline columns: one per level (Limit, Trigger 1 …). */
+  ruleColumns?: 'none' | 'limits' | 'all';
 }
 export interface StatsTableBlock extends ReportBlockBase {
   type: 'statsTable';
@@ -377,6 +379,8 @@ export interface ReportTemplate {
   headerText?: string;
   footerText?: string;
   logo?: string; // data URL
+  /** Height of the logo on the title page (mm); its width follows the image's proportions. */
+  logoHeightMm?: number;
   /** Number headings (1, 1.1 …) and captions (Table 1, Figure 1 …). */
   numbering?: boolean;
   blocks: ReportBlock[];

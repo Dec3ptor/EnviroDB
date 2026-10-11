@@ -47,7 +47,7 @@ function docCell(c: Cell, header: boolean, accent: string, size: number): TableC
       new Paragraph({
         alignment: c.align === 'right' ? AlignmentType.RIGHT : c.align === 'center' ? AlignmentType.CENTER : AlignmentType.LEFT,
         spacing: { before: 0, after: 0 },
-        children: [new TextRun({ text: c.text, bold: header || c.bold, italics: c.italic, color: header ? 'FFFFFF' : hex(c.color), size })],
+        children: c.text.split('\n').map((text, i) => new TextRun({ text, break: i ? 1 : undefined, bold: header || c.bold, italics: c.italic, color: header ? 'FFFFFF' : hex(c.color), size })),
       }),
     ],
   });
@@ -69,8 +69,9 @@ function nodeToDocx(n: DocNode, doc: ReportDoc, contentWidthMm: number): Array<P
     case 'title': {
       const out: Array<Paragraph | Table> = [];
       if (n.logo) {
-        const type = n.logo.startsWith('data:image/jpeg') ? 'jpg' : 'png';
-        out.push(new Paragraph({ children: [new ImageRun({ type, data: dataUrlToBytes(n.logo), transformation: { width: 220, height: 70 } })], spacing: { after: 300 } }));
+        const type = n.logo.dataUrl.startsWith('data:image/jpeg') ? 'jpg' : 'png';
+        const px = (mm: number) => Math.round((mm / 25.4) * 96); // docx sizes images in pixels at 96 dpi
+        out.push(new Paragraph({ children: [new ImageRun({ type, data: dataUrlToBytes(n.logo.dataUrl), transformation: { width: px(n.logo.widthMm), height: px(n.logo.heightMm) } })], spacing: { after: 300 } }));
       }
       out.push(new Paragraph({ spacing: { before: 1200, after: 120 }, border: { left: { style: BorderStyle.SINGLE, size: 36, color: hex(t.accent)!, space: 12 } }, children: [new TextRun({ text: n.title, bold: true, size: base + 24, color: hex(t.accent) })] }));
       if (n.subtitle) out.push(new Paragraph({ spacing: { after: 600 }, border: { left: { style: BorderStyle.SINGLE, size: 36, color: hex(t.accent)!, space: 12 } }, children: [new TextRun({ text: n.subtitle, size: base + 8, color: '333333' })] }));

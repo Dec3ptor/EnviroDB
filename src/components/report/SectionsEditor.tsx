@@ -139,7 +139,7 @@ function Row({ block, index, count, blocks, orient, base, open, readOnly, carrie
           )}
         </Group>
         {open && (
-          <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: '8px 0 0' }}>
+          <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: '8px 0 0', minWidth: 0 }}>
             <BlockForm block={block} onChange={(nb) => onBlocks(blocks.map((x) => (x.id === block.id ? nb : x)))} />
           </fieldset>
         )}

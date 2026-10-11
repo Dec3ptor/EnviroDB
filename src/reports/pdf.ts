@@ -72,7 +72,7 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
   switch (n.t) {
     case 'title': {
       const out: Content[] = [];
-      if (n.logo) out.push({ image: n.logo, fit: [70 * MM, 22 * MM], margin: [0, 0, 0, 10 * MM] });
+      if (n.logo) out.push({ image: n.logo.dataUrl, width: n.logo.widthMm * MM, height: n.logo.heightMm * MM, margin: [0, 0, 0, 10 * MM] });
       out.push({
         table: { widths: [4, '*'], body: [[{ text: '', fillColor: t.accent }, { stack: [{ text: n.title, fontSize: t.fontSize + 12, bold: true, color: t.accent }, ...(n.subtitle ? [{ text: n.subtitle, fontSize: t.fontSize + 4, color: '#333333', margin: [0, 4, 0, 0] }] : [])], margin: [10, 4, 0, 4] }]] },
         layout: 'noBorders',

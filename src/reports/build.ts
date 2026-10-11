@@ -1,4 +1,5 @@
-import type { ChartBlock, GuidelineSet, Parameter, ReportBlock, ReportTemplate, Result, Sample, Settings, Site } from '../db/types';
+import type { ChartBlock, GuidelineSet, Parameter, ReportBlock, ReportTemplate, Result, ResultsTableBlock, Rule, Sample, Settings, Site } from '../db/types';
+import { RULE_LEVELS } from '../db/types';
 import type { ProjectBundle } from '../lib/analysis';
 import { displayValue, evaluateAll, flagResults, keyParameters, statsTable, type CellFlag } from '../lib/analysis';
 import type { RuleEvaluation } from '../lib/compliance';
@@ -6,8 +7,10 @@ import { STATUS_META } from '../lib/compliance';
 import { addDays, addMonths, formatDate, formatDateLong, todayStr } from '../lib/dates';
 import { guidelineFor } from '../lib/guidelines';
 import { scheduleStep, frequencyLabel } from '../lib/schedule';
-import { unitLabel } from '../lib/units';
+import { convert, unitLabel } from '../lib/units';
+import { statLabel } from '../lib/stats';
 import { fmtNum } from '../lib/values';
+import { logoSizeMm } from '../lib/image';
 import { buildChartSpec, chartOption } from '../charts/timeSeries';
 import { FILLS, fillPlaceholders, parseMarkup, type Cell, type DocNode, type ReportDoc } from './model';
 import { CELL_PAD_MM, longestWordMm, textWidthMm } from './measure';
@@ -72,6 +75,9 @@ export function chartSizeCm(blk: ChartBlock, t: ReportTemplate, orientation: Ori
   const h = Math.min(w * aspect, usableHeightMm(t, orientation) * 0.62); // leave room for a heading and caption
   return { widthCm: w / 10, heightCm: h / 10 };
 }
+
+/** Default height of the title-page logo (mm). */
+export const DEFAULT_LOGO_MM = 12;
 
 /** Space between graphs placed side by side (mm). */
 export const CHART_GAP_MM = 6;
@@ -150,8 +156,38 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     const v = g.min !== undefined && g.max !== undefined ? `${fmtNum(g.min)}–${fmtNum(g.max)}` : g.max !== undefined ? fmtNum(g.max) : `≥${fmtNum(g.min)}`;
     return g.hardness && project.hardnessAdjust ? `${v}*` : v;
   };
-  const resultNotes = (sets: GuidelineSet[], highlight: boolean) => {
+  // Consent limits / triggers as comparison columns in results tables: one per level (Limit, Trigger 1 …)
+  const RULE_COLUMN_KINDS = new Set(['threshold', 'consecutive', 'statistic']);
+  const levelOrder = (l: string) => {
+    const i = (RULE_LEVELS as readonly string[]).indexOf(l);
+    return i < 0 ? RULE_LEVELS.length : i;
+  };
+  const tableRules = (mode: ResultsTableBlock['ruleColumns'], params: Parameter[], siteIds: string[]): Rule[] =>
+    !mode || mode === 'none'
+      ? []
+      : b.rules.filter((r) => r.active && RULE_COLUMN_KINDS.has(r.kind) && params.some((p) => p.id === r.parameterId) && (mode === 'all' || /limit/i.test(r.level)) && (!r.siteIds.length || r.siteIds.some((id) => siteIds.includes(id))));
+  const ruleLevels = (rules: Rule[]) => [...new Set(rules.map((r) => r.level))].sort((x, y) => levelOrder(x) - levelOrder(y) || x.localeCompare(y));
+  /** The consent value(s) at one level for a parameter, in the parameter's unit, e.g. "100", "6–9", "2.4\n(median)". */
+  const ruleText = (rules: Rule[], level: string, p: Parameter, siteIds: string[]) => {
+    const out: string[] = [];
+    for (const r of rules) {
+      if (r.level !== level || r.parameterId !== p.id) continue;
+      const inUnit = (x: number | undefined) => (x === undefined ? null : convert(x, r.unit || p.unit, p.unit));
+      const [lo, hi, v] = [inUnit(r.min), inUnit(r.max), inUnit(r.value)];
+      const num = r.operator === 'outside' ? (lo !== null && hi !== null ? `${fmtNum(lo)}–${fmtNum(hi)}` : '') : v === null ? '' : r.operator === '<' || r.operator === '<=' ? `≥${fmtNum(v)}` : fmtNum(v);
+      if (!num) continue;
+      const q: string[] = [];
+      if (r.kind === 'statistic') q.push(statLabel(r.statistic ?? 'mean', r.percentile));
+      if (r.kind === 'consecutive') q.push(`${r.consecutive ?? 2} in a row`);
+      if (siteIds.length > 1 && r.siteIds.length) q.push(r.siteIds.filter((id) => siteIds.includes(id)).map((id) => b.siteMap.get(id)?.code ?? '').join(', '));
+      out.push(q.length ? `${num}\n(${q.join(', ')})` : num); // the bracket on its own line keeps the column narrow
+    }
+    return [...new Set(out)].join('\n');
+  };
+  const linesWidthMm = (text: string, pt: number) => Math.max(0, ...text.split('\n').map((line) => textWidthMm(line, pt)));
+  const resultNotes = (sets: GuidelineSet[], highlight: boolean, consentBrackets = false) => {
     const n = ['“<” indicates a result below the laboratory detection limit.'];
+    if (consentBrackets) n.push('Consent values in brackets are assessed on a statistic or consecutive results, or apply only at the sites named.');
     if (highlight) n.push(`Shading: red = consent limit exceeded; amber = trigger level${sets.length ? ` or ${sets.map((s) => s.shortName).join(' / ')} guideline` : ''} exceeded; purple = detection limit above the limit.`);
     if (project.hardnessAdjust && sets.some((s) => s.values.some((v) => v.hardness))) n.push('* Hardness-dependent guideline value shown at 30 mg/L CaCO3; results were compared with hardness-modified values (ANZECC 2000) where hardness was measured.');
     return n;
@@ -172,7 +208,8 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           ['Date', formatDateLong(todayStr())],
         ] as Array<[string, string]>
       ).filter(([, v]) => v.trim());
-      nodes.push({ t: 'title', title: fill(blk.title), subtitle: fill(blk.subtitle), details: blk.showDetails ? details : [], logo: t.logo, pageBreakAfter: blk.pageBreakAfter });
+      const logo = t.logo ? { dataUrl: t.logo, ...logoSizeMm(t.logo, t.logoHeightMm ?? DEFAULT_LOGO_MM, Math.min(80, width * 0.5)) } : undefined;
+      nodes.push({ t: 'title', title: fill(blk.title), subtitle: fill(blk.subtitle), details: blk.showDetails ? details : [], logo, pageBreakAfter: blk.pageBreakAfter });
     },
     heading: (blk) => {
       const lvl = blk.level;
@@ -296,21 +333,29 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const params = paramList(blk.parameterIds, g.samples);
         if (!params.length) continue;
         const label = (i: number, n: number) => [title, g.label].filter(Boolean).join(' – ') + (n > 1 ? ` (${i + 1} of ${n})` : '');
+        // consent values for the sites in this table
+        const tableSites = [...new Set(g.samples.map((s) => s.siteId))];
+        const rules = tableRules(blk.ruleColumns, params, tableSites);
+        const levels = ruleLevels(rules).filter((l) => params.some((p) => ruleText(rules, l, p, tableSites)));
+        const consent = (l: string, p: Parameter) => ruleText(rules, l, p, tableSites);
+        const bracketed = levels.some((l) => params.some((p) => consent(l, p).includes('(')));
         if (blk.layout === 'parametersAsRows') {
           // Fixed columns sized to their content, then as many sample columns as fit.
           let paramW = clamp(Math.max(...params.map((p) => textWidthMm(p.name, pt))) + PAD, 26, 44);
           const unitW = clamp(Math.max(...params.map((p) => textWidthMm(unitLabel(p.unit), pt))) + PAD, 9, 20);
           const setW = sets.map((s) => clamp(Math.max(longestWordMm(s.shortName, pt, true), ...params.map((p) => textWidthMm(guidelineText(s, p), pt))) + PAD, 11, 22));
+          const levelW = levels.map((l) => clamp(Math.max(longestWordMm(l, pt, true), ...params.map((p) => linesWidthMm(consent(l, p), pt))) + PAD, 11, 26));
+          const compareW = [...levelW, ...setW]; // consent columns first, then the guideline columns
           const sampleNeed = Math.max(
             11,
             longestWordMm(dateHead(g.samples[0]), pt, true) + PAD,
             ...g.samples.map((s) => textWidthMm(siteCode(s.siteId), pt, true) + PAD),
             ...g.samples.flatMap((s) => params.map((p) => textWidthMm(valueCell(s, p).text, pt, true) + PAD)),
           );
-          let fixed = paramW + unitW + setW.reduce((a, x) => a + x, 0);
+          let fixed = paramW + unitW + compareW.reduce((a, x) => a + x, 0);
           if (width - fixed < sampleNeed * 2) {
             paramW = 26;
-            fixed = paramW + unitW + setW.reduce((a, x) => a + x, 0);
+            fixed = paramW + unitW + compareW.reduce((a, x) => a + x, 0);
           }
           const maxPer = Math.max(1, Math.floor((width - fixed) / sampleNeed));
           // spread samples evenly over the tables (e.g. 6 + 6 rather than 8 + 4)
@@ -318,15 +363,17 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           const parts = chunk(g.samples, per);
           parts.forEach((part, i) => {
             const sampleW = (width - fixed) / part.length > sampleNeed * 1.6 ? sampleNeed * 1.6 : (width - fixed) / part.length;
+            const compareHeads = [...levels, ...sets.map((s) => s.shortName)].map((text) => ({ text, align: 'center' as const }));
             const head: Cell[][] = blk.splitBySite
-              ? [[{ text: 'Parameter' }, { text: 'Unit' }, ...sets.map((s) => ({ text: s.shortName, align: 'center' as const })), ...part.map((s) => ({ text: dateHead(s), align: 'center' as const }))]]
+              ? [[{ text: 'Parameter' }, { text: 'Unit' }, ...compareHeads, ...part.map((s) => ({ text: dateHead(s), align: 'center' as const }))]]
               : [
-                  [{ text: 'Parameter' }, { text: 'Unit' }, ...sets.map((s) => ({ text: s.shortName, align: 'center' as const })), ...part.map((s) => ({ text: siteCode(s.siteId), align: 'center' as const }))],
-                  [{ text: '' }, { text: '' }, ...sets.map(() => ({ text: '' })), ...part.map((s) => ({ text: dateHead(s), align: 'center' as const }))],
+                  [{ text: 'Parameter' }, { text: 'Unit' }, ...compareHeads, ...part.map((s) => ({ text: siteCode(s.siteId), align: 'center' as const }))],
+                  [{ text: '' }, { text: '' }, ...compareHeads.map(() => ({ text: '' })), ...part.map((s) => ({ text: dateHead(s), align: 'center' as const }))],
                 ];
             const body: Cell[][] = params.map((p) => [
               { text: p.name },
               { text: unitLabel(p.unit) },
+              ...levels.map((l) => ({ text: consent(l, p), align: 'center' as const, fill: FILLS.guidelineRow })),
               ...sets.map((s) => ({ text: guidelineText(s, p), align: 'center' as const, fill: FILLS.guidelineRow })),
               ...part.map((s) => valueCell(s, p)),
             ]);
@@ -335,9 +382,9 @@ export function buildReport(opts: BuildOptions): ReportDoc {
               caption: tableCaption(label(i, parts.length)),
               head,
               body,
-              widths: [paramW, unitW, ...setW, ...part.map(() => sampleW)],
+              widths: [paramW, unitW, ...compareW, ...part.map(() => sampleW)],
               fontSize: pt,
-              notes: i === parts.length - 1 ? resultNotes(sets, blk.highlight) : undefined,
+              notes: i === parts.length - 1 ? resultNotes(sets, blk.highlight, bracketed) : undefined,
             });
           });
         } else {
@@ -350,6 +397,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
               11,
               longestWordMm(p.short ?? p.name, pt, true) + PAD,
               textWidthMm(unitLabel(p.unit), pt) + PAD,
+              ...levels.map((l) => linesWidthMm(consent(l, p), pt) + PAD),
               ...sets.map((s) => textWidthMm(guidelineText(s, p), pt) + PAD),
               ...g.samples.map((s) => textWidthMm(valueCell(s, p).text, pt, true) + PAD),
             ),
@@ -383,6 +431,10 @@ export function buildReport(opts: BuildOptions): ReportDoc {
               [{ text: '' }, { text: '' }, ...part.map((p) => ({ text: unitLabel(p.unit), align: 'center' as const }))],
             ];
             const body: Cell[][] = [];
+            for (const l of levels) {
+              if (!part.some((p) => consent(l, p))) continue;
+              body.push([{ text: l, colSpan: 2, italic: true, fill: FILLS.guidelineRow }, { text: '' }, ...part.map((p) => ({ text: consent(l, p), align: 'center' as const, italic: true, fill: FILLS.guidelineRow }))]);
+            }
             for (const s of sets) {
               if (!part.some((p) => guidelineFor(s, p.id, p.unit))) continue;
               body.push([{ text: s.shortName, colSpan: 2, italic: true, fill: FILLS.guidelineRow }, { text: '' }, ...part.map((p) => ({ text: guidelineText(s, p), align: 'center' as const, italic: true, fill: FILLS.guidelineRow }))]);
@@ -397,7 +449,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
               widths: [dateW, siteW, ...idx.map((k) => need[k] + extra)],
               fontSize: pt,
               keepRows: guidelineRows + 2,
-              notes: i === parts.length - 1 ? resultNotes(sets, blk.highlight) : undefined,
+              notes: i === parts.length - 1 ? resultNotes(sets, blk.highlight, bracketed) : undefined,
             });
           });
         }

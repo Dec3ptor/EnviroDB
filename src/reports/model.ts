@@ -17,7 +17,7 @@ export interface Cell {
 }
 
 export type DocNode =
-  | { t: 'title'; title: string; subtitle?: string; details: Array<[string, string]>; logo?: string; pageBreakAfter: boolean }
+  | { t: 'title'; title: string; subtitle?: string; details: Array<[string, string]>; logo?: { dataUrl: string; widthMm: number; heightMm: number }; pageBreakAfter: boolean }
   | { t: 'h'; level: 1 | 2 | 3; text: string; number?: string }
   | { t: 'p'; runs: Run[] }
   | { t: 'ul'; items: Run[][] }

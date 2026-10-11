@@ -13,9 +13,10 @@ import { PLACEHOLDERS, type ReportDoc } from '../reports/model';
 import { uid } from '../lib/ids';
 import { ProjectDataProvider, useProject } from '../hooks/useProjectData';
 import { useSettings } from '../hooks/useSettings';
-import { buildReport } from '../reports/build';
+import { buildReport, DEFAULT_LOGO_MM } from '../reports/build';
 import { PdfPreview } from '../reports/PdfPreview';
 import { SectionsEditor } from '../components/report/SectionsEditor';
+import { readImageFile } from '../lib/image';
 import { JumpToPreview } from '../components/report/JumpToPreview';
 import { hasMixedPages, samePages } from '../components/report/sections';
 import { newBlock } from '../components/report/blocks';
@@ -115,7 +116,7 @@ export function TemplateEditorPage() {
       <Grid gutter="lg">
         <Grid.Col span={{ base: 12, xl: 5 }}>
           <Stack gap="md" ref={settingsCol} style={{ scrollMarginTop: 72 }}>
-            <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: 0 }}>
+            <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
               <Card padding="md">
                 <Title order={5} mb="xs">
                   Page &amp; style
@@ -149,13 +150,14 @@ export function TemplateEditorPage() {
                       accept="image/png,image/jpeg"
                       onChange={(f) => {
                         if (!f) return;
-                        if (f.size > 1.5 * 1024 * 1024) {
-                          notifications.show({ message: 'Please use an image under 1.5 MB', color: 'orange' });
+                        if (f.size > 10 * 1024 * 1024) {
+                          notifications.show({ message: 'Please use an image under 10 MB', color: 'orange' });
                           return;
                         }
-                        const r = new FileReader();
-                        r.onload = () => setT({ ...t, logo: String(r.result) });
-                        r.readAsDataURL(f);
+                        // large images are scaled down so reports stay small; the size on the page is set below
+                        readImageFile(f)
+                          .then((logo) => setT({ ...t, logo }))
+                          .catch((e: Error) => notifications.show({ message: e.message, color: 'red' }));
                       }}
                     >
                       {(p) => (
@@ -168,6 +170,18 @@ export function TemplateEditorPage() {
                       <Button variant="subtle" size="xs" color="red" onClick={() => setT({ ...t, logo: undefined })} disabled={readOnly}>
                         Remove logo
                       </Button>
+                    )}
+                    {t.logo && (
+                      <NumberInput
+                        label="Logo height (mm)"
+                        description="Width follows the logo's shape"
+                        min={6}
+                        max={40}
+                        step={1}
+                        value={t.logoHeightMm ?? DEFAULT_LOGO_MM}
+                        onChange={(v) => setT({ ...t, logoHeightMm: Number(v) || DEFAULT_LOGO_MM })}
+                        w={150}
+                      />
                     )}
                   </Group>
                 </Stack>

@@ -38,7 +38,7 @@ const annual: ReportBlock[] = [
   { id: id('a'), type: 'heading', text: 'Exceedances', level: 2 },
   { id: id('a'), type: 'exceedances', ruleIds: [], includeGuidelines: false, includeNotes: true },
   { id: id('a'), type: 'heading', text: 'Results', level: 1 },
-  { id: id('a'), type: 'resultsTable', title: 'Monitoring results', siteIds: [], parameterIds: [], layout: 'parametersAsRows', guidelineSetIds: null, highlight: true, splitBySite: true },
+  { id: id('a'), type: 'resultsTable', title: 'Monitoring results', siteIds: [], parameterIds: [], layout: 'parametersAsRows', guidelineSetIds: null, ruleColumns: 'all', highlight: true, splitBySite: true },
   { id: id('a'), type: 'heading', text: 'Summary statistics', level: 2 },
   { id: id('a'), type: 'statsTable', title: 'Summary statistics for the period', siteIds: [], parameterIds: [], stats: ['n', 'nd', 'min', 'median', 'mean', 'max', 'exceed'] },
   { id: id('a'), type: 'heading', text: 'Graphs', level: 1 },
@@ -54,7 +54,7 @@ const quarterly: ReportBlock[] = [
   { id: id('q'), type: 'complianceTable', ruleIds: [] },
   { id: id('q'), type: 'exceedances', ruleIds: [], includeGuidelines: true, includeNotes: true },
   { id: id('q'), type: 'heading', text: 'Results', level: 1, pages: 'landscape' },
-  { id: id('q'), type: 'resultsTable', title: 'Results for the period', siteIds: [], parameterIds: [], layout: 'parametersAsColumns', guidelineSetIds: null, highlight: true, splitBySite: false },
+  { id: id('q'), type: 'resultsTable', title: 'Results for the period', siteIds: [], parameterIds: [], layout: 'parametersAsColumns', guidelineSetIds: null, ruleColumns: 'all', highlight: true, splitBySite: false },
   { id: id('q'), type: 'heading', text: 'Graphs', level: 1 },
   { id: id('q'), type: 'chart', parameterIds: [], siteIds: [], range: 'years', years: 2, showGuidelines: true, guidelineSetIds: null, showRules: true, logScale: false, size: 'full', aspect: 0.5, widthCm: 16, heightCm: 8, caption: '' },
   { id: id('q'), type: 'heading', text: 'Comments', level: 1 },
@@ -78,7 +78,7 @@ const notification: ReportBlock[] = [
 
 const appendix: ReportBlock[] = [
   { id: id('d'), type: 'heading', text: 'Appendix – Monitoring data', level: 1 },
-  { id: id('d'), type: 'resultsTable', title: 'All results', siteIds: [], parameterIds: [], layout: 'parametersAsRows', guidelineSetIds: null, highlight: true, splitBySite: true },
+  { id: id('d'), type: 'resultsTable', title: 'All results', siteIds: [], parameterIds: [], layout: 'parametersAsRows', guidelineSetIds: null, ruleColumns: 'all', highlight: true, splitBySite: true },
   { id: id('d'), type: 'statsTable', title: 'Summary statistics', siteIds: [], parameterIds: [], stats: ['n', 'nd', 'min', 'median', 'p95', 'max', 'exceed'] },
 ];
 

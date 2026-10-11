@@ -38,7 +38,7 @@ export function newBlock(type: ReportBlockType): ReportBlock {
     case 'exceedances':
       return { id, type, ruleIds: [], includeGuidelines: false, includeNotes: true };
     case 'resultsTable':
-      return { id, type, title: 'Monitoring results', siteIds: [], parameterIds: [], layout: 'parametersAsRows', guidelineSetIds: null, highlight: true, splitBySite: true };
+      return { id, type, title: 'Monitoring results', siteIds: [], parameterIds: [], layout: 'parametersAsRows', guidelineSetIds: null, ruleColumns: 'all', highlight: true, splitBySite: true };
     case 'statsTable':
       return { id, type, title: 'Summary statistics', siteIds: [], parameterIds: [], stats: ['n', 'nd', 'min', 'median', 'max', 'exceed'] };
     case 'chart':
@@ -57,7 +57,7 @@ export function blockSummary(b: ReportBlock): string {
     case 'text':
       return `${b.prompt ? '[filled in per report] ' : ''}${b.text.slice(0, 80)}`;
     case 'resultsTable':
-      return `${b.title ?? ''} · ${b.layout === 'parametersAsRows' ? 'parameters down' : 'dates down'}${b.splitBySite ? ' · one table per site' : ''}`;
+      return `${b.title ?? ''} · ${b.layout === 'parametersAsRows' ? 'parameters down' : 'dates down'}${b.splitBySite ? ' · one table per site' : ''}${b.ruleColumns === 'all' ? ' · with consent limits & triggers' : b.ruleColumns === 'limits' ? ' · with consent limits' : ''}`;
     case 'chart':
       return `${b.parameterIds.length ? `${b.parameterIds.length} parameters` : 'Key parameters (those with consent rules)'} · ${b.range === 'years' ? `last ${b.years} years` : b.range === 'all' ? 'all data' : 'report period'} · ${(b.size ?? 'full') === 'full' ? 'full width' : b.size === 'half' ? 'two per row' : `${b.widthCm} × ${b.heightCm} cm`}`;
     case 'pageBreak':
@@ -90,10 +90,8 @@ export function BlockForm({ block, onChange }: { block: ReportBlock; onChange: (
     case 'heading':
       return (
         <Stack gap="xs">
-          <Group grow align="flex-end">
-            <TextInput label="Heading text" value={block.text} onChange={(e) => set({ text: e.currentTarget.value })} />
-            <SegmentedControl value={String(block.level)} onChange={(v) => set({ level: Number(v) as 1 | 2 | 3 })} data={[{ value: '1', label: 'Level 1' }, { value: '2', label: 'Level 2' }, { value: '3', label: 'Level 3' }]} />
-          </Group>
+          <TextInput label="Heading text" value={block.text} onChange={(e) => set({ text: e.currentTarget.value })} />
+          <SegmentedControl fullWidth value={String(block.level)} onChange={(v) => set({ level: Number(v) as 1 | 2 | 3 })} data={[{ value: '1', label: 'Level 1' }, { value: '2', label: 'Level 2' }, { value: '3', label: 'Level 3' }]} />
           <div>
             <Text size="sm" fw={500}>
               Pages for this section
@@ -132,12 +130,30 @@ export function BlockForm({ block, onChange }: { block: ReportBlock; onChange: (
       return (
         <Stack gap="xs">
           <TextInput label="Table title" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} />
+          <SegmentedControl fullWidth value={block.layout} onChange={(v) => set({ layout: v as typeof block.layout })} data={[{ value: 'parametersAsRows', label: 'Parameters down' }, { value: 'parametersAsColumns', label: 'Samples down' }]} />
           <Group>
-            <SegmentedControl value={block.layout} onChange={(v) => set({ layout: v as typeof block.layout })} data={[{ value: 'parametersAsRows', label: 'Parameters down, samples across' }, { value: 'parametersAsColumns', label: 'Samples down, parameters across' }]} />
             <Switch label="One table per site" checked={block.splitBySite} onChange={(e) => set({ splitBySite: e.currentTarget.checked })} />
             <Switch label="Highlight exceedances" checked={block.highlight} onChange={(e) => set({ highlight: e.currentTarget.checked })} />
           </Group>
           <ParamPicker params={params} value={block.parameterIds} onChange={(v) => set({ parameterIds: v })} label="Parameters (empty = all with data)" />
+          <div>
+            <Text size="sm" fw={500}>
+              Consent values to compare with
+            </Text>
+            <Text size="xs" c="dimmed" mb={4}>
+              A column for each level in the project's consent rules (e.g. Limit, Trigger 1), beside the guideline columns.
+            </Text>
+            <SegmentedControl
+              size="xs"
+              value={block.ruleColumns ?? 'none'}
+              onChange={(v) => set({ ruleColumns: v as NonNullable<typeof block.ruleColumns> })}
+              data={[
+                { value: 'none', label: 'None' },
+                { value: 'limits', label: 'Limits' },
+                { value: 'all', label: 'Limits & triggers' },
+              ]}
+            />
+          </div>
           <Switch label="Use the project's default guideline sets" checked={block.guidelineSetIds === null} onChange={(e) => set({ guidelineSetIds: e.currentTarget.checked ? null : [] })} />
           {block.guidelineSetIds !== null && <GuidelinePicker sets={sets} value={block.guidelineSetIds} onChange={(v) => set({ guidelineSetIds: v })} label="Guideline columns" />}
         </Stack>

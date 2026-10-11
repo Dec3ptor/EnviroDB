@@ -33,8 +33,9 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   guideline values (dotted grey) drawn as lines and named in a key below the graph. Graphs export
   as high-resolution PNGs, can be copied straight into Word, or exported all at once to a
   Word document.
-- **Report** from customisable block-based templates (title page, automatic summary,
-  compliance table, exceedances with your follow-up notes, results tables with highlighting,
+- **Report** from customisable block-based templates (title page with your logo, automatic
+  summary, compliance table, exceedances with your follow-up notes, results tables with
+  guideline and consent limit / trigger columns to compare against and highlighting,
   statistics, graphs, site and sampling tables, and your own text with `{{placeholders}}`).
   Reports export to **PDF** and **Word**. The preview shows the actual PDF pages, portrait
   and landscape, so what you see is what you download.
