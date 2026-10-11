@@ -1,6 +1,6 @@
 import type { ExceedanceNote, GuidelineSet, MonitoringSchedule, Parameter, Project, ReportObligation, Result, Rule, Sample, Site } from '../db/types';
 import type { DataIndex } from './dataIndex';
-import { resultsFor } from './dataIndex';
+import { buildIndex, resultsFor } from './dataIndex';
 import { evaluateRules, type EvalContext, type RuleEvaluation } from './compliance';
 import { compareAll, describeLimit, type GuidelineHit } from './guidelines';
 import { computeStat, percentile } from './stats';
@@ -22,6 +22,30 @@ export interface ProjectBundle {
   schedules: MonitoringSchedule[];
   obligations: ReportObligation[];
   index: DataIndex;
+}
+
+/**
+ * The project limited to some sites, e.g. a groundwater report without the discharge. Results, rules and
+ * schedules are trimmed to those sites. The reference site of a "change from upstream" rule keeps its results in
+ * the index, so the rule can still be assessed, but it is not one of the sites shown.
+ */
+export function limitToSites<B extends ProjectBundle>(b: B, siteIds: string[]): B {
+  const keep = new Set(siteIds);
+  const sites = b.sites.filter((s) => keep.has(s.id));
+  const rules = b.rules
+    .filter((r) => !r.siteIds.length || r.siteIds.some((id) => keep.has(id)))
+    .map((r) => (r.siteIds.length ? { ...r, siteIds: r.siteIds.filter((id) => keep.has(id)) } : r));
+  const refs = new Set(rules.flatMap((r) => (r.kind === 'change' && r.referenceSiteId && !keep.has(r.referenceSiteId) ? [r.referenceSiteId] : [])));
+  const indexed = b.samples.filter((s) => keep.has(s.siteId) || refs.has(s.siteId));
+  return {
+    ...b,
+    sites,
+    siteMap: new Map(sites.map((s) => [s.id, s])),
+    samples: b.samples.filter((s) => keep.has(s.siteId)),
+    rules,
+    schedules: b.schedules.map((sch) => ({ ...sch, siteIds: sch.siteIds.filter((id) => keep.has(id)) })).filter((sch) => sch.siteIds.length),
+    index: buildIndex(indexed, indexed.flatMap((s) => b.index.bySample.get(s.id) ?? []), [...sites, ...b.sites.filter((s) => refs.has(s.id))], b.params),
+  };
 }
 
 export function evalContext(b: ProjectBundle, start: string, end: string): EvalContext {

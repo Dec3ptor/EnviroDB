@@ -99,6 +99,30 @@ describe('demo project', () => {
     }
   });
 
+  it('limits a whole report to chosen sites (e.g. groundwater only)', async () => {
+    const b = await loadBundle(projectId);
+    const code = (c: string) => b.sites.find((s) => s.code === c)!.id;
+    const annual = BUILT_IN_TEMPLATES.find((x) => x.id === 'tpl-annual')!;
+    const period = { start: '2025-07-01', end: '2026-06-30', label: '2025/26' };
+    const doc = buildReport({ bundle: b, template: annual, period, settings: DEFAULT_SETTINGS, siteIds: [code('GW1')] });
+    const tables = doc.nodes.filter((n): n is Extract<typeof n, { t: 'table' }> => n.t === 'table');
+    const text = JSON.stringify(doc.nodes);
+    // every table and the summary are about GW1 only
+    expect(tables.filter((t) => /Monitoring results/.test(t.caption ?? '')).map((t) => t.caption)).toEqual([expect.stringContaining('GW1')]);
+    expect(tables.find((t) => t.caption?.includes('Monitoring sites'))!.body.map((r) => r[0].text)).toEqual(['GW1']);
+    expect(tables.find((t) => t.caption?.includes('Compliance with consent'))!.body.map((r) => r[0].text)).toEqual(['Condition 14']); // the groundwater ammonia trigger
+    for (const other of ['DP1', 'DS1', 'US1']) expect(text).not.toContain(other);
+    expect((doc.nodes.find((n) => n.t === 'title') as { details: Array<[string, string]> }).details).toContainEqual(['Sites covered', 'GW1']);
+    // a downstream rule is still assessed against an upstream site that isn't in the report
+    const ds = buildReport({ bundle: b, template: annual, period, settings: DEFAULT_SETTINGS, siteIds: [code('DS1')] });
+    const comp = ds.nodes.find((n): n is Extract<typeof n, { t: 'table' }> => n.t === 'table' && !!n.caption?.includes('Compliance with consent'))!;
+    const turbidity = comp.body.find((r) => r[0].text === 'Condition 10')!;
+    expect(turbidity.at(-1)!.text).toBe('Exceeded');
+    // every site chosen = the normal report
+    const all = buildReport({ bundle: b, template: annual, period, settings: DEFAULT_SETTINGS, siteIds: b.sites.map((s) => s.id) });
+    expect((all.nodes.find((n) => n.t === 'title') as { details: Array<[string, string]> }).details.map(([k]) => k)).not.toContain('Sites covered');
+  });
+
   it('limits a results table to chosen samples (filtered Data tab exports)', async () => {
     const b = await loadBundle(projectId);
     const dp1 = b.sites.find((s) => s.code === 'DP1')!;

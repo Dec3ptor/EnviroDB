@@ -39,6 +39,10 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   statistics, graphs, site and sampling tables, and your own text with `{{placeholders}}`).
   Reports export to **PDF** and **Word**. The preview shows the actual PDF pages, portrait
   and landscape, so what you see is what you download.
+- **Choose the sites a report covers.** On the Reports tab, tap sites in or out, or pick *Groundwater
+  only* (or any other site type), so a groundwater report has no effluent results. Every table, graph,
+  compliance check and summary follows, the title page lists the sites covered, and the choice is
+  remembered for that reporting obligation.
 - **Change a report's layout on the spot.** On the Reports tab, *Edit layout* lets you drag
   sections into a new order (a heading takes its whole section with it), add, duplicate or
   remove sections, graphs and tables, start a section on a new page, and put the whole
@@ -103,7 +107,7 @@ stored by that provider, so check with your IT / data-governance team first.
 
 | Layout | Example | Notes |
 | --- | --- | --- |
-| Lab certificate (samples across, analytes down) | Hill Labs Excel results | Detects the `Sample Name` / `Lab Number` rows, units column and section headings (e.g. *Heavy metals, dissolved*). Sampling dates come from a *Date Sampled* row, or from the sample name (`SW1 12-Mar-2024 10:30 am`). |
+| Lab certificate (samples across, analytes down) | Hill Labs Excel results and CSV exports (`…-SSFC-1.csv`) | Detects the `Sample Name` / `Lab Number` rows, the analyte and units columns and section headings (e.g. *Heavy metals, dissolved*). Sampling dates come from a *Date Sampled* row, or from the sample name (`SW1 12-Mar-2024 10:30 am`, `W1 28-Sept-2026 9:40 am`). The lab's numbered comments (`< 2 #1`) are saved with the sample. |
 | Monitoring spreadsheet (one row per sample) | Master sheets | Header row, optional units row, date (and time) columns, and the site from a column, the sheet name or a fixed value. Guideline / statistics rows without a valid date are skipped automatically. Dates-across-columns sheets are supported too. |
 | Long table (one row per result) | LIMS / database exports | Columns such as Site, Date, Analyte, Result, Units, Detection limit. |
 

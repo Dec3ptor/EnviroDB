@@ -1,7 +1,7 @@
 import type { ChartBlock, GuidelineSet, Parameter, ReportBlock, ReportTemplate, Result, ResultsTableBlock, Rule, Sample, Settings, Site } from '../db/types';
 import { RULE_LEVELS } from '../db/types';
 import type { ProjectBundle } from '../lib/analysis';
-import { displayValue, evaluateAll, flagResults, keyParameters, statsTable, type CellFlag } from '../lib/analysis';
+import { displayValue, evaluateAll, flagResults, keyParameters, limitToSites, statsTable, type CellFlag } from '../lib/analysis';
 import type { RuleEvaluation } from '../lib/compliance';
 import { STATUS_META } from '../lib/compliance';
 import { addDays, addMonths, formatDate, formatDateLong, todayStr } from '../lib/dates';
@@ -23,6 +23,8 @@ export interface BuildOptions {
   promptTexts?: Record<string, string>;
   /** Render graphs (needs a browser). When false a placeholder is inserted. */
   renderChart?: (option: ReturnType<typeof chartOption>, widthCm: number, heightCm: number) => string;
+  /** Only these monitoring sites (unset or empty: every site), e.g. a groundwater report without the discharge. */
+  siteIds?: string[];
 }
 
 const PAGE_MM: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420] };
@@ -96,7 +98,9 @@ function listText(items: string[]): string {
 }
 
 export function buildReport(opts: BuildOptions): ReportDoc {
-  const { bundle: b, template: t, period, settings } = opts;
+  const { template: t, period, settings } = opts;
+  const subset = !!opts.siteIds?.length && opts.siteIds.length < opts.bundle.sites.length;
+  const b = subset ? limitToSites(opts.bundle, opts.siteIds!) : opts.bundle;
   const { start, end } = period;
   const project = b.project;
   const evals = evaluateAll(b, start, end);
@@ -203,6 +207,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           ['Regulator', project.regulator ?? ''],
           ['Location', project.location ?? ''],
           ['Reporting period', `${formatDateLong(start)} – ${formatDateLong(end)}`],
+          ['Sites covered', subset ? b.sites.map((s) => s.code).join(', ') : ''],
           ['Prepared by', fill(blk.preparedBy)],
           ['Reviewed by', fill(blk.reviewedBy)],
           ['Date', formatDateLong(todayStr())],
@@ -510,7 +515,10 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       for (const pid of pids) {
         const p = b.paramMap.get(pid);
         if (!p) continue;
-        const spec = buildChartSpec({ index: b.index, param: p, sites: b.sites, siteIds: blk.siteIds, start: cStart, end, guidelineSets: sets, rules: b.rules, showRules: blk.showRules, log: blk.logScale });
+        // all of the project's sites for the colours, so a site keeps its colour when others are left out
+        const chartSites = (blk.siteIds.length ? blk.siteIds : b.sites.map((s) => s.id)).filter((id) => b.siteMap.has(id));
+        if (!chartSites.length) continue;
+        const spec = buildChartSpec({ index: b.index, param: p, sites: opts.bundle.sites, siteIds: chartSites, start: cStart, end, guidelineSets: sets, rules: b.rules, showRules: blk.showRules, log: blk.logScale });
         if (!spec.series.length) continue;
         const caption = figCaption(`${p.name} at ${listText(spec.series.map((s) => s.name))}${blk.range === 'period' ? '' : `, ${formatDate(cStart ?? spec.series[0].points[0].date)} – ${formatDate(end)}`}${blk.caption ? `. ${fill(blk.caption)}` : ''}`);
         const option = chartOption({ ...spec, subtitle: undefined, title: `${p.name} (${unitLabel(p.unit)})` }, { forExport: true, width: Math.round((size.widthCm / 2.54) * 96) });

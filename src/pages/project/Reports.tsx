@@ -21,6 +21,7 @@ import type { ReportTemplate, TextBlock } from '../../db/types';
 import { SectionsEditor } from '../../components/report/SectionsEditor';
 import { PagesControl } from '../../components/report/PagesControl';
 import { JumpToPreview } from '../../components/report/JumpToPreview';
+import { ReportSites } from '../../components/report/ReportSites';
 
 const same = (a: ReportTemplate, b: ReportTemplate) => JSON.stringify({ ...a, updatedAt: '' }) === JSON.stringify({ ...b, updatedAt: '' });
 
@@ -123,6 +124,29 @@ export function ReportsTab() {
     notifications.show({ color: 'teal', message: `“${stored.name}” updated` });
   };
 
+  // The sites the report covers (e.g. a groundwater report without the discharge): remembered for the reporting
+  // obligation when the period is one of its periods, otherwise for the template.
+  const oblId = period.key.startsWith('obl:') ? period.key.split(':')[1] : null;
+  const sitesKey = stored ? `sites:${project.id}:${oblId ?? stored.id}` : '';
+  const [siteSel, setSiteSel] = useState<{ key: string; ids: string[] } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    if (sitesKey) void db.meta.get(sitesKey).then((r) => alive && setSiteSel(r ? { key: sitesKey, ids: r.value as string[] } : null));
+    return () => {
+      alive = false;
+    };
+  }, [sitesKey]);
+  const chosenSites = useMemo(() => {
+    const ids = siteSel && siteSel.key === sitesKey ? siteSel.ids.filter((id) => data.siteMap.has(id)) : [];
+    return ids.length && ids.length < data.sites.length ? ids : null; // null = every site
+  }, [siteSel, sitesKey, data.siteMap, data.sites.length]);
+  const chooseSites = (ids: string[]) => {
+    if (!sitesKey) return;
+    const all = !ids.length || ids.length >= data.sites.length;
+    setSiteSel(all ? null : { key: sitesKey, ids });
+    void (all ? db.meta.delete(sitesKey) : db.meta.put({ key: sitesKey, value: ids }));
+  };
+
   const [tab, setTab] = useState<string | null>('report');
   const settingsCard = useRef<HTMLDivElement>(null);
   const previewCard = useRef<HTMLDivElement>(null);
@@ -148,20 +172,20 @@ export function ReportsTab() {
     setBuilding(true);
     const h = setTimeout(() => {
       try {
-        setDoc(buildReport({ bundle: data, template, period, settings, promptTexts: prompts, renderChart: (opt, w, hh) => renderChartPng(opt, cmToPx(w), cmToPx(hh), 1.5) }));
+        setDoc(buildReport({ bundle: data, template, period, settings, promptTexts: prompts, siteIds: chosenSites ?? undefined, renderChart: (opt, w, hh) => renderChartPng(opt, cmToPx(w), cmToPx(hh), 1.5) }));
       } finally {
         setBuilding(false);
       }
     }, 600);
     return () => clearTimeout(h);
-  }, [data, template, period, settings, prompts]);
+  }, [data, template, period, settings, prompts, chosenSites]);
 
   const [busy, setBusy] = useState<'pdf' | 'docx' | null>(null);
   const exportDoc = async (kind: 'pdf' | 'docx') => {
     if (!template) return;
     setBusy(kind);
     try {
-      await exportReport(kind, { bundle: data, template, period, settings, promptTexts: prompts });
+      await exportReport(kind, { bundle: data, template, period, settings, promptTexts: prompts, siteIds: chosenSites ?? undefined });
     } catch (e) {
       notifications.show({ title: 'Export failed', message: (e as Error).message, color: 'red' });
     } finally {
@@ -245,6 +269,7 @@ export function ReportsTab() {
                     description={stored.description}
                   />
                   <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} extra={oblPresets} width="100%" />
+                  <ReportSites sites={data.sites} chosen={chosenSites} onChange={chooseSites} rememberedFor={obligation ? `“${obligation.name}”` : 'this template'} />
                   {orientationControl}
                   {editedBanner}
                   <Stack gap={6}>
