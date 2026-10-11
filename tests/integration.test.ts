@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { db, DEFAULT_SETTINGS, ensureBuiltIns } from '../src/db/db';
 import { createDemoProject } from '../src/db/demo';
 import { buildIndex } from '../src/lib/dataIndex';
@@ -15,6 +15,7 @@ import { buildParamIndex, matchParameter, matchSite } from '../src/lib/matching'
 import { analyteMapKey } from '../src/importers/model';
 import { commitImport } from '../src/importers/commit';
 import { exportProjectPackage, importProjectPackage } from '../src/db/backup';
+import { AI_PROMPTS, DEFAULT_SECTIONS, buildAiInput, csvCell, withRequest } from '../src/lib/aiInput';
 
 async function loadBundle(projectId: string): Promise<ProjectBundle> {
   const project = (await db.projects.get(projectId))!;
@@ -117,6 +118,67 @@ describe('demo project', () => {
     const rules = await db.rules.where('projectId').equals(copyId).toArray();
     const sites = new Set((await db.sites.where('projectId').equals(copyId).toArray()).map((s) => s.id));
     expect(rules.every((r) => r.siteIds.every((id) => sites.has(id)))).toBe(true);
+  });
+});
+
+describe('copy for AI input', () => {
+  const opts = { start: '2025-07-01', end: '2026-06-30', siteIds: [] as string[], paramIds: [] as string[], sections: DEFAULT_SECTIONS, hideNames: false, today: '2026-10-11' };
+
+  it('packages the project, conditions, compliance, guidelines, statistics and results', async () => {
+    const b = await loadBundle(projectId);
+    const pack = buildAiInput(b, opts);
+    const t = pack.text;
+    if (process.env.AI_INPUT_DUMP) writeFileSync(process.env.AI_INPUT_DUMP, withRequest(t, AI_PROMPTS[1].text));
+    expect(t.startsWith('# Environmental monitoring data – Demo – Kōwhai Quarry stormwater discharge\n')).toBe(true);
+    for (const h of ['## How to read this data', '## Project', '## Monitoring sites', '## Consent conditions and triggers', '## Compliance assessment', '### Exceedances', '## Guideline values', '## Summary statistics', '## Monitoring schedule', '## Reporting obligations', '## Results'])
+      expect(t, h).toContain(h);
+    expect(t).toContain('Exceeded when: Total Suspended Solids > 100 mg/L at DP1');
+    expect(t).toContain('The change is the percentage increase over the US1 result from the same day.');
+    expect(t).toMatch(/\| Discharge TSS limit \(Condition 8\(a\)\) \| Limit \| Exceeded \| \d+ of 12 results exceeded \(DP1\)/);
+    expect(t).toMatch(/\| 2026-03-\d\d \d\d:\d\d \| DP1 \| Total Suspended Solids \| 141 mg\/L \| > 100 mg\/L \| Discharge TSS limit \|/);
+    expect(t).toContain('Exceeded when: a result at DS1 is above its ANZG (2018) Freshwater – 95% species protection value (hardness-modified)');
+    expect(t).toContain('| Dissolved Zinc | 0.008* | mg/L |');
+
+    // one CSV row per sample, every row with the same number of columns
+    const csv = t.slice(t.indexOf('## Results'));
+    const lines = csv.slice(csv.indexOf('```csv') + 7, csv.lastIndexOf('```')).trim().split('\n');
+    expect(lines[0].startsWith('site,date,pH (pH units),')).toBe(true);
+    expect(lines.length - 1).toBe(pack.samples);
+    const cols = lines[0].split(',').length;
+    expect(lines.every((l) => l.split(',').length === cols)).toBe(true);
+    expect(lines.some((l) => /,<0\.000\d/.test(l))).toBe(true); // non-detects keep "<"
+    const periodSamples = b.samples.filter((s) => s.date >= opts.start && s.date.slice(0, 10) <= opts.end).length;
+    expect(pack.samples).toBe(periodSamples);
+  });
+
+  it('leaves out names and limits to the selected sites', async () => {
+    const b = await loadBundle(projectId);
+    const ds1 = b.sites.find((s) => s.code === 'DS1')!;
+    const t = buildAiInput(b, { ...opts, hideNames: true, siteIds: [ds1.id] }).text;
+    for (const name of ['Kōwhai', 'Demo Aggregates', 'AUTH-123456', 'Demo Regional Council', 'Sediment pond', 'DEMO-001']) expect(t, name).not.toContain(name);
+    expect(t.startsWith('# Environmental monitoring data\n')).toBe(true);
+    expect(t).not.toContain('Discharge TSS limit'); // DP1-only condition
+    expect(t).toContain('Turbidity increase downstream');
+    const csv = t.slice(t.indexOf('## Results'));
+    const rows = csv.slice(csv.indexOf('```csv') + 7, csv.lastIndexOf('```')).trim().split('\n').slice(1);
+    expect(rows.length).toBeGreaterThan(5);
+    expect(rows.every((r) => r.startsWith('DS1,'))).toBe(true);
+
+    // names typed into free text (conditions, actions, schedules) are replaced too
+    const named = { ...b, rules: b.rules.map((r) => (r.name === 'Discharge TSS limit' ? { ...r, action: 'Notify Demo Regional Council and check the sediment pond outlet.' } : r)) };
+    const t2 = buildAiInput(named, { ...opts, hideNames: true }).text;
+    expect(t2).toContain('Required response: Notify [regulator] and check the DP1.');
+  });
+
+  it('includes only the chosen sections and appends the request last', async () => {
+    const b = await loadBundle(projectId);
+    const sections = { results: false, stats: true, compliance: false, rules: false, guidelines: false, schedule: false };
+    const t = withRequest(buildAiInput(b, { ...opts, sections }).text, '  Which site has the highest zinc?  ');
+    expect(t).toContain('## Summary statistics');
+    for (const h of ['## Results', '## Compliance assessment', '## Consent conditions', '## Guideline values', '## Monitoring schedule']) expect(t, h).not.toContain(h);
+    expect(t.endsWith('## My request\nWhich site has the highest zinc?\n')).toBe(true);
+    expect(csvCell('a,b')).toBe('"a,b"');
+    expect(csvCell('say "hi"')).toBe('"say ""hi"""');
   });
 });
 

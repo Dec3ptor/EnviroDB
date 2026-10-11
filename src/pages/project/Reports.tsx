@@ -8,8 +8,8 @@ import { db } from '../../db/db';
 import { useProject } from '../../hooks/useProjectData';
 import { useSettings } from '../../hooks/useSettings';
 import { PeriodPicker, defaultPeriod, type PeriodValue } from '../../components/common';
-import { nextObligation, obligationPeriods, obligationPeriod } from '../../lib/schedule';
-import { formatDate, todayStr, type Period } from '../../lib/dates';
+import { nextDueReport, obligationPeriod, obligationPresets } from '../../lib/schedule';
+import { formatDate, todayStr } from '../../lib/dates';
 import { buildReport } from '../../reports/build';
 import { ReportPreview } from '../../reports/html';
 import type { ReportDoc } from '../../reports/model';
@@ -25,14 +25,7 @@ export function ReportsTab() {
   const templates = useLiveQuery(() => db.templates.toArray(), []);
   const [params] = useSearchParams();
 
-  const oblPresets = useMemo(() => {
-    const out: Array<Period & { key: string; obligationId: string; index: number }> = [];
-    for (const o of obligations) {
-      const ps = obligationPeriods(o, todayStr()).slice(-4).reverse();
-      for (const p of ps) out.push({ key: `obl:${o.id}:${p.index}`, start: p.periodStart, end: p.periodEnd, label: `${o.name}: ${formatDate(p.periodStart)} – ${formatDate(p.periodEnd)}`, obligationId: o.id, index: p.index });
-    }
-    return out;
-  }, [obligations]);
+  const oblPresets = useMemo(() => obligationPresets(obligations), [obligations]);
 
   const [initial] = useState(() => {
     const oId = params.get('obligation');
@@ -45,14 +38,10 @@ export function ReportsTab() {
     const s = params.get('start'), e = params.get('end');
     if (s && e) return { period: { key: 'custom', start: s, end: e, label: `${formatDate(s)} – ${formatDate(e)}` }, templateId: params.get('template') ?? undefined };
     // default: the report that is due next (unsubmitted and whose period has ended)
-    const next = obligations
-      .filter((o) => o.active)
-      .map((o) => ({ o, n: nextObligation(o) }))
-      .filter((x) => x.n && x.n.status !== 'in-progress')
-      .sort((a, b) => (a.n!.dueDate < b.n!.dueDate ? -1 : 1))[0];
+    const next = nextDueReport(obligations);
     if (next) {
-      const p = next.n!;
-      return { period: { key: `obl:${next.o.id}:${p.index}`, start: p.periodStart, end: p.periodEnd, label: `${next.o.name}: ${formatDate(p.periodStart)} – ${formatDate(p.periodEnd)}` }, templateId: next.o.templateId ?? params.get('template') ?? undefined };
+      const { obligation: o, period: p } = next;
+      return { period: { key: `obl:${o.id}:${p.index}`, start: p.periodStart, end: p.periodEnd, label: `${o.name}: ${formatDate(p.periodStart)} – ${formatDate(p.periodEnd)}` }, templateId: o.templateId ?? params.get('template') ?? undefined };
     }
     return { period: defaultPeriod(project.yearStartMonth, 'lastRy'), templateId: params.get('template') ?? undefined };
   });

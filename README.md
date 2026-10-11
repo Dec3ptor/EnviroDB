@@ -33,6 +33,11 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   Reports export to **PDF** and **Word**.
 - **Track deadlines.** The dashboard shows upcoming reports, sampling rounds still to do,
   recent exceedances and the status of each project. Deadlines can be exported to Outlook (.ics).
+- **Ask an AI tool about your data.** *Copy for AI input* packages a project's results,
+  statistics, compliance assessment, consent conditions, guideline values and reporting dates
+  as text you can paste into Claude, ChatGPT, Copilot or similar with your question. Ready-made
+  requests cover trend tests, upstream/downstream comparisons, data checks and drafting report
+  text. EnviroDB doesn't send anything itself, and names can be left out.
 
 ## Where is the data stored? (the "database")
 

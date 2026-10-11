@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { Badge, Button, Group, Menu, Stack, Tabs, Text, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent } from '@tabler/icons-react';
+import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles } from '@tabler/icons-react';
 import { ProjectDataProvider, useProject } from '../../hooks/useProjectData';
 import { OverviewTab } from './Overview';
 import { DataTab } from './Data';
@@ -11,6 +12,7 @@ import { ReportsTab } from './Reports';
 import { SetupTab } from './Setup';
 import { ImportWizard } from '../Import';
 import { downloadProjectPackage } from '../../db/backup';
+import { AiInputModal } from '../../components/AiInputModal';
 
 const TABS = [
   { value: 'overview', label: 'Overview', icon: IconLayoutDashboard },
@@ -28,6 +30,7 @@ function Header() {
   const loc = useLocation();
   const base = `/projects/${project.id}`;
   const current = loc.pathname.slice(base.length + 1).split('/')[0] || 'overview';
+  const [aiOpen, setAiOpen] = useState(false);
   return (
     <Stack gap="sm" mb="md">
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
@@ -49,6 +52,9 @@ function Header() {
           </Button>
           <Button component={Link} to={`${base}/reports`} variant="light" leftSection={<IconFileReport size={16} />}>
             Generate report
+          </Button>
+          <Button variant="default" leftSection={<IconSparkles size={16} />} onClick={() => setAiOpen(true)}>
+            Copy for AI input
           </Button>
           <Menu position="bottom-end">
             <Menu.Target>
@@ -76,6 +82,7 @@ function Header() {
           ))}
         </Tabs.List>
       </Tabs>
+      <AiInputModal opened={aiOpen} onClose={() => setAiOpen(false)} />
     </Stack>
   );
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Accordion, ActionIcon, Badge, Button, Card, Group, Menu, Select, Stack, Table, Text, Textarea, Popover } from '@mantine/core';
 import { modals } from '@mantine/modals';
-import { IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay, IconFileTypeDocx } from '@tabler/icons-react';
+import { IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay, IconFileTypeDocx, IconSparkles } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
@@ -15,6 +15,7 @@ import { deleteRule, newRule, saveNote, saveRule } from '../../db/repo';
 import type { ExceedanceNote, ReportBlock, Rule } from '../../db/types';
 import type { Exceedance, RuleEvaluation } from '../../lib/compliance';
 import { RuleEditor } from './RuleEditor';
+import { AiInputModal } from '../../components/AiInputModal';
 import { uid } from '../../lib/ids';
 
 type Preset = { label: string; description: string; make: (projectId: string) => Rule[] };
@@ -153,6 +154,7 @@ export function ComplianceTab() {
 
   const settings = useSettings();
   const [wordBusy, setWordBusy] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const exportWord = async () => {
     setWordBusy(true);
     try {
@@ -191,6 +193,11 @@ export function ComplianceTab() {
           {rules.length > 0 && (
             <Button variant="default" leftSection={<IconFileTypeDocx size={16} />} loading={wordBusy} onClick={exportWord}>
               Word
+            </Button>
+          )}
+          {rules.length > 0 && (
+            <Button variant="default" leftSection={<IconSparkles size={16} />} onClick={() => setAiOpen(true)}>
+              Copy for AI input
             </Button>
           )}
           <Menu position="bottom-end" width={360}>
@@ -300,6 +307,7 @@ export function ComplianceTab() {
         </Text>
       </Card>
       {editing && <RuleEditor key={editing.id} rule={editing} onClose={() => setEditing(null)} period={period} />}
+      <AiInputModal opened={aiOpen} onClose={() => setAiOpen(false)} start={{ period }} />
     </Stack>
   );
 }

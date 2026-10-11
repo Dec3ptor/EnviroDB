@@ -1,5 +1,5 @@
 import type { MonitoringSchedule, ReportObligation, ReportSubmission, Result, Sample } from '../db/types';
-import { addDays, addMonths, addMonthsEom, daysBetween, todayStr } from './dates';
+import { addDays, addMonths, addMonthsEom, daysBetween, formatDate, todayStr } from './dates';
 
 // ------------------------------------------------------------ monitoring schedules
 
@@ -130,6 +130,27 @@ export function nextObligation(ob: ReportObligation, today = todayStr()): Obliga
     return obligationPeriod(ob, periods.length, today);
   }
   return open[0];
+}
+
+/** Recent reporting periods of each obligation (newest first), as presets for period pickers. */
+export function obligationPresets(obligations: ReportObligation[], today = todayStr()) {
+  const out: Array<{ key: string; start: string; end: string; label: string; obligationId: string; index: number }> = [];
+  for (const o of obligations) {
+    for (const p of obligationPeriods(o, today).slice(-4).reverse()) {
+      out.push({ key: `obl:${o.id}:${p.index}`, start: p.periodStart, end: p.periodEnd, label: `${o.name}: ${formatDate(p.periodStart)} – ${formatDate(p.periodEnd)}`, obligationId: o.id, index: p.index });
+    }
+  }
+  return out;
+}
+
+/** The report to prepare next: of the active obligations, the unsubmitted period (already ended) that is due soonest. */
+export function nextDueReport(obligations: ReportObligation[], today = todayStr()): { obligation: ReportObligation; period: ObligationPeriod } | null {
+  const due = obligations
+    .filter((o) => o.active)
+    .map((o) => ({ obligation: o, period: nextObligation(o, today) }))
+    .filter((x): x is { obligation: ReportObligation; period: ObligationPeriod } => !!x.period && x.period.status !== 'in-progress')
+    .sort((a, b) => (a.period.dueDate < b.period.dueDate ? -1 : 1));
+  return due[0] ?? null;
 }
 
 export const OBLIGATION_STATUS: Record<ObligationPeriod['status'], { label: string; color: string }> = {

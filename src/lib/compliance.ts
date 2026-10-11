@@ -282,7 +282,7 @@ export function evaluateRule(rule: Rule, ctx: EvalContext): RuleEvaluation {
 }
 
 function summarise(status: RuleStatus, assessed: number, ex: Exceedance[], inc: Exceedance[], rule: Rule, ctx: EvalContext): string {
-  const noun = rule.kind === 'statistic' ? (assessed === 1 ? 'assessment' : 'assessments') : assessed === 1 ? 'result' : 'results';
+  const noun = rule.kind === 'statistic' ? `${statLabel(rule.statistic ?? 'mean', rule.percentile)} ${assessed === 1 ? 'value' : 'values'}` : assessed === 1 ? 'result' : 'results';
   if (status === 'no-data') return 'No data in period';
   if (status === 'compliant') return `Complied – ${assessed} ${noun} assessed`;
   if (status === 'inconclusive') return `${inc.length} result${inc.length === 1 ? '' : 's'} with detection limit above the limit; otherwise complied (${assessed} assessed)`;

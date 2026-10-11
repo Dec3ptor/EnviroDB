@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconDeviceFloppy, IconFileTypeDocx } from '@tabler/icons-react';
+import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconDeviceFloppy, IconFileTypeDocx, IconSparkles } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
 import { displayValue, evaluateAll, flagResults, pivot, type PivotRow } from '../../lib/analysis';
@@ -17,6 +17,7 @@ import type { ReportBlock, Result, Sample } from '../../db/types';
 import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
 import { parseValue } from '../../lib/values';
+import { AiInputModal } from '../../components/AiInputModal';
 
 function Legend({ guidelineNames }: { guidelineNames: string[] }) {
   return (
@@ -341,6 +342,7 @@ export function DataTab() {
   const guidelineNames = setIds.map((id) => setMap.get(id)?.shortName ?? '').filter(Boolean);
   const settings = useSettings();
   const [wordBusy, setWordBusy] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const exportWord = async () => {
     setWordBusy(true);
     try {
@@ -424,6 +426,10 @@ export function DataTab() {
               <Menu.Item leftSection={<IconDownload size={16} />} onClick={() => exportPivotCsv(exportArgs)}>
                 CSV
               </Menu.Item>
+              <Menu.Divider />
+              <Menu.Item leftSection={<IconSparkles size={16} />} onClick={() => setAiOpen(true)}>
+                Copy for AI input (this period, sites and parameters)
+              </Menu.Item>
             </Menu.Dropdown>
           </Menu>
         </Group>
@@ -446,6 +452,7 @@ export function DataTab() {
       )}
       <ImportHistory />
       <SampleDrawer key={selected?.id ?? 'none'} sample={selected} onClose={() => setSelected(null)} />
+      <AiInputModal opened={aiOpen} onClose={() => setAiOpen(false)} start={{ period, siteIds, paramIds }} />
     </Stack>
   );
 }

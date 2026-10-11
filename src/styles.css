@@ -225,3 +225,13 @@ body {
   border-radius: 3px;
   display: inline-block;
 }
+
+/* "Copy for AI input" preview */
+.ai-preview {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
