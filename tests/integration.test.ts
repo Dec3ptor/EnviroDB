@@ -109,6 +109,17 @@ describe('demo project', () => {
     }
   });
 
+  it('limits a results table to chosen samples (filtered Data tab exports)', async () => {
+    const b = await loadBundle(projectId);
+    const dp1 = b.sites.find((s) => s.code === 'DP1')!;
+    const picked = b.samples.filter((s) => s.siteId === dp1.id && s.date >= '2025-07-01' && s.date < '2026-07-01').slice(0, 2);
+    const template = { ...BUILT_IN_TEMPLATES[0], blocks: [{ id: 'r', type: 'resultsTable' as const, siteIds: [], parameterIds: ['tss'], layout: 'parametersAsColumns' as const, guidelineSetIds: null, highlight: true, splitBySite: false, sampleIds: picked.map((s) => s.id) }] };
+    const doc = buildReport({ bundle: b, template, period: { start: '2025-07-01', end: '2026-06-30', label: 'x' }, settings: DEFAULT_SETTINGS });
+    const table = doc.nodes.find((n) => n.t === 'table');
+    const sampleRows = table && table.t === 'table' ? table.body.filter((row) => row[1]?.text === 'DP1') : [];
+    expect(sampleRows).toHaveLength(2);
+  });
+
   it('round-trips a project package', async () => {
     const pkg = await exportProjectPackage(projectId);
     const copyId = await importProjectPackage(pkg);
