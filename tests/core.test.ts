@@ -5,7 +5,7 @@ import { parseValue } from '../src/lib/values';
 import { percentile } from '../src/lib/stats';
 import { BUILT_IN_PARAMETERS } from '../src/data/parameters';
 import { buildParamIndex, matchParameter, matchSite } from '../src/lib/matching';
-import { hardnessModify, toInterval, verdict, verdictOutside } from '../src/lib/guidelines';
+import { guidelineInUnit, hardnessModify, plainNumber, toInterval, verdict, verdictOutside } from '../src/lib/guidelines';
 import type { Site } from '../src/db/types';
 
 describe('dates', () => {
@@ -134,5 +134,24 @@ describe('guideline comparison', () => {
     expect(hardnessModify(8, 0.85, 20)).toBe(8);
     expect(hardnessModify(8, 0.85, 90)).toBeCloseTo(8 * Math.pow(3, 0.85));
     expect(hardnessModify(8, 0.85, 1000)).toBeCloseTo(8 * Math.pow(400 / 30, 0.85));
+  });
+});
+
+describe('guideline display units', () => {
+  it('converts concentrations to the chosen unit and leaves other units alone', () => {
+    expect(guidelineInUnit({ parameterId: 'zn-d', max: 8, unit: 'µg/L' }, 'g/m³')).toEqual({ min: undefined, max: 0.008, unit: 'g/m³' });
+    expect(guidelineInUnit({ parameterId: 'b-d', max: 940, unit: 'µg/L' }, 'mg/L').max).toBeCloseTo(0.94, 12);
+    expect(guidelineInUnit({ parameterId: 'no3-n', max: 2.4, unit: 'g/m3' }, 'µg/L').max).toBeCloseTo(2400, 9);
+    expect(guidelineInUnit({ parameterId: 'ph', min: 6.5, max: 8.5, unit: 'pH' }, 'g/m³')).toEqual({ min: 6.5, max: 8.5, unit: 'pH' });
+    expect(guidelineInUnit({ parameterId: 'ecoli', max: 260, unit: 'cfu/100mL' }, 'g/m³').unit).toBe('cfu/100mL');
+    expect(guidelineInUnit({ parameterId: 'zn-d', max: 8, unit: 'µg/L' }, 'published')).toEqual({ min: undefined, max: 8, unit: 'µg/L' });
+  });
+
+  it('prints small values as plain decimals', () => {
+    expect(plainNumber(1.4 * 0.001)).toBe('0.0014');
+    expect(plainNumber(0.06 * 0.001)).toBe('0.00006');
+    expect(plainNumber(0.00023 * 0.000001)).toBe('0.00000000023');
+    expect(plainNumber(2500)).toBe('2500');
+    expect(plainNumber(undefined)).toBe('');
   });
 });

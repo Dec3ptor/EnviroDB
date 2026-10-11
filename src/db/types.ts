@@ -384,4 +384,6 @@ export interface Settings {
   defaultTemplateId?: ID;
   dateFormat: 'D MMM YYYY' | 'DD/MM/YYYY' | 'YYYY-MM-DD';
   lastBackupAt?: string;
+  /** Unit for showing guideline concentrations on the Guidelines page ('published' = as stored). */
+  guidelineUnit?: string;
 }

@@ -26,7 +26,9 @@ It runs entirely in the browser and is hosted on GitHub Pages.
 - **Compare with guidelines.** Built-in values are ANZG (2018) / ANZECC (2000) freshwater
   and marine toxicant values at 99/95/90/80 % species protection, the ANZECC NZ physical and
   chemical stressor values, and selected DWSNZ (2022) MAVs. You can also add your own
-  sets, such as site-specific trigger values, or import one from CSV/Excel.
+  sets, such as site-specific trigger values, or import one from CSV/Excel. The Guidelines page
+  can show concentrations in g/m³, mg/L or µg/L (it remembers your choice); comparisons always
+  convert units automatically.
 - **Graph** any parameter by site, with guideline and consent-limit lines. Graphs export
   as high-resolution PNGs, can be copied straight into Word, or exported all at once to a
   Word document.

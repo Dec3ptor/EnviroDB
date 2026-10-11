@@ -1,6 +1,6 @@
 import type { GuidelineSet, GuidelineValue, Parameter, Qualifier, Result } from '../db/types';
 import type { DataIndex } from './dataIndex';
-import { convert, unitLabel } from './units';
+import { convert, sameDimension, unitLabel } from './units';
 import { fmtNum } from './values';
 
 // ------------------------------------------------------------ interval logic
@@ -143,4 +143,30 @@ export function guidelineFor(set: GuidelineSet, parameterId: string, unit: strin
   const max = gv.max !== undefined ? convert(gv.max, gv.unit, unit) ?? undefined : undefined;
   if (min === undefined && max === undefined) return null;
   return { min, max, hardness: gv.hardness };
+}
+
+// ------------------------------------------------------------ display in a chosen unit
+
+/** Units guideline concentrations can be shown in. */
+export const GUIDELINE_UNITS = [
+  { value: 'published', label: 'As published' },
+  { value: 'g/m³', label: 'g/m³' },
+  { value: 'mg/L', label: 'mg/L' },
+  { value: 'µg/L', label: 'µg/L' },
+];
+
+/** A guideline value in the chosen concentration unit. Other units (pH, NTU, µS/cm, cfu…) are left as they are. */
+export function guidelineInUnit(v: GuidelineValue, unit: string): { min?: number; max?: number; unit: string } {
+  if (unit === 'published' || !v.unit || !sameDimension(v.unit, 'mg/L')) return { min: v.min, max: v.max, unit: v.unit };
+  const c = (x?: number) => (x === undefined ? undefined : convert(x, v.unit, unit) ?? x);
+  return { min: c(v.min), max: c(v.max), unit };
+}
+
+/** A number as a plain decimal (never 1e-5 style), keeping up to 6 significant figures. */
+export function plainNumber(v: number | undefined): string {
+  if (v === undefined || !Number.isFinite(v)) return '';
+  if (v === 0) return '0';
+  const s = Number(v.toPrecision(6));
+  if (Math.abs(s) >= 1e-6) return String(s);
+  return s.toFixed(Math.min(20, Math.ceil(-Math.log10(Math.abs(s))) + 5)).replace(/\.?0+$/, '');
 }

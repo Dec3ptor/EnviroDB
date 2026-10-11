@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActionIcon, Alert, Badge, Button, Card, FileButton, Grid, Group, NavLink, NumberInput, ScrollArea, Select, Stack, Switch, Table, Text, TextInput, Textarea, Title, Autocomplete } from '@mantine/core';
+import { ActionIcon, Alert, Badge, Button, Card, FileButton, Grid, Group, NavLink, NumberInput, ScrollArea, SegmentedControl, Select, Stack, Switch, Table, Text, TextInput, Textarea, Title, Autocomplete } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { modals } from '@mantine/modals';
@@ -10,15 +10,21 @@ import type { GuidelineSet, GuidelineValue } from '../db/types';
 import { deleteGuidelineSet, duplicateGuidelineSet, saveGuidelineSet } from '../db/repo';
 import { PageHeader, paramOptions } from '../components/common';
 import { COMMON_UNITS, unitLabel } from '../lib/units';
-import { fmtNum, parseValue } from '../lib/values';
+import { parseValue } from '../lib/values';
+import { GUIDELINE_UNITS, guidelineInUnit, plainNumber } from '../lib/guidelines';
+import { useSettings } from '../hooks/useSettings';
+import { saveSettings } from '../db/db';
 import { uid } from '../lib/ids';
 import { downloadBlob, safeFileName } from '../db/backup';
 import { readWorkbook, cellText, cellAt } from '../importers/workbook';
 import { buildParamIndex, matchParameter } from '../lib/matching';
 
-function exportCsv(set: GuidelineSet, names: Map<string, string>) {
+function exportCsv(set: GuidelineSet, names: Map<string, string>, unit: string) {
   const rows = [['Parameter', 'Minimum', 'Maximum', 'Unit', 'Hardness-dependent', 'Note']];
-  for (const v of set.values) rows.push([names.get(v.parameterId) ?? v.parameterId, v.min === undefined ? '' : String(v.min), v.max === undefined ? '' : String(v.max), v.unit, v.hardness ? 'yes' : '', v.note ?? '']);
+  for (const v of set.values) {
+    const d = guidelineInUnit(v, unit);
+    rows.push([names.get(v.parameterId) ?? v.parameterId, plainNumber(d.min), plainNumber(d.max), unitLabel(d.unit), v.hardness ? 'yes' : '', v.note ?? '']);
+  }
   const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
   downloadBlob(new Blob([rows.map((r) => r.map(esc).join(',')).join('\r\n')], { type: 'text/csv' }), `${safeFileName(set.name)}.csv`);
 }
@@ -29,6 +35,8 @@ export function GuidelinesPage() {
   const sets = useLiveQuery(() => db.guidelineSets.toArray(), []);
   const params = useLiveQuery(() => db.parameters.toArray(), []);
   const [q, setQ] = useState('');
+  const settings = useSettings();
+  const showUnit = settings.guidelineUnit ?? 'published';
   const names = useMemo(() => new Map((params ?? []).map((p) => [p.id, p.name])), [params]);
   const selected = sets?.find((s) => s.id === setId) ?? sets?.find((s) => s.id === 'anzg-fw-95');
   const [draft, setDraft] = useState<GuidelineSet | null>(null);
@@ -165,7 +173,7 @@ export function GuidelinesPage() {
                     </>
                   ) : (
                     <>
-                      <Button variant="default" leftSection={<IconDownload size={16} />} onClick={() => exportCsv(current, names)}>
+                      <Button variant="default" leftSection={<IconDownload size={16} />} onClick={() => exportCsv(current, names, showUnit)}>
                         CSV
                       </Button>
                       <Button
@@ -201,6 +209,17 @@ export function GuidelinesPage() {
                 <Alert variant="light" color="blue" icon={<IconInfoCircle size={16} />} mb="sm">
                   <Text size="sm">{current.notes}</Text>
                 </Alert>
+              )}
+              {!editing && (
+                <Group justify="space-between" align="center" mb="xs" wrap="wrap" gap="xs">
+                  <Text size="sm" c="dimmed">
+                    {current.values.length} value{current.values.length === 1 ? '' : 's'}
+                  </Text>
+                  <Group gap="xs" wrap="wrap">
+                    <Text size="sm">Show concentrations in</Text>
+                    <SegmentedControl size="xs" data={GUIDELINE_UNITS} value={showUnit} onChange={(v) => saveSettings({ guidelineUnit: v })} aria-label="Show concentrations in" />
+                  </Group>
+                </Group>
               )}
               <Table.ScrollContainer minWidth={640}>
                 <Table striped>
@@ -247,13 +266,13 @@ export function GuidelinesPage() {
                         <Table.Tr key={i}>
                           <Table.Td>{names.get(v.parameterId) ?? v.parameterId}</Table.Td>
                           <Table.Td ta="right" className="tabular">
-                            {fmtNum(v.min)}
+                            {plainNumber(guidelineInUnit(v, showUnit).min)}
                           </Table.Td>
                           <Table.Td ta="right" className="tabular">
                             {v.op === '>=' ? '< ' : ''}
-                            {fmtNum(v.max)}
+                            {plainNumber(guidelineInUnit(v, showUnit).max)}
                           </Table.Td>
-                          <Table.Td>{unitLabel(v.unit)}</Table.Td>
+                          <Table.Td>{unitLabel(guidelineInUnit(v, showUnit).unit)}</Table.Td>
                           <Table.Td>{v.hardness ? <Badge size="xs">H</Badge> : ''}</Table.Td>
                           <Table.Td>
                             <Text size="xs" c="dimmed">
@@ -267,9 +286,14 @@ export function GuidelinesPage() {
                 </Table>
               </Table.ScrollContainer>
               {editing && (
-                <Button mt="sm" variant="light" leftSection={<IconPlus size={16} />} onClick={() => setDraft({ ...editing, values: [...editing.values, { parameterId: 'zn-d', max: undefined, unit: 'µg/L' }] })}>
+                <Button mt="sm" variant="light" leftSection={<IconPlus size={16} />} onClick={() => setDraft({ ...editing, values: [...editing.values, { parameterId: 'zn-d', max: undefined, unit: showUnit === 'published' ? 'µg/L' : showUnit }] })}>
                   Add value
                 </Button>
+              )}
+              {!editing && showUnit !== 'published' && (
+                <Text size="xs" c="dimmed" mt="sm">
+                  Concentrations are converted from the published units for display. Results are always compared in matching units, whatever is shown here.
+                </Text>
               )}
               {!editing && current.builtIn && (
                 <Text size="xs" c="dimmed" mt="sm">
