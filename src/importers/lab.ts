@@ -10,6 +10,15 @@
 //
 // Samples run across the columns and analytes down the rows, with a units column after the names.
 // Sampling dates are taken from a "Date Sampled" row when present, otherwise from the sample name.
+//
+// Hill's CSV export (SSFC) puts the analyte names one column to the left of the "Sample Name:" label, which
+// sits above the units:
+//
+//   ,"Sample Name:","W1 28-Sept-2026 9:40 am", …
+//   ,"Lab Number:","9100001.1", …
+//   "Total Nitrogen","g/m3","6.5", …
+//
+// so the name and unit columns are found from the analyte rows themselves.
 
 import { cellAt, cellText, cellValue, isEmpty, type SheetGrid } from './workbook';
 import type { ParsedImport, RawSample } from './model';
@@ -41,6 +50,8 @@ export interface LabBlock {
   endRow: number;
 }
 
+const looksLikeUnit = (u: string) => normUnit(u).known || /^(ph|ph units|ntu|°c|% ?sat|mpn|cfu|hazen)/i.test(u);
+
 function labelOf(g: SheetGrid, r: number, maxCol = 4): { col: number; text: string } | null {
   for (let c = 0; c < Math.min(maxCol, g.rows[r]?.length ?? 0); c++) {
     const t = cellText(cellAt(g, r, c));
@@ -71,19 +82,29 @@ export function findLabBlocks(g: SheetGrid): LabBlock[] {
         break;
       }
     }
-    // Units column: a column between the label and the first sample column
+    // Analyte name and unit columns, from the rows that have results
     const first = sampleCols[0];
-    let unitCol: number | null = null;
-    if (first - labelCol >= 2) {
-      let unitHits = 0, tested = 0;
-      for (let k = r + 1; k < Math.min(g.nRows, r + 60); k++) {
-        const u = cellText(cellAt(g, k, first - 1));
-        if (!u) continue;
-        tested++;
-        if (normUnit(u).known || /^(ph|ph units|ntu|°c|% ?sat|mpn|cfu)/i.test(u)) unitHits++;
-      }
-      if (tested && unitHits / tested > 0.3) unitCol = first - 1;
+    const dataRows: number[] = [];
+    for (let k = r + 1; k < Math.min(g.nRows, r + 120) && dataRows.length < 60; k++) {
+      const l = labelOf(g, k);
+      if (l && (SAMPLE_ROW.test(l.text) || STOP_ROW.test(l.text))) break;
+      if (k !== labRow && sampleCols.some((c) => !isEmpty(cellAt(g, k, c)))) dataRows.push(k);
     }
+    const columns = Array.from({ length: first }, (_, c) => {
+      let filled = 0, units = 0;
+      for (const k of dataRows) {
+        const t = cellText(cellAt(g, k, c));
+        if (!t) continue;
+        filled++;
+        if (looksLikeUnit(t)) units++;
+      }
+      return { c, filled, units };
+    });
+    // units: the nearest column left of the samples that holds mostly units
+    const unitCol = [...columns].reverse().find((x) => x.filled && x.units / x.filled > 0.3)?.c ?? null;
+    // names: the column with the most text, other than the units (the leftmost on a tie)
+    const names = columns.filter((x) => x.c !== unitCol && x.filled).sort((a, b) => b.filled - a.filled || a.c - b.c)[0];
+    const nameCol = names?.c ?? labelCol;
     // block ends at the next sample row or a stop row
     let end = g.nRows - 1;
     for (let k = r + 1; k < g.nRows; k++) {
@@ -93,7 +114,7 @@ export function findLabBlocks(g: SheetGrid): LabBlock[] {
         break;
       }
     }
-    blocks.push({ sampleRow: r, labRow, labelCol, unitCol, sampleCols, endRow: end });
+    blocks.push({ sampleRow: r, labRow, labelCol: nameCol, unitCol, sampleCols, endRow: end });
     r = end;
   }
   return blocks;
@@ -131,8 +152,11 @@ export function parseLabSheet(g: SheetGrid): ParsedImport | null {
   const blocks = findLabBlocks(g);
   if (!blocks.length) return null;
   const labName = detectLabName(g);
-  const labJob = headerValue(g, /^(lab\s*no\.?|lab\s*number|job\s*(no|number)|report\s*(no|number))\s*:?/i);
-  const received = headerValue(g, /^date\s*received\s*:?/i);
+  const labJob = headerValue(g, /^(lab(oratory)?\s*(job\s*)?(no\.?|number)|job\s*(no|number)|report\s*(no|number))\s*:?/i);
+  const received = headerValue(g, /^date\s*(received|registered)\s*:?/i);
+  // the lab's numbered comments ("#1 Please interpret this result with caution …"), referred to from results ("< 2 #1")
+  const comments = new Map<string, string>();
+  for (const m of (headerValue(g, /^analyst'?s?\s+comments?\s*:?/i) ?? '').matchAll(/#(\d+)\s+([^#]+)/g)) comments.set(m[1], m[2].trim());
   const warnings: string[] = [];
   const samples: RawSample[] = [];
 
@@ -201,6 +225,12 @@ export function parseLabSheet(g: SheetGrid): ParsedImport | null {
     }
     blockSamples.forEach((s, i) => {
       if (times[i] && s.date && s.date.length === 10) s.date = `${s.date}T${times[i]}`;
+      const refs = new Map<string, string[]>();
+      for (const r of s.results) {
+        const n = String(r.raw ?? '').match(/#(\d+)\s*$/)?.[1];
+        if (n && comments.has(n)) refs.set(n, [...(refs.get(n) ?? []), r.analyte]);
+      }
+      if (refs.size) s.notes = [...refs].map(([n, analytes]) => `Lab comment #${n} (${analytes.join(', ')}): ${comments.get(n)}`).join('\n');
       if (!s.date && received) {
         const d = parseDateAny(received);
         if (d) {

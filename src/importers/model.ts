@@ -19,6 +19,8 @@ export interface RawSample {
   dateSource?: 'cell' | 'name' | 'header' | 'none';
   sheet: string;
   results: RawResult[];
+  /** Notes for the sample, e.g. the lab's comments on its results. */
+  notes?: string;
 }
 
 export interface ParsedImport {

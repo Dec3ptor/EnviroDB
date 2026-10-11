@@ -15,6 +15,7 @@ const field: P[] = [
   { id: 'do', name: 'Dissolved Oxygen', short: 'DO', group: 'Physical & field', unit: 'mg/L', aliases: ['dissolved oxygen', 'do', 'do (mg/l)', 'dissolved oxygen (field)', 'do conc', 'oxygen dissolved'], decimals: 1 },
   { id: 'do-sat', name: 'Dissolved Oxygen Saturation', short: 'DO %', group: 'Physical & field', unit: '% sat', aliases: ['do %', 'do saturation', 'dissolved oxygen saturation', '% do', 'do sat', 'dissolved oxygen (% saturation)', 'do (%)', 'oxygen saturation'], decimals: 0 },
   { id: 'turbidity', name: 'Turbidity', short: 'Turb', group: 'Physical & field', unit: 'NTU', aliases: ['turbidity', 'turb', 'turbidity (lab)'] },
+  { id: 'colour-true', name: 'True Colour', short: 'Colour', group: 'Physical & field', unit: 'Hazen units', aliases: ['true colour', 'true hazen colour', 'true color', 'true hazen color', 'colour (true)', 'true colour (hazen)', 'hazen colour', 'colour', 'color'] },
   { id: 'turbidity-field', name: 'Turbidity (field)', short: 'Turb (field)', group: 'Physical & field', unit: 'NTU', aliases: ['field turbidity', 'turbidity field', 'turbidity (field)'] },
   { id: 'tss', name: 'Total Suspended Solids', short: 'TSS', group: 'Physical & field', unit: 'mg/L', aliases: ['total suspended solids', 'tss', 'suspended solids', 'ss', 'suspended solids (total)', 'total suspended solids (tss)', 'non-filterable residue', 'nfr'] },
   { id: 'vss', name: 'Volatile Suspended Solids', short: 'VSS', group: 'Physical & field', unit: 'mg/L', aliases: ['volatile suspended solids', 'vss', 'volatile suspended solids (vss)'] },
@@ -47,6 +48,7 @@ const general: P[] = [
 ];
 
 const nutrients: P[] = [
+  { id: 'nh3-free', name: 'Free Ammonia', short: 'NH3 (free)', group: 'Nutrients', unit: 'mg/L', aliases: ['free ammonia', 'free ammonia (nh3)', 'un-ionised ammonia', 'unionised ammonia', 'un-ionized ammonia', 'unionized ammonia', 'nh3 (free)', 'free ammonia-n', 'free ammonia as n'] },
   { id: 'nh4-n', name: 'Total Ammoniacal-N', short: 'NH4-N', group: 'Nutrients', unit: 'mg/L', aliases: ['total ammoniacal-n', 'total ammoniacal n', 'ammoniacal nitrogen', 'ammoniacal-n', 'ammonia-n', 'ammonia n', 'nh4-n', 'nh4 n', 'nh3-n', 'nh4', 'ammonia', 'ammonium', 'ammonium-n', 'ammonium n', 'ammonia (as n)', 'total ammonia-n', 'total ammonia', 'ammonia nitrogen', 'ammoniacal n'] },
   { id: 'no3-n', name: 'Nitrate-N', short: 'NO3-N', group: 'Nutrients', unit: 'mg/L', aliases: ['nitrate-n', 'nitrate n', 'nitrate nitrogen', 'no3-n', 'no3 n', 'nitrate', 'nitrate (as n)', 'no3'] },
   { id: 'no2-n', name: 'Nitrite-N', short: 'NO2-N', group: 'Nutrients', unit: 'mg/L', aliases: ['nitrite-n', 'nitrite n', 'nitrite nitrogen', 'no2-n', 'no2 n', 'nitrite', 'nitrite (as n)', 'no2'] },

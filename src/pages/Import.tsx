@@ -289,6 +289,9 @@ export function ImportWizard(_props: { projectId: string }) {
   const sampleSite = (s: (typeof samples)[number]) => siteMap[s.siteText || s.sampleName] ?? null;
   const sampleDate = (s: (typeof samples)[number]) => dateOverrides[s.key] ?? s.date;
   const included = samples.filter((s) => include[s.key] !== false);
+  const ready = included.filter((s) => sampleSite(s) && sampleDate(s));
+  const readyResults = ready.reduce((n, s) => n + s.results.filter((r) => paramMapping[analyteMapKey(r)]).length, 0);
+  const noSite = included.filter((s) => !sampleSite(s)).length;
   const unmatchedSites = siteRows.filter((r) => !siteMap[r.siteText]);
   const missingDates = included.filter((s) => !sampleDate(s));
   const unmatchedAnalytes = analyteRows.filter((r) => !paramMapping[r.key]);
@@ -794,14 +797,23 @@ export function ImportWizard(_props: { projectId: string }) {
 
       {step === 4 && parsed && (
         <Stack>
+          {readyResults === 0 ? (
+            <Alert color="red" variant="light" title="Nothing to import yet">
+              {noSite ? `${noSite} sample${noSite === 1 ? ' has' : 's have'} no site. ` : ''}Go back to <Anchor onClick={() => setStep(2)}>Sites &amp; dates</Anchor> to choose a site for each name in the file, or create new sites.
+            </Alert>
+          ) : noSite > 0 ? (
+            <Alert color="orange" variant="light">
+              {noSite} sample{noSite === 1 ? ' has' : 's have'} no site and won't be imported. <Anchor onClick={() => setStep(2)}>Choose or create sites</Anchor>
+            </Alert>
+          ) : null}
           <Card padding="lg">
             <Title order={4} mb="sm">
               Ready to import
             </Title>
             <SimpleGrid cols={{ base: 2, sm: 4 }} mb="md">
               {[
-                ['Samples', included.filter((s) => sampleSite(s) && sampleDate(s)).length],
-                ['Results', included.filter((s) => sampleSite(s) && sampleDate(s)).reduce((n, s) => n + s.results.filter((r) => paramMapping[analyteMapKey(r)]).length, 0)],
+                ['Samples', ready.length],
+                ['Results', readyResults],
                 ['Already in database', dupCount],
                 ['Skipped analytes', unmatchedAnalytes.length],
               ].map(([l, v]) => (
@@ -837,7 +849,7 @@ export function ImportWizard(_props: { projectId: string }) {
             <Button variant="default" leftSection={<IconArrowLeft size={16} />} onClick={() => setStep(3)}>
               Back
             </Button>
-            <Button size="md" leftSection={<IconUpload size={18} />} loading={loading} onClick={doImport}>
+            <Button size="md" leftSection={<IconUpload size={18} />} loading={loading} onClick={doImport} disabled={!readyResults}>
               Import into {project.name}
             </Button>
           </Group>

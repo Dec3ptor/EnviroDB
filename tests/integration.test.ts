@@ -12,6 +12,7 @@ import { BUILT_IN_TEMPLATES } from '../src/data/templates';
 import { readWorkbook } from '../src/importers/workbook';
 import { planSheets, parseWithPlan } from '../src/importers/detect';
 import { buildParamIndex, matchParameter, matchSite } from '../src/lib/matching';
+import { normUnit } from '../src/lib/units';
 import { analyteMapKey } from '../src/importers/model';
 import { commitImport } from '../src/importers/commit';
 import { exportProjectPackage, importProjectPackage } from '../src/db/backup';
@@ -311,6 +312,37 @@ describe('latest results review', () => {
 });
 
 describe('importing lab results', () => {
+  it("reads Hill's CSV export (SSFC): names left of the units, Windows-1252, lab comments", async () => {
+    const buf = readFileSync(new URL('./fixtures/hill-ssfc-synthetic.csv', import.meta.url));
+    const grids = await readWorkbook(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '9100001-SSFC-1.csv');
+    const params = await db.parameters.toArray();
+    const index = buildParamIndex(params);
+    const plans = planSheets(grids, index);
+    expect(plans[0].mode).toBe('lab');
+    const parsed = parseWithPlan(grids, plans);
+    expect(parsed.labName).toBe('Hill Laboratories');
+    expect(parsed.labJob).toBe('9100001');
+    expect(parsed.samples.map((s) => [s.siteText, s.date, s.labNumber])).toEqual([
+      ['DP1', '2026-09-28T09:40', '9100001.1'],
+      ['DS1', '2026-09-28T10:18', '9100001.2'],
+      ['GW1', '2026-10-01T11:45', '9100001.3'],
+    ]);
+    const [dp1, , gw1] = parsed.samples;
+    // analyte names (not the units) with their units; "-" (not tested) is skipped
+    expect(dp1.results.map((r) => [r.analyte, r.unit])).toContainEqual(['Total Suspended Solids', 'g/m3']);
+    expect(dp1.results.find((r) => r.analyte === 'Escherichia coli')).toMatchObject({ group: 'Faecal Coliforms and E. coli profile', unit: 'MPN / 100mL', parsed: { value: 2, qualifier: '<' } });
+    expect(gw1.results.map((r) => r.analyte)).not.toContain('Total Suspended Solids');
+    expect(gw1.results.find((r) => r.analyte === 'Bicarbonate')!.unit).toBe('g/m3 at 25°C'); // decoded as Windows-1252
+    // every analyte and unit is recognised
+    for (const r of parsed.samples.flatMap((s) => s.results)) {
+      expect(matchParameter(r.analyte, index, r.group).parameterId, r.analyte).toBeTruthy();
+      expect(normUnit(r.unit).known, r.unit).toBe(true);
+    }
+    // the lab's "#1" comment is kept with the sample it refers to
+    expect(dp1.notes).toBe('Lab comment #1 (Faecal Coliforms, Escherichia coli): Example comment: the sample was > 10 °C on receipt at the lab.');
+    expect(gw1.notes).toBeUndefined();
+  });
+
   it('imports the Hill-layout example and replaces on re-import', async () => {
     const buf = readFileSync(new URL('../public/samples/example-lab-results-hill-layout.xlsx', import.meta.url));
     const grids = await readWorkbook(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), 'x.xlsx');

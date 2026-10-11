@@ -46,12 +46,21 @@ export function cellValue(cell: Cell | undefined): unknown {
   return cell.v;
 }
 
+/** Text of a CSV file: UTF-8 when it is valid UTF-8, otherwise Windows-1252 (Hill's CSVs write "°" as one byte). */
+export function decodeText(data: ArrayBuffer): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(data).replace(/^\uFEFF/, '');
+  } catch {
+    return new TextDecoder('windows-1252').decode(data);
+  }
+}
+
 /** Read an Excel (.xlsx/.xlsm/.xls/.xlsb/.ods) or CSV file into simple grids. SheetJS is loaded on demand. */
 export async function readWorkbook(data: ArrayBuffer, fileName: string): Promise<SheetGrid[]> {
   const XLSX: typeof XLSXTypes = await import('@e965/xlsx');
   const isText = /\.(csv|txt|tsv)$/i.test(fileName);
   const wb = isText
-    ? XLSX.read(new TextDecoder().decode(data), { type: 'string', raw: true, dense: true })
+    ? XLSX.read(decodeText(data), { type: 'string', raw: true, dense: true })
     : XLSX.read(data, { type: 'array', cellDates: false, cellNF: true, cellText: true, dense: true });
   const out: SheetGrid[] = [];
   for (const name of wb.SheetNames) {

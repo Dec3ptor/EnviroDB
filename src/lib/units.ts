@@ -1,7 +1,7 @@
 // Unit normalisation and conversion. Hill Laboratories reports water results in g/m³ (= mg/L);
 // guideline values are commonly in µg/L, so conversion is needed for every comparison.
 
-type Dim = 'conc' | 'soil' | 'ec' | 'count' | 'turb' | 'ph' | 'temp' | 'pct' | 'flow' | 'length' | 'mv' | 'ppt' | 'chl';
+type Dim = 'conc' | 'soil' | 'ec' | 'count' | 'turb' | 'ph' | 'temp' | 'pct' | 'flow' | 'length' | 'mv' | 'ppt' | 'chl' | 'colour';
 
 interface UnitDef {
   dim: Dim;
@@ -41,6 +41,7 @@ const DEFS: Record<string, UnitDef> = {
   'mpn/ml': { dim: 'count', factor: 100, label: 'MPN/mL' },
 
   ntu: { dim: 'turb', factor: 1, label: 'NTU' },
+  hazen: { dim: 'colour', factor: 1, label: 'Hazen units' },
   fnu: { dim: 'turb', factor: 1, label: 'FNU' },
   ph: { dim: 'ph', factor: 1, label: 'pH units' },
   degc: { dim: 'temp', factor: 1, label: '°C' },
@@ -62,6 +63,7 @@ const DEFS: Record<string, UnitDef> = {
 };
 
 const ALIASES: Record<string, string> = {
+  hazenunits: 'hazen', hazenunit: 'hazen', 'pt-co': 'hazen', ptco: 'hazen', pcu: 'hazen', 'tcu': 'hazen',
   'g.m-3': 'g/m3', 'gm-3': 'g/m3', 'g/m^3': 'g/m3', 'gm3': 'g/m3', 'g/cubicm': 'g/m3',
   'mgl-1': 'mg/l', 'mg.l-1': 'mg/l', 'mg/litre': 'mg/l', 'mg/liter': 'mg/l', 'mgl': 'mg/l', 'mg/l)': 'mg/l',
   'ugl-1': 'ug/l', 'ug.l-1': 'ug/l', 'mcg/l': 'ug/l', 'ugl': 'ug/l',
@@ -92,6 +94,18 @@ export function normUnit(raw: string | undefined | null): NormUnit {
   if (!raw) return { key: '', known: false };
   let s = String(raw).trim();
   let basis: string | undefined;
+  // "g/m3 at 25°C" (Hill: bicarbonate, free ammonia)
+  const atMatch = s.match(/\s+at\s+(\d+(?:\.\d+)?)\s*°?\s*C\s*$/i);
+  if (atMatch) {
+    basis = `at ${atMatch[1]}°C`;
+    s = s.slice(0, atMatch.index).trim();
+  }
+  // "g O2/m3" (Hill: BOD, COD)
+  const o2 = s.match(/^(\S+?)\s*O2\s*\/\s*(\S+)$/i);
+  if (o2) {
+    basis = 'as O2';
+    s = `${o2[1]}/${o2[2]}`;
+  }
   const asMatch = s.match(/\bas\s+([A-Za-z0-9-]+)\s*$/i);
   if (asMatch) {
     basis = `as ${asMatch[1]}`;

@@ -71,6 +71,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
           labJob: raw.labJob ?? parsed.labJob,
           labNumber: raw.labNumber,
           importId: batch.id,
+          notes: raw.notes,
         };
         sampleBySiteDay.set(k, sample);
         samplesToPut.push(sample);
@@ -82,6 +83,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
         if (!sample.labJob && (raw.labJob ?? parsed.labJob)) patch.labJob = raw.labJob ?? parsed.labJob;
         if (!sample.labName && opts.labName) patch.labName = opts.labName;
         if (sample.date.length === 10 && date.length > 10) patch.date = date;
+        if (raw.notes && !(sample.notes ?? '').includes(raw.notes)) patch.notes = [sample.notes, raw.notes].filter(Boolean).join('\n');
         if (Object.keys(patch).length) {
           Object.assign(sample, patch);
           samplesToPut.push(sample);
