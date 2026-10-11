@@ -23,8 +23,8 @@ export const SIZE_PRESETS: Record<string, { label: string; w: number; h: number 
 function ChartCard({ spec, size, title, onTitle, dark }: { spec: ChartSpec; size: { w: number; h: number }; title: string; onTitle: (t: string) => void; dark: boolean }) {
   const ref = useRef<EChartHandle>(null);
   const exportSpec = { ...spec, title };
-  const png = () => renderChartPng(chartOption(exportSpec, { forExport: true }), cmToPx(size.w), cmToPx(size.h), 3);
-  const option = useMemo(() => chartOption({ ...spec, title }, { dark, showTitle: false }), [spec, title, dark]);
+  const png = () => renderChartPng(chartOption(exportSpec, { forExport: true, width: cmToPx(size.w) }), cmToPx(size.w), cmToPx(size.h), 3);
+  const option = useMemo(() => (width: number) => chartOption({ ...spec, title }, { dark, showTitle: false, width }), [spec, title, dark]);
   return (
     <Card padding="md">
       <Group justify="space-between" mb={4} wrap="nowrap">
@@ -97,7 +97,7 @@ export function ChartsTab() {
         .filter((x) => x.spec.series.length)
         .map((x) => {
           const title = titles[x.p.id] ?? x.spec.title;
-          return { title, dataUrl: renderChartPng(chartOption({ ...x.spec, title }, { forExport: true }), cmToPx(size.w), cmToPx(size.h), 3), widthCm: size.w, heightCm: size.h };
+          return { title, dataUrl: renderChartPng(chartOption({ ...x.spec, title }, { forExport: true, width: cmToPx(size.w) }), cmToPx(size.w), cmToPx(size.h), 3), widthCm: size.w, heightCm: size.h };
         });
       const blob = await chartsToDocx(`${project.name} – graphs`, `${period.label} · generated ${formatDate(new Date().toISOString().slice(0, 10))}`, images);
       downloadBlob(blob, `${safeFileName(project.name)} graphs.docx`);
@@ -130,7 +130,7 @@ export function ChartsTab() {
       </Card>
       {!specs.length ? (
         <EmptyState icon={<IconPhoto size={32} />} title="Choose one or more parameters">
-          Each parameter gets its own graph, with one line per site. Guideline values and consent limits are drawn as dashed lines.
+          Each parameter gets its own graph, with one line per site. Consent limits, triggers and guideline values are drawn as solid, dashed and dotted lines, with a key below the graph.
         </EmptyState>
       ) : (
         <SimpleGrid cols={{ base: 1, xl: specs.length > 1 ? 2 : 1 }}>

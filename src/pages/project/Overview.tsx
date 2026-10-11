@@ -270,7 +270,7 @@ function Trends() {
         {keys.map((pid) => {
           const p = data.paramMap.get(pid)!;
           const spec = buildChartSpec({ index: data.index, param: p, sites: data.sites, siteIds: [], start, end: todayStr(), guidelineSets: sets, rules: data.rules, showRules: true });
-          return <EChart key={pid} option={chartOption(spec, { dark: scheme === 'dark', fontScale: 0.9 })} height={240} />;
+          return <EChart key={pid} option={(width) => chartOption(spec, { dark: scheme === 'dark', fontScale: 0.9, width })} height={240} />;
         })}
       </SimpleGrid>
     </Card>

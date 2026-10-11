@@ -7,7 +7,7 @@ import { convert, unitLabel } from '../lib/units';
 import { fmtNum } from '../lib/values';
 import { formatDate, MONTH_SHORT, toUtcMs } from '../lib/dates';
 import { statLabel } from '../lib/stats';
-import { INK, SERIES_DARK, SERIES_LIGHT, STATUS } from '../theme';
+import { INK, SERIES_DARK, SERIES_LIGHT } from '../theme';
 
 export interface ChartPoint {
   t: number;
@@ -23,8 +23,10 @@ export interface ChartSeries {
   points: ChartPoint[];
 }
 export interface ChartLine {
-  value: number;
-  label: string;
+  /** One line per value; a range (e.g. pH 6–9) has two. */
+  values: number[];
+  /** Text for the key, with the unit, e.g. "Limit 100 mg/L (Condition 8(a))". */
+  text: string;
   kind: 'limit' | 'trigger' | 'guideline';
 }
 export interface ChartSpec {
@@ -78,32 +80,36 @@ export function buildChartSpec(input: ChartInput): ChartSpec {
     if (pts.length) series.push({ id: sid, name: site.code, colorIndex: siteOrder.get(sid) ?? 0, points: pts });
   }
 
+  const u = unitLabel(unit);
   const lines: ChartLine[] = [];
-  const addLine = (value: number | undefined, label: string, kind: ChartLine['kind']) => {
-    if (value === undefined || !Number.isFinite(value)) return;
-    if (input.log && value <= 0) return;
-    const same = lines.find((l) => Math.abs(l.value - value) < 1e-12 && l.kind === kind);
-    if (same) same.label = `${same.label} / ${label}`;
-    else lines.push({ value, label, kind });
+  const usable = (v: number | null | undefined): v is number => v !== undefined && v !== null && Number.isFinite(v) && (!input.log || v > 0);
+  /** Add a line (or the two lines of a range); values are in the chart's unit. */
+  const addLine = (lo: number | null | undefined, hi: number | null | undefined, name: string, kind: ChartLine['kind'], note = '') => {
+    const values = [lo, hi].filter(usable);
+    if (!values.length) return;
+    const valueText = usable(lo) && usable(hi) ? `${fmtNum(lo)}–${fmtNum(hi)}` : usable(lo) ? `min ${fmtNum(lo)}` : fmtNum(hi!);
+    const text = `${name} ${valueText} ${u}${note ? ` (${note})` : ''}`;
+    const same = lines.find((l) => l.kind === kind && l.values.length === values.length && l.values.every((v, i) => Math.abs(v - values[i]) < 1e-12));
+    if (same) same.text = `${same.text}; ${text}`;
+    else lines.push({ values, text, kind });
   };
   for (const set of input.guidelineSets) {
     const g = guidelineFor(set, param.id, unit);
-    if (!g) continue;
-    const suffix = g.hardness ? ' at 30 mg/L hardness' : '';
-    if (g.max !== undefined) addLine(g.max, `${set.shortName} ${fmtNum(g.max)}${suffix}`, 'guideline');
-    if (g.min !== undefined) addLine(g.min, `${set.shortName} min ${fmtNum(g.min)}`, 'guideline');
+    if (g) addLine(g.min, g.max, set.shortName, 'guideline', g.hardness ? 'at 30 mg/L hardness' : '');
   }
   if (input.showRules) {
+    const multiSite = series.length > 1;
     for (const r of input.rules) {
       if (!r.active || r.parameterId !== param.id || r.kind === 'change' || r.kind === 'guideline') continue;
       if (r.siteIds.length && !r.siteIds.some((id) => wanted.includes(id))) continue;
       const ru = r.unit || unit;
       const kind = isLimitLevel(r.level) ? 'limit' : 'trigger';
-      const prefix = r.kind === 'statistic' ? `${r.level} (${statLabel(r.statistic ?? 'mean', r.percentile)})` : r.level;
-      if (r.operator === 'outside') {
-        addLine(convert(r.min ?? NaN, ru, unit) ?? undefined, `${prefix} min ${fmtNum(r.min)}`, kind);
-        addLine(convert(r.max ?? NaN, ru, unit) ?? undefined, `${prefix} max ${fmtNum(r.max)}`, kind);
-      } else addLine(convert(r.value ?? NaN, ru, unit) ?? undefined, `${prefix} ${fmtNum(r.value)}`, kind);
+      const name = r.kind === 'statistic' ? `${r.level} (${statLabel(r.statistic ?? 'mean', r.percentile)})` : r.level;
+      const at = multiSite && r.siteIds.length ? `at ${r.siteIds.map((id) => sites.find((s) => s.id === id)?.code ?? '').filter(Boolean).join(', ')}` : '';
+      const note = [r.condition, at].filter(Boolean).join(', ');
+      const inUnit = (v: number | undefined) => (v === undefined ? undefined : convert(v, ru, unit));
+      if (r.operator === 'outside') addLine(inUnit(r.min), inUnit(r.max), name, kind, note);
+      else addLine(undefined, inUnit(r.value), name, kind, note);
     }
   }
   const siteNames = series.map((s) => s.name).join(', ');
@@ -126,6 +132,71 @@ export interface RenderOpts {
   forExport?: boolean;
   showTitle?: boolean;
   fontScale?: number;
+  /** Width of the chart in px, so the legend and key wrap to fit (unknown: one key entry per row). */
+  width?: number;
+}
+
+const FONT = 'Roboto, system-ui, -apple-system, "Segoe UI", Arial, sans-serif';
+
+/**
+ * Limit / trigger / guideline line colours: red, amber and grey, stepped in lightness so they stay apart for
+ * colour-blind readers and in grey-scale print (checked with the dataviz palette validator, all pairs).
+ */
+const LINE_COLORS = {
+  light: { limit: '#d03b3b', trigger: '#d99400', guideline: '#3d3c39' },
+  dark: { limit: '#e5534b', trigger: '#f2b632', guideline: '#e9e8e3' },
+};
+/** Each kind has its own dash pattern (null = solid); a second line of the same kind takes the next one. */
+const DASHES: Record<ChartLine['kind'], Array<number[] | null>> = {
+  limit: [null, [14, 4], [14, 4, 3, 4]],
+  trigger: [[7, 4], [7, 3, 2, 3], [3, 3]],
+  guideline: [[0.1, 4.5], [10, 3, 0.1, 3, 0.1, 3], [5, 6]],
+};
+
+export interface ThresholdStyle {
+  text: string;
+  values: number[];
+  color: string;
+  dash: number[] | null;
+}
+
+/** The threshold lines in key order – limits, triggers, then guidelines – each with its colour and dash pattern. */
+export function thresholdStyles(lines: ChartLine[], dark = false): ThresholdStyle[] {
+  const colors = dark ? LINE_COLORS.dark : LINE_COLORS.light;
+  return (['limit', 'trigger', 'guideline'] as const).flatMap((kind) =>
+    lines.filter((l) => l.kind === kind).map((l, i) => ({ text: l.text, values: l.values, color: colors[kind], dash: DASHES[kind][i % DASHES[kind].length] })),
+  );
+}
+
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+/** Width of a line of text in px: measured in the browser, estimated elsewhere. */
+function textWidth(text: string, px: number): number {
+  if (measureCtx === undefined) {
+    try {
+      measureCtx = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d');
+    } catch {
+      measureCtx = null;
+    }
+  }
+  if (!measureCtx) return text.length * px * 0.6;
+  measureCtx.font = `${px}px ${FONT}`;
+  return measureCtx.measureText(text).width * 1.04; // a little spare in case the web font isn't loaded yet
+}
+
+/** Pack items into rows no wider than `width`; one per row when the width is unknown. */
+function packRows(widths: number[], width: number | undefined, gap: number): number[][] {
+  const rows: number[][] = [];
+  let x = 0;
+  widths.forEach((w, i) => {
+    if (width && rows.length && x + gap + w <= width) {
+      rows[rows.length - 1].push(i);
+      x += gap + w;
+    } else {
+      rows.push([i]);
+      x = w;
+    }
+  });
+  return rows;
 }
 
 function utcDate(ms: number) {
@@ -141,16 +212,60 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
   const showTitle = opts.showTitle ?? true;
   const unitText = unitLabel(spec.unit);
   const multi = spec.series.length > 1;
-  const top = (showTitle ? (spec.subtitle ? 46 : 30) : 8) + (multi ? 26 : 0);
+  const avail = opts.width ? opts.width - 16 : undefined;
+  // site legend at the top, wrapped to the width
+  const legendFont = 11.5 * fs;
+  const legendRows = multi ? packRows(spec.series.map((s) => 18 + 5 + textWidth(s.name, legendFont)), avail, 14).length : 0;
+  const top = (showTitle ? (spec.subtitle ? 46 : 30) : 8) + (multi ? 26 * legendRows : 0);
   const values = spec.series.flatMap((s) => s.points.map((p) => p.v));
+  const lineValues = spec.lines.flatMap((l) => l.values);
   const dataMax = Math.max(0, ...values);
-  const lineMax = Math.max(0, ...spec.lines.map((l) => l.value));
+  const lineMax = Math.max(0, ...lineValues);
   // Start the axis at zero unless the data sit far from it (e.g. pH 6–9, temperature)
-  const lo = Math.min(...values, ...spec.lines.map((l) => l.value));
+  const lo = Math.min(...values, ...lineValues);
   const hi = Math.max(dataMax, lineMax);
   const zeroBased = !(Number.isFinite(lo) && lo > 0 && lo > 0.5 * hi);
   const step = niceStep((hi - (Number.isFinite(lo) ? lo : 0)) / 5 || 1);
-  const lineColor = (k: ChartLine['kind']) => (k === 'limit' ? STATUS.critical : k === 'trigger' ? STATUS.serious : ink.secondary);
+  const styles = thresholdStyles(spec.lines, opts.dark && !opts.forExport);
+
+  // The key below the plot: a sample of each threshold line with its label (never drawn over the data), and the
+  // hollow marker used for results below the detection limit.
+  const keyFont = 11 * fs;
+  const rowH = Math.round(17 * fs);
+  const swatch = 28;
+  const keyItems = [
+    ...styles.map((s) => ({ text: s.text, w: swatch, line: s })),
+    ...(spec.hasNd ? [{ text: 'Below detection limit (plotted at the limit)', w: 12, line: null }] : []),
+  ];
+  const keyRows = packRows(
+    keyItems.map((it) => it.w + 6 + textWidth(it.text, keyFont)),
+    avail,
+    18,
+  );
+  const keyH = keyRows.length ? keyRows.length * rowH + 4 : 0;
+  const graphics: unknown[] = [];
+  keyRows.forEach((row, r) => {
+    let x = 8;
+    for (const i of row) {
+      const it = keyItems[i];
+      const mid = rowH / 2;
+      const w = it.w + 6 + textWidth(it.text, keyFont);
+      graphics.push({
+        type: 'group',
+        left: x,
+        bottom: 4 + (keyRows.length - 1 - r) * rowH,
+        silent: true,
+        children: [
+          { type: 'rect', shape: { x: 0, y: 0, width: w, height: rowH }, style: { fill: 'transparent' } },
+          it.line
+            ? { type: 'line', shape: { x1: 1, y1: mid, x2: it.w - 1, y2: mid }, style: { stroke: it.line.color, lineWidth: 2, lineDash: it.line.dash ?? undefined, lineCap: 'round' } }
+            : { type: 'circle', shape: { cx: 6, cy: mid, r: 3.5 }, style: { fill: ink.surface, stroke: ink.secondary, lineWidth: 2 } },
+          { type: 'text', x: it.w + 6, y: mid, style: { text: it.text, fill: ink.secondary, font: `${keyFont}px ${FONT}`, verticalAlign: 'middle' } },
+        ],
+      });
+      x += w + 18;
+    }
+  });
   const series: unknown[] = spec.series.map((s) => {
     const color = palette[s.colorIndex % palette.length];
     return {
@@ -171,38 +286,28 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
       })),
     };
   });
-  if (spec.lines.length) {
+  if (styles.length) {
     series.push({
       type: 'line',
       name: '__thresholds',
       data: [],
       silent: true,
+      z: 2, // under the data
       markLine: {
         silent: true,
         symbol: 'none',
         animation: false,
-        data: spec.lines.map((l) => ({
-          yAxis: l.value,
-          lineStyle: { type: [6, 4], width: 1.5, color: lineColor(l.kind) },
-          label: { formatter: `${l.label} ${unitText}`, position: 'insideEndTop', color: ink.secondary, fontSize: 10.5 * fs, backgroundColor: ink.surface, padding: [1, 3], borderRadius: 2 },
-        })),
+        precision: 20, // ECharts rounds marker values to 2 decimals by default, which put 0.013 mg/L at 0.01
+        label: { show: false },
+        data: styles.flatMap((s) => s.values.map((v) => ({ yAxis: v, lineStyle: { type: s.dash ?? 'solid', width: 2, color: s.color, cap: 'round' } }))),
       },
-    });
-  }
-  const graphics: unknown[] = [];
-  if (spec.hasNd) {
-    graphics.push({
-      type: 'text',
-      left: 4,
-      bottom: 2,
-      style: { text: '○ Hollow markers: below detection limit (plotted at the limit)', fill: ink.muted, fontSize: 10 * fs },
     });
   }
   return {
     useUTC: true,
     animation: !opts.forExport,
     backgroundColor: ink.surface,
-    textStyle: { fontFamily: 'Roboto, system-ui, -apple-system, "Segoe UI", Arial, sans-serif' },
+    textStyle: { fontFamily: FONT },
     title: showTitle
       ? {
           text: spec.title,
@@ -218,15 +323,16 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
       ? {
           top: showTitle ? (spec.subtitle ? 44 : 28) : 4,
           left: 0,
+          width: avail,
           data: spec.series.map((s) => s.name),
           icon: 'path://M0,0 L24,0 L24,4 L0,4 Z',
           itemWidth: 18,
           itemHeight: 3,
           itemGap: 14,
-          textStyle: { color: ink.secondary, fontSize: 11.5 * fs },
+          textStyle: { color: ink.secondary, fontSize: legendFont },
         }
       : undefined,
-    grid: { left: 8, right: 16, top: top + 12, bottom: spec.hasNd ? 34 : 18, containLabel: true },
+    grid: { left: 8, right: 16, top: top + 12, bottom: keyH + 10, containLabel: true },
     tooltip: opts.forExport
       ? undefined
       : {

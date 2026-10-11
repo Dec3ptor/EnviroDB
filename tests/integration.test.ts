@@ -21,6 +21,8 @@ import { applyView, DEFAULT_SORT, passesFilter } from '../src/lib/tableView';
 import { reviewCell, reviewLines, samplingRounds } from '../src/lib/latest';
 import { nextDueReport } from '../src/lib/schedule';
 import { newObligation } from '../src/db/repo';
+import { buildChartSpec, chartOption, thresholdStyles } from '../src/charts/timeSeries';
+import * as echarts from 'echarts';
 
 
 let projectId = '';
@@ -132,6 +134,58 @@ describe('report due next', () => {
       const next = nextDueReport(list, '2026-10-11');
       expect(next?.obligation.templateId).toBe('tpl-annual');
       expect(next?.period.dueDate).toBe('2026-10-31');
+    }
+  });
+});
+
+describe('graph limit, trigger and guideline lines', () => {
+  it('styles every line differently and keeps their labels in a key below the plot', async () => {
+    const b = await loadBundle(projectId);
+    const chart = (pid: string, sets: string[] = []) =>
+      buildChartSpec({ index: b.index, param: b.paramMap.get(pid)!, sites: b.sites, siteIds: [], guidelineSets: sets.map((id) => b.setMap.get(id)!), rules: b.rules, showRules: true });
+    const tss = chart('tss');
+    expect(tss.lines.map((l) => [l.kind, l.text])).toEqual([
+      ['limit', 'Limit 100 mg/L (Condition 8(a), at DP1)'],
+      ['trigger', 'Trigger 1 50 mg/L (Condition 9, at DP1)'],
+    ]);
+    // a range is one key entry with two lines
+    expect(chart('ph').lines).toEqual([{ kind: 'limit', values: [6, 9], text: 'Limit 6–9 pH units (Condition 8(b), at DP1)' }]);
+    // two guideline sets, in the chart's unit
+    const zn = chart('zn-d', ['anzg-fw-95', 'anzg-fw-99']);
+    expect(zn.lines.map((l) => l.text)).toEqual([expect.stringMatching(/^ANZG FW 95% 0\.008 \S+ \(at 30 mg\/L hardness\)$/), expect.stringMatching(/^ANZG FW 99% 0\.0024 \S+ \(at 30 mg\/L hardness\)$/)]);
+
+    // no two lines look the same (colour + dash pattern)
+    const styles = thresholdStyles([...tss.lines, ...zn.lines]);
+    expect(styles.map((s) => s.text.split(' ')[0])).toEqual(['Limit', 'Trigger', 'ANZG', 'ANZG']); // limits first, then triggers, then guidelines
+    expect(new Set(styles.map((s) => `${s.color} ${JSON.stringify(s.dash)}`)).size).toBe(styles.length);
+
+    // nothing is written over the data; the key wraps to the width
+    type Opt = { series: Array<{ name: string; markLine?: { label: { show: boolean }; data: Array<{ label?: unknown }> } }>; graphic: Array<{ bottom: number }>; grid: { bottom: number } };
+    const wide = chartOption(tss, { forExport: true, width: 1200 }) as unknown as Opt;
+    const ml = wide.series.find((s) => s.name === '__thresholds')!.markLine!;
+    expect(ml.label.show).toBe(false);
+    expect(ml.data.some((d) => d.label)).toBe(false);
+    expect(JSON.stringify(wide.graphic)).toContain('Limit 100 mg/L (Condition 8(a), at DP1)');
+    const rows = (o: Opt) => new Set(o.graphic.map((g) => g.bottom)).size;
+    const narrow = chartOption(tss, { forExport: true, width: 360 }) as unknown as Opt;
+    expect(rows(wide)).toBe(1);
+    expect(rows(narrow)).toBeGreaterThan(1);
+    expect(narrow.grid.bottom).toBeGreaterThan(wide.grid.bottom); // the plot makes room for the key
+  });
+
+  it('draws small guideline values exactly where they belong (not rounded to 2 decimals)', async () => {
+    const b = await loadBundle(projectId);
+    const as = buildChartSpec({ index: b.index, param: b.paramMap.get('as-d')!, sites: b.sites, siteIds: [], guidelineSets: [b.setMap.get('anzg-fw-95')!, b.setMap.get('anzg-fw-99')!], rules: b.rules, showRules: true });
+    expect(as.lines.flatMap((l) => l.values).map((v) => +v.toFixed(6))).toEqual([0.013, 0.0008]);
+    const chart = echarts.init(null as unknown as HTMLElement, undefined, { renderer: 'svg', ssr: true, width: 600, height: 300 });
+    try {
+      chart.setOption({ ...(chartOption(as, { forExport: true, width: 600 }) as object), animation: false });
+      const drawn = [...chart.renderToSVGString().matchAll(/<path d="M[\d.]+ ([\d.]+)L[\d.]+ [\d.]+"[^>]*stroke-dasharray/g)].map((m) => +m[1]).filter((y) => y > 20); // skip the key samples
+      const expected = [0.013, 0.0008].map((v) => chart.convertToPixel({ yAxisIndex: 0 }, v) as number);
+      expect(drawn.length).toBe(2);
+      drawn.forEach((y, i) => expect(Math.abs(y - expected[i])).toBeLessThan(1));
+    } finally {
+      chart.dispose();
     }
   });
 });

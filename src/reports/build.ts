@@ -461,7 +461,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const spec = buildChartSpec({ index: b.index, param: p, sites: b.sites, siteIds: blk.siteIds, start: cStart, end, guidelineSets: sets, rules: b.rules, showRules: blk.showRules, log: blk.logScale });
         if (!spec.series.length) continue;
         const caption = figCaption(`${p.name} at ${listText(spec.series.map((s) => s.name))}${blk.range === 'period' ? '' : `, ${formatDate(cStart ?? spec.series[0].points[0].date)} – ${formatDate(end)}`}${blk.caption ? `. ${fill(blk.caption)}` : ''}`);
-        const option = chartOption({ ...spec, subtitle: undefined, title: `${p.name} (${unitLabel(p.unit)})` }, { forExport: true });
+        const option = chartOption({ ...spec, subtitle: undefined, title: `${p.name} (${unitLabel(p.unit)})` }, { forExport: true, width: Math.round((size.widthCm / 2.54) * 96) });
         const dataUrl = opts.renderChart ? opts.renderChart(option, size.widthCm, size.heightCm) : '';
         figures.push({ dataUrl, ...size, caption });
       }

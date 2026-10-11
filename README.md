@@ -29,7 +29,8 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   sets, such as site-specific trigger values, or import one from CSV/Excel. The Guidelines page
   can show concentrations in g/m³, mg/L or µg/L (it remembers your choice); comparisons always
   convert units automatically.
-- **Graph** any parameter by site, with guideline and consent-limit lines. Graphs export
+- **Graph** any parameter by site, with consent limits (solid red), triggers (dashed amber) and
+  guideline values (dotted grey) drawn as lines and named in a key below the graph. Graphs export
   as high-resolution PNGs, can be copied straight into Word, or exported all at once to a
   Word document.
 - **Report** from customisable block-based templates (title page, automatic summary,
