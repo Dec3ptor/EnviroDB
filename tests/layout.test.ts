@@ -120,25 +120,37 @@ describe('editing the layout', () => {
   const names = (bs: ReportBlock[]) => bs.map((b) => (b.type === 'heading' ? b.text : b.type));
   const at = (text: string) => annual.blocks.findIndex((b) => b.type === 'heading' && b.text === text);
 
-  it('drags a heading with its section, and drops it between sections', () => {
-    // Introduction dropped on the Summary heading goes after the whole Summary section
-    expect(names(moveSection(annual.blocks, at('Introduction'), at('Summary'))).slice(0, 6)).toEqual(['title', 'Summary', 'summary', 'Introduction', 'text', 'Monitoring locations']);
-    // Graphs dropped on the results table goes before the Results section, not into it
+  it('drops a block exactly where it is released; a heading brings its section', () => {
     const r = at('Results');
-    expect(names(moveSection(annual.blocks, at('Graphs'), r + 1)).slice(r, r + 3)).toEqual(['Graphs', 'chart', 'Results']);
-    // dropped on its own content: no change
+    // Graphs (heading + chart) dropped on the results table: straight above the table
+    expect(names(moveSection(annual.blocks, at('Graphs'), r + 1)).slice(r, r + 4)).toEqual(['Results', 'Graphs', 'chart', 'resultsTable']);
+    // a sub-section dragged up onto the results table
+    expect(names(moveSection(annual.blocks, at('Summary statistics'), r + 1)).slice(r, r + 4)).toEqual(['Results', 'Summary statistics', 'statsTable', 'resultsTable']);
+    // moving down: below the row it was dropped on
+    expect(names(moveSection(annual.blocks, at('Introduction'), at('Summary'))).slice(0, 5)).toEqual(['title', 'Summary', 'Introduction', 'text', 'summary']);
+    // a heading on its own can go straight above a table
+    const lone: ReportBlock[] = [...annual.blocks, { id: 'new', type: 'heading', text: 'DP1 results', level: 2 }];
+    expect(names(moveSection(lone, lone.length - 1, r + 1)).slice(r, r + 3)).toEqual(['Results', 'DP1 results', 'resultsTable']);
+    // dropped on its own content: no change; never above the title page
     expect(moveSection(annual.blocks, r, r + 2)).toBe(annual.blocks);
+    expect(names(moveSection(annual.blocks, at('Summary'), 0)).slice(0, 3)).toEqual(['title', 'Summary', 'summary']);
     // anything else moves on its own
     const chart = annual.blocks.findIndex((b) => b.type === 'chart');
     expect(names(moveSection(annual.blocks, chart, r + 1))[r + 1]).toBe('chart');
   });
 
-  it('steps a section past the next one, taking its sub-sections with it', () => {
+  it('the arrows move a section past the next section, and anything else one row', () => {
     const down = names(stepSection(annual.blocks, at('Results'), 1)!);
     expect(down.slice(at('Results'))).toEqual(['Graphs', 'chart', 'Results', 'resultsTable', 'Summary statistics', 'statsTable', 'Discussion and conclusions', 'text']);
     expect(stepSection(annual.blocks, at('Introduction'), -1)).toBeNull(); // never above the title page
     expect(stepSection(annual.blocks, at('Discussion and conclusions'), 1)).toBeNull();
-    expect(stepSection(annual.blocks, 2, 1)).toBeNull(); // only headings move as sections
+    // a paragraph moves one row
+    expect(names(stepSection(annual.blocks, 2, 1)!).slice(0, 5)).toEqual(['title', 'Introduction', 'Summary', 'text', 'summary']);
+    expect(stepSection(annual.blocks, 1, -1)).toBeNull();
+    // so does a heading with nothing under it: up one row puts it straight above the results table
+    const s = at('Summary statistics');
+    const lone: ReportBlock[] = [...annual.blocks.slice(0, s), { id: 'new', type: 'heading', text: 'DP1 results', level: 2 }, ...annual.blocks.slice(s)];
+    expect(names(stepSection(lone, s, -1)!).slice(at('Results'), at('Results') + 3)).toEqual(['Results', 'DP1 results', 'resultsTable']);
   });
 
   it('puts a section on landscape pages, keeps it there when the section moves, then turns back', async () => {

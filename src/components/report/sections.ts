@@ -1,4 +1,3 @@
-import { arrayMove } from '@dnd-kit/sortable';
 import type { ReportBlock } from '../../db/types';
 import { pageOrientations, type Orientation } from '../../reports/build';
 
@@ -36,30 +35,41 @@ function sectionStarts(blocks: ReportBlock[], level: number): number[] {
 
 export const insertAt = (list: ReportBlock[], at: number, items: ReportBlock[]) => [...list.slice(0, at), ...items, ...list.slice(at)];
 
+/** The rows that move together: a heading with its section, anything else on its own. */
+const unitRange = (blocks: ReportBlock[], i: number): [number, number] => (blocks[i].type === 'heading' ? sectionRange(blocks, i) : [i, i + 1]);
+
+/** Nothing goes above a title page at the top. */
+const firstFree = (list: ReportBlock[]) => (list[0]?.type === 'title' ? 1 : 0);
+
 /**
- * Move a heading together with its section. `to` is the index it was dropped on; the section goes to the nearest
- * place between sections, so it never splits another section or picks up that section's content.
+ * Drag and drop: move a block – a heading together with its section – to exactly where it was dropped. `to` is the
+ * index of the row it was dropped on: it goes above that row when moving up and below it when moving down, so a
+ * heading can go straight above a table.
  */
 export function moveSection(blocks: ReportBlock[], i: number, to: number): ReportBlock[] {
-  const h = blocks[i];
-  if (h.type !== 'heading') return arrayMove(blocks, i, to);
-  const [a, z] = sectionRange(blocks, i);
+  const [a, z] = unitRange(blocks, i);
   if (to >= a && to < z) return blocks;
   const rest = [...blocks.slice(0, a), ...blocks.slice(z)];
-  const starts = sectionStarts(rest, h.level);
-  const at = to > i ? (starts.find((s) => s >= to - (z - a) + 1) ?? rest.length) : ([...starts].reverse().find((s) => s <= to) ?? a);
+  const at = Math.max(firstFree(rest), to > i ? to - (z - a) + 1 : to);
   return insertAt(rest, at, blocks.slice(a, z));
 }
 
-/** Move a heading's section one place up or down past the next section; null when it can't move further. */
+/**
+ * The arrows: a heading with content moves with its section past the next section (so sections swap places
+ * without taking each other's content); anything else, including a heading on its own, moves one row.
+ * Null when it can't move further.
+ */
 export function stepSection(blocks: ReportBlock[], i: number, d: -1 | 1): ReportBlock[] | null {
-  const h = blocks[i];
-  if (h.type !== 'heading') return null;
-  const [a, z] = sectionRange(blocks, i);
+  const [a, z] = unitRange(blocks, i);
   const rest = [...blocks.slice(0, a), ...blocks.slice(z)];
-  const starts = sectionStarts(rest, h.level);
-  const at = d > 0 ? starts.find((s) => s > a) : [...starts].reverse().find((s) => s < a);
-  return at === undefined ? null : insertAt(rest, at, blocks.slice(a, z));
+  const h = blocks[i];
+  let at: number | undefined;
+  if (h.type === 'heading' && z - a > 1) {
+    const starts = sectionStarts(rest, h.level);
+    at = d > 0 ? starts.find((s) => s > a) : [...starts].reverse().find((s) => s < a);
+  } else at = a + d;
+  if (at === undefined || at < firstFree(rest) || at > rest.length) return null;
+  return insertAt(rest, at, blocks.slice(a, z));
 }
 
 /** True when some pages are the other way round from the report's main orientation. */

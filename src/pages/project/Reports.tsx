@@ -331,7 +331,7 @@ export function ReportsTab() {
                   {orientationControl}
                   {editedBanner}
                   <Text size="xs" c="dimmed">
-                    Drag sections (or use the arrows) to reorder them, tap one to change it, and use ⋯ to duplicate, remove, start a new page or put a section on landscape pages.
+                    Drag the ⋮⋮ handle to put a section exactly where you want it (a heading brings its content), or use the arrows to move a section past the one above or below. Tap a section to change it; ⋯ duplicates, removes, starts a new page or puts it on landscape pages.
                   </Text>
                   <SectionsEditor blocks={template.blocks} onChange={(blocks) => changeTemplate({ ...template, blocks })} orientation={template.orientation} open={open} onOpen={setOpen} />
                   <Anchor component={Link} to={`/templates/${stored.id}`} size="xs">

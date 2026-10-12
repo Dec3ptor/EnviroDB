@@ -1,7 +1,7 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import { ActionIcon, Badge, Button, Card, Group, Menu, Stack, Text } from '@mantine/core';
-import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { DndContext, KeyboardSensor, MeasuringStrategy, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { IconArrowDown, IconArrowUp, IconCopy, IconDots, IconPageBreak, IconGripVertical, IconLayoutRows, IconPlus, IconTrash } from '@tabler/icons-react';
 import type { ReportBlock, ReportBlockType } from '../../db/types';
@@ -18,21 +18,20 @@ function startsNewPage(blocks: ReportBlock[], i: number): boolean {
 interface RowProps {
   block: ReportBlock;
   index: number;
-  count: number;
   blocks: ReportBlock[];
   orient: Orientation;
   base: Orientation;
   open: boolean;
   readOnly?: boolean;
-  /** Part of a section that is being dragged by its heading. */
-  carried?: boolean;
+  /** While this heading is dragged: how many rows of its section move with it. */
+  carrying?: number;
   onToggle: () => void;
   onBlocks: (b: ReportBlock[]) => void;
 }
 
-function Row({ block, index, count, blocks, orient, base, open, readOnly, carried, onToggle, onBlocks }: RowProps) {
+function Row({ block, index, blocks, orient, base, open, readOnly, carrying, onToggle, onBlocks }: RowProps) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: block.id, disabled: readOnly });
-  const style: CSSProperties = { transform: CSS.Transform.toString(transform), transition, position: 'relative', zIndex: isDragging ? 5 : undefined, opacity: isDragging ? 0.85 : carried ? 0.4 : 1 };
+  const style: CSSProperties = { transform: CSS.Transform.toString(transform), transition, position: 'relative', zIndex: isDragging ? 5 : undefined, opacity: isDragging ? 0.92 : 1 };
   const isBreak = block.type === 'pageBreak';
   const other: Orientation = orient === 'landscape' ? 'portrait' : 'landscape';
   const around = block.pages ? pageOrientations(setPages(blocks, index, undefined), base)[index] : orient; // without its own setting
@@ -41,7 +40,7 @@ function Row({ block, index, count, blocks, orient, base, open, readOnly, carrie
   const [a, z] = sectionRange(blocks, index);
   const inSection = z - a - 1; // blocks under a heading
   // a heading moves with its section; other blocks move one place
-  const moved = (d: -1 | 1) => (isSection ? stepSection(blocks, index, d) : index + d < 0 || index + d >= count ? null : arrayMove(blocks, index, index + d));
+  const moved = (d: -1 | 1) => stepSection(blocks, index, d);
   const up = moved(-1);
   const down = moved(1);
   const copy = () => blocks.slice(a, z).map((b) => ({ ...structuredClone(b), id: uid('b') }));
@@ -69,6 +68,11 @@ function Row({ block, index, count, blocks, orient, base, open, readOnly, carrie
               <Text size="sm" fw={600} truncate>
                 {block.type === 'heading' ? block.text : BLOCK_LABELS[block.type].label}
               </Text>
+              {!!carrying && (
+                <Badge size="xs" variant="filled" color="teal" style={{ flexShrink: 0 }}>
+                  + {carrying} more
+                </Badge>
+              )}
               {isBreak && block.orientation && (
                 <Badge size="xs" variant="light" color={block.orientation === 'landscape' ? 'grape' : 'blue'}>
                   {block.orientation}
@@ -179,11 +183,21 @@ export function SectionsEditor({ blocks, onChange, orientation, open, onOpen, re
   };
   return (
     <Stack gap={6}>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={(e) => setDragging(String(e.active.id))} onDragCancel={() => setDragging(null)} onDragEnd={onDragEnd}>
-        <SortableContext items={blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
-          {blocks.map((b, i) => (
-            <Row key={b.id} block={b} index={i} count={blocks.length} blocks={blocks} orient={orient[i]} base={orientation} open={open === b.id} readOnly={readOnly} carried={carried.has(b.id)} onToggle={() => onOpen(open === b.id ? null : b.id)} onBlocks={onChange} />
-          ))}
+      {/* while a heading is dragged its section folds into it, so it lands with its content exactly where it is dropped */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+        onDragStart={(e) => setDragging(String(e.active.id))}
+        onDragCancel={() => setDragging(null)}
+        onDragEnd={onDragEnd}
+      >
+        <SortableContext items={blocks.filter((b) => !carried.has(b.id)).map((b) => b.id)} strategy={verticalListSortingStrategy}>
+          {blocks.map((b, i) =>
+            carried.has(b.id) ? null : (
+              <Row key={b.id} block={b} index={i} blocks={blocks} orient={orient[i]} base={orientation} open={open === b.id} readOnly={readOnly} carrying={b.id === dragging ? carried.size : 0} onToggle={() => onOpen(open === b.id ? null : b.id)} onBlocks={onChange} />
+            ),
+          )}
         </SortableContext>
       </DndContext>
       {!readOnly && (
