@@ -15,6 +15,7 @@ import { ImportPage } from './pages/Import';
 import { GuidelinesPage } from './pages/Guidelines';
 import { TemplatesPage, TemplateEditorPage } from './pages/Templates';
 import { SettingsPage } from './pages/Settings';
+import { ParametersPage } from './pages/Parameters';
 
 export function App() {
   const [ready, setReady] = useState(false);
@@ -57,6 +58,7 @@ export function App() {
                   <Route path="guidelines/:setId" element={<GuidelinesPage />} />
                   <Route path="templates" element={<TemplatesPage />} />
                   <Route path="templates/:templateId" element={<TemplateEditorPage />} />
+                  <Route path="parameters" element={<ParametersPage />} />
                   <Route path="settings" element={<SettingsPage />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>

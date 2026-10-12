@@ -78,6 +78,23 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   requests cover trend tests, upstream/downstream comparisons, data checks and drafting report
   text. EnviroDB doesn't send anything itself, and names can be left out.
 
+## Finding your way around
+
+- **Dashboard** – deadlines, recent exceedances and your projects. **Import data** brings in lab
+  results for any project.
+- **A project** has tabs for each job: *Overview* (latest results at a glance), *Data*, *Graphs*,
+  *Compliance*, *Schedule* (reporting dates and sampling rounds), *Reports* and *Setup*. Its main
+  action, *Import results*, is top right; less common ones (*Copy for AI input* on a phone,
+  *Download project file*) are under ⋯.
+- **Library** – reference data shared by every project: *Guidelines*, *Report templates* and
+  *Parameters* (the analyte dictionary: names, units and the aliases used in lab files).
+- **Settings & backup** – your name, company and signature, autosave and backups.
+
+Everyday controls are on show. Settings most people leave alone are folded away with a summary of
+what they're set to (▸ *Assessment settings* and ▸ *Display units* in Setup, ▸ *Placeholders* in the
+template editor), and rarely used actions sit in ⋯ menus. Filters stay on one line: a picker shows
+"US1, DP1" or "5 parameters" and opens to a searchable checklist.
+
 ## Where is the data stored? (the "database")
 
 GitHub Pages only serves static files, so it can't run a server database.

@@ -16,7 +16,6 @@ import { deleteRule, newRule, saveNote, saveRule } from '../../db/repo';
 import type { ExceedanceNote, ReportBlock, Rule } from '../../db/types';
 import type { Exceedance, RuleEvaluation } from '../../lib/compliance';
 import { RuleEditor } from './RuleEditor';
-import { AiInputModal } from '../../components/AiInputModal';
 import { uid } from '../../lib/ids';
 
 type Preset = { label: string; description: string; make: (projectId: string) => Rule[] };
@@ -157,7 +156,6 @@ export function ComplianceTab() {
 
   const settings = useSettings();
   const [wordBusy, setWordBusy] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
   const exportWord = async () => {
     setWordBusy(true);
     try {
@@ -204,11 +202,6 @@ export function ComplianceTab() {
               Word
             </Button>
           )}
-          {rules.length > 0 && (
-            <Button variant="default" leftSection={<IconSparkles size={16} />} onClick={() => setAiOpen(true)}>
-              Copy for AI input
-            </Button>
-          )}
           <Menu position="bottom-end" width={360}>
             <Menu.Target>
               <Button leftSection={<IconPlus size={16} />}>Add rule</Button>
@@ -252,13 +245,13 @@ export function ComplianceTab() {
                   <Accordion.Control>
                     <Group justify="space-between" wrap="nowrap" gap="sm">
                       <div style={{ minWidth: 0 }}>
-                        <Group gap={6} wrap="nowrap">
+                        <Group gap={6} wrap="wrap" style={{ rowGap: 0 }}>
                           <LevelBadge level={rule.level} />
-                          <Text fw={600} size="sm" truncate>
+                          <Text fw={600} size="sm" lh={1.35}>
                             {rule.name}
                           </Text>
                           {rule.condition && (
-                            <Text size="xs" c="dimmed" truncate>
+                            <Text size="xs" c="dimmed">
                               {rule.condition}
                             </Text>
                           )}
@@ -267,7 +260,7 @@ export function ComplianceTab() {
                           {ev ? `${ev.description} — ${ev.summary}` : 'Inactive'}
                         </Text>
                       </div>
-                      {ev ? <RuleStatusBadge status={ev.status} /> : <Badge color="gray">Inactive</Badge>}
+                      <div style={{ flexShrink: 0 }}>{ev ? <RuleStatusBadge status={ev.status} /> : <Badge color="gray">Inactive</Badge>}</div>
                     </Group>
                   </Accordion.Control>
                   <Menu position="bottom-end">
@@ -325,7 +318,6 @@ export function ComplianceTab() {
         </Text>
       </Card>
       {editing && <RuleEditor key={editing.id} rule={editing} onClose={() => setEditing(null)} period={period} />}
-      <AiInputModal opened={aiOpen} onClose={() => setAiOpen(false)} start={{ period }} />
     </Stack>
   );
 }

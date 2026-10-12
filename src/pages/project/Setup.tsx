@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActionIcon, Autocomplete, Button, Card, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Table, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { ActionIcon, Anchor, Autocomplete, Box, Button, Card, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Table, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { Link, useNavigate } from 'react-router-dom';
@@ -11,6 +11,7 @@ import type { NdHandling, Project, Site } from '../../db/types';
 import { SITE_ROLES, SITE_TYPES } from '../../db/types';
 import { COMMON_UNITS, unitLabel } from '../../lib/units';
 import { db } from '../../db/db';
+import { MoreOptions } from '../../components/common';
 
 function SiteRow({ site, index, count, onMove }: { site: Site; index: number; count: number; onMove: (dir: -1 | 1) => void }) {
   const [s, setS] = useState(site);
@@ -139,49 +140,51 @@ function ParametersCard() {
     <Card>
       <Title order={4}>Parameters in this project</Title>
       <Text size="sm" c="dimmed" mb="sm">
-        Display units apply everywhere (tables, graphs, reports); results are converted automatically, e.g. g/m³ → µg/L. Names and aliases are managed in Settings.
+        Display units apply everywhere (tables, graphs, reports); results are converted automatically, e.g. g/m³ → µg/L. Names and aliases are in <Anchor component={Link} to="/parameters">Parameters</Anchor>.
       </Text>
-      <Table.ScrollContainer minWidth={500}>
-        <Table>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Parameter</Table.Th>
-              <Table.Th>Group</Table.Th>
-              <Table.Th>Display unit</Table.Th>
-              <Table.Th ta="right">Results</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {used.map((p) => (
-              <Table.Tr key={p.id}>
-                <Table.Td>{p.name}</Table.Td>
-                <Table.Td>
-                  <Text size="xs" c="dimmed">
-                    {p.group}
-                  </Text>
-                </Table.Td>
-                <Table.Td>
-                  <Group gap={4} wrap="nowrap">
-                    <Autocomplete size="xs" data={COMMON_UNITS} value={units[p.id] ?? unitLabel(p.unit)} onChange={(v) => setUnits({ ...units, [p.id]: v })} w={130} />
-                    {units[p.id] !== undefined && units[p.id] !== unitLabel(p.unit) && (
-                      <ActionIcon size="sm" onClick={async () => { await saveParameter({ ...p, unit: units[p.id] }); notifications.show({ message: `${p.name} now shown in ${units[p.id]}` }); }} aria-label="Save unit">
-                        <IconDeviceFloppy size={14} />
-                      </ActionIcon>
-                    )}
-                  </Group>
-                </Table.Td>
-                <Table.Td ta="right">{counts.get(p.id) ?? 0}</Table.Td>
+      <MoreOptions label="Display units" summary={`${used.length} parameters with results`}>
+        <Table.ScrollContainer minWidth={500}>
+          <Table>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Parameter</Table.Th>
+                <Table.Th>Group</Table.Th>
+                <Table.Th>Display unit</Table.Th>
+                <Table.Th ta="right">Results</Table.Th>
               </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Table.ScrollContainer>
+            </Table.Thead>
+            <Table.Tbody>
+              {used.map((p) => (
+                <Table.Tr key={p.id}>
+                  <Table.Td>{p.name}</Table.Td>
+                  <Table.Td>
+                    <Text size="xs" c="dimmed">
+                      {p.group}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Group gap={4} wrap="nowrap">
+                      <Autocomplete size="xs" data={COMMON_UNITS} value={units[p.id] ?? unitLabel(p.unit)} onChange={(v) => setUnits({ ...units, [p.id]: v })} w={130} />
+                      {units[p.id] !== undefined && units[p.id] !== unitLabel(p.unit) && (
+                        <ActionIcon size="sm" onClick={async () => { await saveParameter({ ...p, unit: units[p.id] }); notifications.show({ message: `${p.name} now shown in ${units[p.id]}` }); }} aria-label="Save unit">
+                          <IconDeviceFloppy size={14} />
+                        </ActionIcon>
+                      )}
+                    </Group>
+                  </Table.Td>
+                  <Table.Td ta="right">{counts.get(p.id) ?? 0}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      </MoreOptions>
     </Card>
   );
 }
 
 export function SetupTab() {
-  const { project, sites } = useProject();
+  const { project, sites, rules } = useProject();
   const [p, setP] = useState<Project>(project);
   const [base, setBase] = useState<Project>(project);
   const [bulk, setBulk] = useState(false);
@@ -201,19 +204,22 @@ export function SetupTab() {
   };
   return (
     <Stack gap="lg">
-      <Card style={{ borderColor: 'var(--mantine-color-teal-4)' }}>
-        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-          <div style={{ flex: '1 1 320px' }}>
-            <Title order={4}>Set up from consent documents</Title>
-            <Text size="sm" c="dimmed">
-              Let an AI tool read the consent and turn its conditions into limits, triggers, sampling schedules and reporting dates. You review everything before it's imported.
-            </Text>
-          </div>
-          <Button component={Link} to={`/projects/${project.id}/consent-setup`} leftSection={<IconSparkles size={16} />}>
-            Set up with AI
-          </Button>
-        </Group>
-      </Card>
+      {/* a new project's quickest start; once there are rules it is under Compliance › Add rule */}
+      {!rules.length && (
+        <Card style={{ borderColor: 'var(--mantine-color-teal-4)' }}>
+          <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+            <div style={{ flex: '1 1 320px' }}>
+              <Title order={4}>Set up from consent documents</Title>
+              <Text size="sm" c="dimmed">
+                Let an AI tool read the consent and turn its conditions into limits, triggers, sampling schedules and reporting dates. You review everything before it's imported.
+              </Text>
+            </div>
+            <Button component={Link} to={`/projects/${project.id}/consent-setup`} leftSection={<IconSparkles size={16} />}>
+              Set up with AI
+            </Button>
+          </Group>
+        </Card>
+      )}
       <Card>
         <Group justify="space-between" mb="sm">
           <Title order={4}>Project details</Title>
@@ -232,38 +238,42 @@ export function SetupTab() {
           value={p.consentNotes ?? ''}
           onChange={(e) => setP({ ...p, consentNotes: e.currentTarget.value })}
         />
-        <Title order={5} mt="lg" mb="xs">
-          Assessment settings
-        </Title>
-        <SimpleGrid cols={{ base: 1, sm: 3 }}>
-          <Switch
-            label="Hardness-modify metals guidelines"
-            description="Adjust Cd, Cr(III), Cu, Pb, Ni, Zn guideline values using hardness measured in the same sample (ANZECC 2000, H > 30 mg/L)"
-            checked={p.hardnessAdjust}
-            onChange={(e) => setP({ ...p, hardnessAdjust: e.currentTarget.checked })}
-          />
-          <Select
-            label="Non-detects in statistics"
-            data={[
-              { value: 'dl', label: 'Use the detection limit (conservative)' },
-              { value: 'half', label: 'Use half the detection limit' },
-              { value: 'zero', label: 'Use zero' },
-            ]}
-            value={p.ndHandling}
-            onChange={(v) => v && setP({ ...p, ndHandling: v as NdHandling })}
-            allowDeselect={false}
-          />
-          <Select
-            label="Percentile method"
-            data={[
-              { value: 'excel', label: 'Excel PERCENTILE.INC' },
-              { value: 'hazen', label: 'Hazen (NPS-FM)' },
-            ]}
-            value={p.percentileMethod}
-            onChange={(v) => v && setP({ ...p, percentileMethod: v as Project['percentileMethod'] })}
-            allowDeselect={false}
-          />
-        </SimpleGrid>
+        <Box mt="lg">
+          <MoreOptions
+            label="Assessment settings"
+            summary={[p.hardnessAdjust ? 'metals hardness-modified' : 'metals not hardness-modified', `non-detects at ${p.ndHandling === 'half' ? 'half the DL' : p.ndHandling === 'zero' ? 'zero' : 'the DL'}`, p.percentileMethod === 'hazen' ? 'Hazen percentiles' : 'Excel percentiles'].join(' · ')}
+          >
+            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+              <Switch
+                label="Hardness-modify metals guidelines"
+                description="Adjust Cd, Cr(III), Cu, Pb, Ni, Zn guideline values using hardness measured in the same sample (ANZECC 2000, H > 30 mg/L)"
+                checked={p.hardnessAdjust}
+                onChange={(e) => setP({ ...p, hardnessAdjust: e.currentTarget.checked })}
+              />
+              <Select
+                label="Non-detects in statistics"
+                data={[
+                  { value: 'dl', label: 'Use the detection limit (conservative)' },
+                  { value: 'half', label: 'Use half the detection limit' },
+                  { value: 'zero', label: 'Use zero' },
+                ]}
+                value={p.ndHandling}
+                onChange={(v) => v && setP({ ...p, ndHandling: v as NdHandling })}
+                allowDeselect={false}
+              />
+              <Select
+                label="Percentile method"
+                data={[
+                  { value: 'excel', label: 'Excel PERCENTILE.INC' },
+                  { value: 'hazen', label: 'Hazen (NPS-FM)' },
+                ]}
+                value={p.percentileMethod}
+                onChange={(v) => v && setP({ ...p, percentileMethod: v as Project['percentileMethod'] })}
+                allowDeselect={false}
+              />
+            </SimpleGrid>
+          </MoreOptions>
+        </Box>
       </Card>
 
       <Card>

@@ -25,11 +25,13 @@ interface RowProps {
   readOnly?: boolean;
   /** While this heading is dragged: how many rows of its section move with it. */
   carrying?: number;
+  /** Indent: a heading by its level, anything else under the heading it belongs to. */
+  depth: number;
   onToggle: () => void;
   onBlocks: (b: ReportBlock[]) => void;
 }
 
-function Row({ block, index, blocks, orient, base, open, readOnly, carrying, onToggle, onBlocks }: RowProps) {
+function Row({ block, index, blocks, orient, base, open, readOnly, carrying, depth, onToggle, onBlocks }: RowProps) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: block.id, disabled: readOnly });
   const style: CSSProperties = { transform: CSS.Transform.toString(transform), transition, position: 'relative', zIndex: isDragging ? 5 : undefined, opacity: isDragging ? 0.92 : 1 };
   const isBreak = block.type === 'pageBreak';
@@ -45,14 +47,15 @@ function Row({ block, index, blocks, orient, base, open, readOnly, carrying, onT
   const down = moved(1);
   const copy = () => blocks.slice(a, z).map((b) => ({ ...structuredClone(b), id: uid('b') }));
   return (
-    <div ref={setNodeRef} style={style}>
+    <div ref={setNodeRef} style={{ ...style, marginLeft: open || isDragging ? 0 : depth * 14 }}>
       <Card
-        padding={isBreak ? 6 : 'xs'}
+        padding={isBreak || isSection ? 6 : 'xs'}
+        py={isBreak || isSection ? 6 : 7}
         withBorder
         style={{
           borderColor: open ? 'var(--mantine-color-teal-5)' : undefined,
           borderStyle: isBreak ? 'dashed' : undefined,
-          background: isBreak ? 'transparent' : undefined,
+          background: isBreak ? 'transparent' : isSection ? 'var(--mantine-color-default-hover)' : undefined,
           boxShadow: isDragging ? 'var(--mantine-shadow-md)' : undefined,
         }}
       >
@@ -65,9 +68,14 @@ function Row({ block, index, blocks, orient, base, open, readOnly, carrying, onT
           <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={onToggle}>
             <Group gap={6} wrap="nowrap">
               {isBreak && <IconPageBreak size={15} color="var(--mantine-color-dimmed)" />}
-              <Text size="sm" fw={600} truncate>
+              <Text size="sm" fw={isSection ? 700 : 600} c={isSection ? 'teal.8' : undefined} truncate>
                 {block.type === 'heading' ? block.text : BLOCK_LABELS[block.type].label}
               </Text>
+              {block.type === 'heading' && block.level > 1 && (
+                <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                  H{block.level}
+                </Text>
+              )}
               {!!carrying && (
                 <Badge size="xs" variant="filled" color="teal" style={{ flexShrink: 0 }}>
                   + {carrying} more
@@ -89,9 +97,9 @@ function Row({ block, index, blocks, orient, base, open, readOnly, carrying, onT
                 </Badge>
               )}
             </Group>
-            {!isBreak && (
+            {!isBreak && !isSection && (
               <Text size="xs" c="dimmed" truncate>
-                {block.type === 'heading' ? `Heading level ${block.level}` : blockSummary(block)}
+                {blockSummary(block)}
               </Text>
             )}
           </div>
@@ -159,6 +167,17 @@ function Row({ block, index, blocks, orient, base, open, readOnly, carrying, onT
 export function SectionsEditor({ blocks, onChange, orientation, open, onOpen, readOnly }: { blocks: ReportBlock[]; onChange: (b: ReportBlock[]) => void; orientation: Orientation; open: string | null; onOpen: (id: string | null) => void; readOnly?: boolean }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const orient = useMemo(() => pageOrientations(blocks, orientation), [blocks, orientation]);
+  const depths = useMemo(() => {
+    let level = 0; // the heading level the blocks below belong to
+    return blocks.map((b) => {
+      if (b.type === 'title') return (level = 0);
+      if (b.type === 'heading') {
+        level = b.level;
+        return b.level - 1;
+      }
+      return level;
+    });
+  }, [blocks]);
   const [dragging, setDragging] = useState<string | null>(null);
   const carried = useMemo(() => {
     const i = blocks.findIndex((b) => b.id === dragging);
@@ -182,7 +201,7 @@ export function SectionsEditor({ blocks, onChange, orientation, open, onOpen, re
     onOpen(b.id);
   };
   return (
-    <Stack gap={6}>
+    <Stack gap={4}>
       {/* while a heading is dragged its section folds into it, so it lands with its content exactly where it is dropped */}
       <DndContext
         sensors={sensors}
@@ -195,7 +214,7 @@ export function SectionsEditor({ blocks, onChange, orientation, open, onOpen, re
         <SortableContext items={blocks.filter((b) => !carried.has(b.id)).map((b) => b.id)} strategy={verticalListSortingStrategy}>
           {blocks.map((b, i) =>
             carried.has(b.id) ? null : (
-              <Row key={b.id} block={b} index={i} blocks={blocks} orient={orient[i]} base={orientation} open={open === b.id} readOnly={readOnly} carrying={b.id === dragging ? carried.size : 0} onToggle={() => onOpen(open === b.id ? null : b.id)} onBlocks={onChange} />
+              <Row key={b.id} block={b} index={i} blocks={blocks} orient={orient[i]} base={orientation} open={open === b.id} readOnly={readOnly} carrying={b.id === dragging ? carried.size : 0} depth={depths[i]} onToggle={() => onOpen(open === b.id ? null : b.id)} onBlocks={onChange} />
             ),
           )}
         </SortableContext>

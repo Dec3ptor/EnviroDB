@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Badge, Button, Card, ColorInput, FileButton, Grid, Group, Menu, NumberInput, ScrollArea, Select, SimpleGrid, Stack, Switch, Text, TextInput, Title, Tooltip, Loader, Code, Image } from '@mantine/core';
+import { ActionIcon, Alert, Badge, Button, Card, ColorInput, FileButton, Grid, Group, Menu, NumberInput, ScrollArea, Select, SimpleGrid, Stack, Switch, Text, TextInput, Title, Tooltip, Loader, Code, Image } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconCopy, IconDeviceFloppy, IconPlus, IconTrash, IconPhoto, IconStar, IconTemplate, IconFileTypeDocx, IconFileTypePdf } from '@tabler/icons-react';
+import { IconCopy, IconDeviceFloppy, IconDots, IconPlus, IconTrash, IconPhoto, IconStar, IconTemplate, IconFileTypeDocx, IconFileTypePdf } from '@tabler/icons-react';
 import { db, saveSettings } from '../db/db';
 import type { ReportBlock, ReportTemplate } from '../db/types';
 import { deleteTemplate, duplicateTemplate, saveTemplate } from '../db/repo';
-import { PageHeader, PeriodPicker, defaultPeriod, type PeriodValue } from '../components/common';
+import { MoreOptions, PageHeader, PeriodPicker, defaultPeriod, type PeriodValue } from '../components/common';
 import { PLACEHOLDERS, type ReportDoc } from '../reports/model';
 import { uid } from '../lib/ids';
 import { ProjectDataProvider, useProject } from '../hooks/useProjectData';
@@ -195,26 +195,25 @@ export function TemplateEditorPage() {
                 Content
               </Title>
               <Text size="xs" c="dimmed" mb="xs">
-                Drag the ⋮⋮ handle to put a section exactly where you want it (a heading brings its content), or use the arrows to move a section past the one above or below. Tap a section to edit it; ⋯ duplicates, removes, starts a new page or puts it on landscape pages.
+                Tap a section to edit it. Drag ⋮⋮ to move it – a heading brings its content – or use the arrows; ⋯ has more.
               </Text>
               <SectionsEditor blocks={t.blocks} onChange={setBlocks} orientation={t.orientation} open={open} onOpen={setOpen} readOnly={readOnly} />
             </Card>
             <Card padding="md">
-              <Title order={6} mb={4}>
-                Placeholders
-              </Title>
-              <Text size="xs" c="dimmed" mb={6}>
-                Use these in titles, headings, text, header and footer.
-              </Text>
-              <SimpleGrid cols={2} spacing={4}>
-                {PLACEHOLDERS.map(([k, d]) => (
-                  <Tooltip key={k} label={`${d} – click to copy`}>
-                    <Code style={{ cursor: 'pointer' }} onClick={() => navigator.clipboard?.writeText(`{{${k}}}`)}>
-                      {`{{${k}}}`}
-                    </Code>
-                  </Tooltip>
-                ))}
-              </SimpleGrid>
+              <MoreOptions label="Placeholders" summary="{{project.name}}, {{period.label}} … for titles, text, header and footer">
+                <Text size="xs" c="dimmed" mb={6}>
+                  Use these in titles, headings, text, header and footer. Click one to copy it.
+                </Text>
+                <SimpleGrid cols={2} spacing={4}>
+                  {PLACEHOLDERS.map(([k, d]) => (
+                    <Tooltip key={k} label={`${d} – click to copy`}>
+                      <Code style={{ cursor: 'pointer' }} onClick={() => navigator.clipboard?.writeText(`{{${k}}}`)}>
+                        {`{{${k}}}`}
+                      </Code>
+                    </Tooltip>
+                  ))}
+                </SimpleGrid>
+              </MoreOptions>
             </Card>
           </Stack>
         </Grid.Col>
@@ -283,11 +282,11 @@ export function TemplatesPage() {
             <Card key={t.id}>
               <Stack gap={6} h="100%">
                 <Group justify="space-between" wrap="nowrap" align="flex-start">
-                  <Group gap="xs" wrap="nowrap">
-                    <IconTemplate size={18} />
+                  <Group gap="xs" wrap="nowrap" align="flex-start">
+                    <IconTemplate size={18} style={{ flexShrink: 0, marginTop: 3 }} />
                     <Text fw={600}>{t.name}</Text>
                   </Group>
-                  <Group gap={4}>
+                  <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
                     {settings.defaultTemplateId === t.id && (
                       <Badge color="yellow" leftSection={<IconStar size={10} />}>
                         Default
@@ -297,10 +296,10 @@ export function TemplatesPage() {
                   </Group>
                 </Group>
                 <Text size="sm" c="dimmed" style={{ flex: 1 }}>
-                  {t.description || `${t.blocks.length} blocks`}
+                  {t.description || `${t.blocks.length} sections`}
                 </Text>
                 <Text size="xs" c="dimmed">
-                  {t.pageSize} {t.orientation} · {t.blocks.length} blocks
+                  {t.pageSize} {t.orientation} · {t.blocks.length} sections
                 </Text>
                 <Group gap="xs" mt="xs">
                   <Button size="xs" onClick={() => navigate(`/templates/${t.id}`)}>
@@ -317,11 +316,11 @@ export function TemplatesPage() {
                   >
                     Duplicate
                   </Button>
-                  <Menu>
+                  <Menu position="bottom-end">
                     <Menu.Target>
-                      <Button size="xs" variant="subtle">
-                        More
-                      </Button>
+                      <ActionIcon variant="subtle" size={30} aria-label={`More actions for ${t.name}`}>
+                        <IconDots size={16} />
+                      </ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown>
                       <Menu.Item leftSection={<IconStar size={14} />} onClick={() => saveSettings({ defaultTemplateId: t.id })}>

@@ -113,18 +113,20 @@ export function ChartsTab() {
       <Card padding="md">
         <Stack gap="sm">
           <Group align="flex-end" gap="sm" wrap="wrap">
-            <ParamPicker params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} w={340} label="Parameters (one graph each)" placeholder="Choose parameters" />
-            <SitePicker sites={sites} value={siteIds} onChange={setSiteIds} w={240} />
-            <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} />
+            <ParamPicker compact params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} w={{ base: '100%', xs: 230 }} label="Graphs of" placeholder="Choose parameters" />
+            <SitePicker compact sites={sites} value={siteIds} onChange={setSiteIds} w={{ base: '100%', xs: 180 }} />
+            <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} width={{ base: '100%', xs: 250 }} />
+            <GuidelinePicker compact sets={guidelineSets} value={setIds} onChange={setSetIds} w={{ base: '100%', xs: 210 }} label="Guideline lines" placeholder="No guideline lines" />
           </Group>
-          <Group align="flex-end" gap="lg" wrap="wrap">
-            <GuidelinePicker sets={guidelineSets} value={setIds} onChange={setSetIds} w={340} label="Guideline lines" />
-            <Switch label="Show consent limits / triggers" checked={showRules} onChange={(e) => setShowRules(e.currentTarget.checked)} />
+          <Group align="center" gap="lg" wrap="wrap">
+            <Switch label="Consent limits / triggers" checked={showRules} onChange={(e) => setShowRules(e.currentTarget.checked)} />
             <Switch label="Log scale" checked={log} onChange={(e) => setLog(e.currentTarget.checked)} />
-            <Select label="Export size" data={Object.entries(SIZE_PRESETS).map(([value, v]) => ({ value, label: v.label }))} value={sizeKey} onChange={(v) => v && setSizeKey(v)} w={250} allowDeselect={false} />
-            <Button variant="default" leftSection={<IconFileTypeDocx size={16} />} loading={busy} onClick={exportDocx} disabled={!specs.length}>
-              All graphs to Word
-            </Button>
+            <Group gap="sm" ml="auto" wrap="wrap">
+              <Select aria-label="Graph size" data={Object.entries(SIZE_PRESETS).map(([value, v]) => ({ value, label: v.label }))} value={sizeKey} onChange={(v) => v && setSizeKey(v)} w={230} allowDeselect={false} comboboxProps={{ width: 'max-content' }} />
+              <Button variant="default" leftSection={<IconFileTypeDocx size={16} />} loading={busy} onClick={exportDocx} disabled={!specs.length}>
+                All graphs to Word
+              </Button>
+            </Group>
           </Group>
         </Stack>
       </Card>

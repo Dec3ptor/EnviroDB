@@ -1,18 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ActionIcon, Alert, Anchor, Badge, Button, Card, FileButton, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Table, TagsInput, Text, TextInput, Textarea, Title, Autocomplete, Pagination } from '@mantine/core';
+import { useEffect, useState } from 'react';
+import { Alert, Anchor, Badge, Button, Card, FileButton, Group, Modal, Select, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconCloudUpload, IconDatabaseExport, IconDatabaseImport, IconDeviceFloppy, IconLink, IconPlus, IconSearch, IconTrash, IconUnlink, IconShieldLock } from '@tabler/icons-react';
+import { IconCloudUpload, IconDatabaseExport, IconDatabaseImport, IconLink, IconTrash, IconUnlink, IconShieldLock } from '@tabler/icons-react';
 import { db, DATA_TABLES, ensureBuiltIns, saveSettings } from '../db/db';
 import { autosaveSupported, downloadWorkspaceBackup, getAutosaveState, linkAutosaveFile, onAutosaveChange, readJsonFile, regrantAutosave, restoreWorkspace, unlinkAutosaveFile, type AutosaveState } from '../db/backup';
 import { useSettings } from '../hooks/useSettings';
 import { PageHeader } from '../components/common';
-import type { Parameter, Settings } from '../db/types';
+import type { Settings } from '../db/types';
 import { SignatureInput, myDetails } from '../components/report/Signatures';
-import { createParameter, saveParameter } from '../db/repo';
-import { PARAMETER_GROUPS } from '../data/parameters';
-import { COMMON_UNITS } from '../lib/units';
 
 function fmtBytes(n?: number) {
   if (!n) return '—';
@@ -23,105 +20,6 @@ function fmtBytes(n?: number) {
     i++;
   }
   return `${n.toFixed(i ? 1 : 0)} ${u[i]}`;
-}
-
-function ParamRow({ p }: { p: Parameter }) {
-  const [d, setD] = useState(p);
-  const dirty = JSON.stringify(d) !== JSON.stringify(p);
-  return (
-    <Table.Tr>
-      <Table.Td>
-        <TextInput size="xs" value={d.name} onChange={(e) => setD({ ...d, name: e.currentTarget.value })} miw={200} />
-      </Table.Td>
-      <Table.Td>
-        <TextInput size="xs" value={d.short ?? ''} onChange={(e) => setD({ ...d, short: e.currentTarget.value || undefined })} w={90} />
-      </Table.Td>
-      <Table.Td>
-        <Select size="xs" data={PARAMETER_GROUPS} value={d.group} onChange={(v) => v && setD({ ...d, group: v })} w={150} allowDeselect={false} />
-      </Table.Td>
-      <Table.Td>
-        <Autocomplete size="xs" data={COMMON_UNITS} value={d.unit} onChange={(v) => setD({ ...d, unit: v })} w={100} />
-      </Table.Td>
-      <Table.Td>
-        <TagsInput size="xs" value={d.aliases} onChange={(v) => setD({ ...d, aliases: v })} maxTags={200} miw={260} />
-      </Table.Td>
-      <Table.Td>
-        <NumberInput size="xs" value={d.decimals ?? ''} onChange={(v) => setD({ ...d, decimals: v === '' ? undefined : Number(v) })} w={60} min={0} max={6} hideControls placeholder="auto" />
-      </Table.Td>
-      <Table.Td>
-        <ActionIcon disabled={!dirty} variant={dirty ? 'filled' : 'subtle'} onClick={() => saveParameter(d)} aria-label="Save">
-          <IconDeviceFloppy size={16} />
-        </ActionIcon>
-      </Table.Td>
-    </Table.Tr>
-  );
-}
-
-function ParameterDictionary() {
-  const params = useLiveQuery(() => db.parameters.toArray(), []);
-  const [q, setQ] = useState('');
-  const [group, setGroup] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const list = useMemo(
-    () =>
-      (params ?? [])
-        .filter((p) => (!group || p.group === group) && (!q || [p.name, p.short, p.id, ...p.aliases].join(' ').toLowerCase().includes(q.toLowerCase())))
-        .sort((a, b) => (a.order ?? 99999) - (b.order ?? 99999) || a.name.localeCompare(b.name)),
-    [params, q, group],
-  );
-  useEffect(() => setPage(1), [q, group]);
-  const per = 25;
-  const shown = list.slice((page - 1) * per, page * per);
-  return (
-    <Card>
-      <Group justify="space-between" mb="xs" wrap="wrap">
-        <div>
-          <Title order={4}>Parameters (analyte dictionary)</Title>
-          <Text size="sm" c="dimmed">
-            Aliases are the names used in lab files and spreadsheets. New names you match during import are added automatically.
-          </Text>
-        </div>
-        <Button
-          leftSection={<IconPlus size={16} />}
-          variant="light"
-          onClick={async () => {
-            const p = await createParameter('New parameter', 'mg/L', 'Other');
-            setQ(p.name);
-          }}
-        >
-          Add parameter
-        </Button>
-      </Group>
-      <Group mb="sm">
-        <TextInput leftSection={<IconSearch size={14} />} placeholder="Search names and aliases" value={q} onChange={(e) => setQ(e.currentTarget.value)} w={280} />
-        <Select data={PARAMETER_GROUPS} value={group} onChange={setGroup} placeholder="All groups" clearable w={200} />
-        <Text size="sm" c="dimmed">
-          {list.length} parameters
-        </Text>
-      </Group>
-      <Table.ScrollContainer minWidth={1000}>
-        <Table>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Name</Table.Th>
-              <Table.Th>Short</Table.Th>
-              <Table.Th>Group</Table.Th>
-              <Table.Th>Unit</Table.Th>
-              <Table.Th>Aliases</Table.Th>
-              <Table.Th>Decimals</Table.Th>
-              <Table.Th />
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {shown.map((p) => (
-              <ParamRow key={`${p.id}-${p.aliases.length}-${p.unit}-${p.name}`} p={p} />
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Table.ScrollContainer>
-      {list.length > per && <Pagination mt="sm" total={Math.ceil(list.length / per)} value={page} onChange={setPage} size="sm" />}
-    </Card>
-  );
 }
 
 export function SettingsPage() {
@@ -296,7 +194,6 @@ export function SettingsPage() {
         </Text>
       </Card>
 
-      <ParameterDictionary />
 
       <Card style={{ borderColor: 'var(--mantine-color-red-3)' }}>
         <Title order={4} mb="xs">

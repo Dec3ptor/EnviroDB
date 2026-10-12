@@ -32,38 +32,50 @@ function Header() {
   const base = `/projects/${project.id}`;
   const current = loc.pathname.slice(base.length + 1).split('/')[0] || 'overview';
   const [aiOpen, setAiOpen] = useState(false);
+  const meta = [project.client, project.consents && `Consent ${project.consents}`, project.regulator, `${sites.length} sites`, `${samples.length} samples`].filter(Boolean).join(' · ');
   return (
     <Stack gap="sm" mb="md">
-      <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+      <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
         <div style={{ minWidth: 0, flex: 1 }}>
-          <Group gap="xs">
-            <Text fw={700} fz={{ base: 20, sm: 24 }} style={{ overflowWrap: 'anywhere' }}>
+          <Group gap="xs" wrap="nowrap" align="center">
+            <Text fw={700} fz={{ base: 19, sm: 24 }} lh={1.25} lineClamp={2} style={{ overflowWrap: 'anywhere' }}>
               {project.name}
             </Text>
-            {project.code && <Badge variant="outline">{project.code}</Badge>}
+            {project.code && (
+              <Badge variant="outline" visibleFrom="xs" style={{ flexShrink: 0 }}>
+                {project.code}
+              </Badge>
+            )}
             {project.status === 'archived' && <Badge color="gray">Archived</Badge>}
           </Group>
-          <Text size="sm" c="dimmed">
-            {[project.client, project.consents && `Consent ${project.consents}`, project.regulator, `${sites.length} sites`, `${samples.length} samples`].filter(Boolean).join(' · ')}
+          <Text size="sm" c="dimmed" lineClamp={1} title={meta}>
+            {meta}
           </Text>
         </div>
-        <Group gap="xs">
-          <Button component={Link} to={`${base}/import`} leftSection={<IconUpload size={16} />}>
-            Import results
-          </Button>
-          <Button component={Link} to={`${base}/reports`} variant="light" leftSection={<IconFileReport size={16} />}>
-            Generate report
-          </Button>
-          <Button variant="default" leftSection={<IconSparkles size={16} />} onClick={() => setAiOpen(true)}>
+        <Group gap="xs" wrap="nowrap">
+          {current !== 'import' && (
+            <Button component={Link} to={`${base}/import`} leftSection={<IconUpload size={16} />} px={{ base: 'sm', sm: 'md' }}>
+              <Text span inherit visibleFrom="sm">
+                Import results
+              </Text>
+              <Text span inherit hiddenFrom="sm">
+                Import
+              </Text>
+            </Button>
+          )}
+          <Button variant="default" leftSection={<IconSparkles size={16} />} onClick={() => setAiOpen(true)} visibleFrom="md">
             Copy for AI input
           </Button>
-          <Menu position="bottom-end">
+          <Menu position="bottom-end" width={260}>
             <Menu.Target>
-              <ActionIcon variant="default" size="lg" aria-label="More">
+              <ActionIcon variant="default" size={36} aria-label="More project actions">
                 <IconDots size={18} />
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
+              <Menu.Item leftSection={<IconSparkles size={16} />} onClick={() => setAiOpen(true)} hiddenFrom="md">
+                Copy for AI input
+              </Menu.Item>
               <Menu.Item leftSection={<IconDownload size={16} />} onClick={() => downloadProjectPackage(project.id)}>
                 Download project file (to share)
               </Menu.Item>
@@ -75,9 +87,9 @@ function Header() {
         </Group>
       </Group>
       <Tabs value={current} onChange={(v) => navigate(!v || v === 'overview' ? base : `${base}/${v}`)} variant="outline">
-        <Tabs.List style={{ flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden' }}>
+        <Tabs.List style={{ flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none' }}>
           {TABS.map((t) => (
-            <Tabs.Tab key={t.value} value={t.value} leftSection={<t.icon size={16} />}>
+            <Tabs.Tab key={t.value} value={t.value} leftSection={<t.icon size={16} />} ref={t.value === current ? scrollIntoTabs : undefined}>
               {t.label}
             </Tabs.Tab>
           ))}
@@ -87,6 +99,9 @@ function Header() {
     </Stack>
   );
 }
+
+/** Keep the current tab in view when the tab bar scrolls sideways (phones). */
+const scrollIntoTabs = (el: HTMLButtonElement | null) => el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 
 export function ProjectLayout() {
   const { projectId } = useParams();

@@ -4,7 +4,7 @@
 import type { Parameter, Result, Sample } from '../db/types';
 import type { ProjectBundle } from './analysis';
 import { resultsFor } from './dataIndex';
-import { formatDate, MONTH_LONG } from './dates';
+import { formatDate, formatDateLong, MONTH_LONG } from './dates';
 import { percentile } from './stats';
 import { convert } from './units';
 import { fmtNum } from './values';
@@ -98,6 +98,17 @@ export function monthLabel(start: string, end: string): string {
   if (ys === ye && ms === me) return `${MONTH_LONG[ms - 1]} ${ys}`;
   if (ys === ye) return `${MONTH_LONG[ms - 1]} – ${MONTH_LONG[me - 1]} ${ys}`;
   return `${MONTH_LONG[ms - 1]} ${ys} – ${MONTH_LONG[me - 1]} ${ye}`;
+}
+
+/** A period as it reads in a report: "September 2026", "July to September 2026", "July 2025 to June 2026", or exact dates. */
+export function reportPeriodLabel(start: string, end: string): string {
+  const next = new Date(Date.UTC(+end.slice(0, 4), +end.slice(5, 7) - 1, +end.slice(8, 10) + 1)).toISOString().slice(0, 10);
+  if (!start.endsWith('-01') || !next.endsWith('-01')) return `${formatDateLong(start)} to ${formatDateLong(end)}`;
+  const [ys, ms] = [+start.slice(0, 4), +start.slice(5, 7)];
+  const [ye, me] = [+end.slice(0, 4), +end.slice(5, 7)];
+  if (ys === ye && ms === me) return `${MONTH_LONG[ms - 1]} ${ys}`;
+  if (ys === ye) return `${MONTH_LONG[ms - 1]} to ${MONTH_LONG[me - 1]} ${ys}`;
+  return `${MONTH_LONG[ms - 1]} ${ys} to ${MONTH_LONG[me - 1]} ${ye}`;
 }
 
 /** Period choices for the months with sampling, newest first: "Monitoring round – September 2026". */

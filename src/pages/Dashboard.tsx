@@ -197,10 +197,10 @@ export function DashboardPage() {
         <StatTile label="Active projects" value={active.length} sub={`${bundles.length - active.length} archived`} icon={<IconFolders size={22} color="var(--mantine-color-dimmed)" />} onClick={() => navigate('/projects')} />
         <StatTile label="Samples in the last 30 days" value={dash.samples30} icon={<IconFlask size={22} color="var(--mantine-color-dimmed)" />} />
         <StatTile
-          label="Rules exceeded this reporting year"
+          label="Rules exceeded"
           value={exceeded}
           color={exceeded ? 'red' : undefined}
-          sub={`${dash.exceedances.length} exceedance${dash.exceedances.length === 1 ? '' : 's'} in the last 90 days`}
+          sub={`This reporting year · ${dash.exceedances.length} exceedance${dash.exceedances.length === 1 ? '' : 's'} in the last 90 days`}
           icon={exceeded ? <IconCircleX size={22} color="var(--mantine-color-red-6)" /> : <IconCircleCheck size={22} color="var(--mantine-color-green-6)" />}
         />
         <StatTile
@@ -293,7 +293,9 @@ export function DashboardPage() {
                     <Table.Tbody>
                       {dash.exceedances.slice(0, 10).map((e, i) => (
                         <Table.Tr key={i} className="clickable-row" onClick={() => navigate(`/projects/${e.b.project.id}/compliance`)}>
-                          <Table.Td className="tabular">{formatDate(e.date)}</Table.Td>
+                          <Table.Td className="tabular" style={{ whiteSpace: 'nowrap' }}>
+                            {formatDate(e.date)}
+                          </Table.Td>
                           <Table.Td>
                             <Text size="sm">{e.b.project.name}</Text>
                             <Text size="xs" c="dimmed">
@@ -301,14 +303,16 @@ export function DashboardPage() {
                             </Text>
                           </Table.Td>
                           <Table.Td>{e.param}</Table.Td>
-                          <Table.Td ta="right" className="tabular" fw={600}>
+                          <Table.Td ta="right" className="tabular" fw={600} style={{ whiteSpace: 'nowrap' }}>
                             {e.value}
                           </Table.Td>
                           <Table.Td>
-                            <Group gap={6} wrap="nowrap">
-                              <LevelBadge level={e.ev.rule.level} />
+                            <Group gap={6} wrap="nowrap" align="flex-start">
+                              <div style={{ flexShrink: 0 }}>
+                                <LevelBadge level={e.ev.rule.level} />
+                              </div>
                               <Tooltip label={e.ev.description}>
-                                <Text size="sm" lineClamp={1}>
+                                <Text size="sm" lineClamp={2}>
                                   {e.ev.rule.name}
                                 </Text>
                               </Tooltip>

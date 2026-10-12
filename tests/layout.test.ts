@@ -10,6 +10,7 @@ import { createDemoProject } from '../src/db/demo';
 import type { ChartBlock, ReportBlock, ReportTemplate } from '../src/db/types';
 import { BUILT_IN_TEMPLATES } from '../src/data/templates';
 import { buildReport, chartSizeCm, pageOrientations, usableWidthMm } from '../src/reports/build';
+import { reportPeriodLabel } from '../src/lib/latest';
 import { toPdfDefinition } from '../src/reports/pdf';
 import { docxBlob } from '../src/reports/docx';
 import type { ReportDoc } from '../src/reports/model';
@@ -336,5 +337,29 @@ describe('signatures', () => {
     ]);
     for (const text of ['Prepared by', 'Ben Foote', 'Reviewed by', 'Jane Doe', 'Approved for release by', 'John Smith', 'Date: ']) expect(xml).toContain(text);
     expect(xml).toMatch(/<w:pBdr><w:bottom [^>]*w:val="single"/); // the signing line
+  });
+});
+
+describe('report period wording', () => {
+  it('names the period as a report would, whatever the picker called it', async () => {
+    expect(reportPeriodLabel('2025-07-01', '2026-06-30')).toBe('July 2025 to June 2026');
+    expect(reportPeriodLabel('2026-09-01', '2026-09-30')).toBe('September 2026');
+    expect(reportPeriodLabel('2026-07-01', '2026-09-30')).toBe('July to September 2026');
+    expect(reportPeriodLabel('2026-07-15', '2026-09-30')).toBe('15 July 2026 to 30 September 2026');
+    const b = await loadBundle(projectId);
+    const doc = buildReport({ bundle: b, template: annual, period: { start: '2025-07-01', end: '2026-06-30', label: 'Annual monitoring report: 1 Jul 2025 – 30 Jun 2026' }, settings: DEFAULT_SETTINGS });
+    const title = doc.nodes.find((n) => n.t === 'title') as Extract<ReportDoc['nodes'][number], { t: 'title' }>;
+    expect(title.subtitle).toBe('Annual Compliance Monitoring Report – July 2025 to June 2026');
+  });
+
+  it('gives "All data" the dates the data covers, not 1900 to 2199', async () => {
+    const b = await loadBundle(projectId);
+    const doc = buildReport({ bundle: b, template: annual, period: { start: '1900-01-01', end: '2199-12-31', label: 'All data' }, settings: DEFAULT_SETTINGS });
+    const title = doc.nodes.find((n) => n.t === 'title') as Extract<ReportDoc['nodes'][number], { t: 'title' }>;
+    const shown = title.details.find(([k]) => k === 'Reporting period')![1];
+    const dates = b.samples.map((s) => s.date.slice(0, 10)).sort();
+    expect(shown).not.toMatch(/1900|2199/);
+    expect(shown.startsWith(String(+dates[0].slice(8, 10)))).toBe(true); // the first sample's day
+    expect(doc.fileName).not.toMatch(/1900|2199/);
   });
 });

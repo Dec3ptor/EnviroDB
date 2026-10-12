@@ -5,7 +5,7 @@ import { displayValue, evaluateAll, flagResults, keyParameters, limitToSites, st
 import type { RuleEvaluation } from '../lib/compliance';
 import { STATUS_META } from '../lib/compliance';
 import { addDays, addMonths, formatDate, formatDateLong, todayStr, toUtcMs } from '../lib/dates';
-import { monthLabel, reviewCell, type ReviewCell } from '../lib/latest';
+import { monthLabel, reportPeriodLabel, reviewCell, type ReviewCell } from '../lib/latest';
 import { guidelineFor } from '../lib/guidelines';
 import { scheduleStep, frequencyLabel } from '../lib/schedule';
 import { convert, unitLabel } from '../lib/units';
@@ -130,6 +130,10 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   const samplesInPeriod = b.samples.filter((s) => s.date.slice(0, 10) >= start && s.date.slice(0, 10) <= end);
   const sitesSampled = b.sites.filter((s) => samplesInPeriod.some((x) => x.siteId === s.id));
   const exceedCount = evals.reduce((n, e) => n + e.exceedances.length, 0);
+  // "All data" runs from 1900 to 2199: say the dates the data actually covers
+  const dates = b.samples.map((x) => x.date.slice(0, 10)).sort();
+  const shownStart = start <= '1900-01-01' && dates.length ? dates[0] : start;
+  const shownEnd = end >= '2199-12-31' && dates.length ? dates[dates.length - 1] : end;
   const ctx: Record<string, string> = {
     'project.name': project.name,
     'project.code': project.code ?? '',
@@ -138,10 +142,10 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     'project.regulator': project.regulator ?? '',
     'project.location': project.location ?? '',
     'project.description': project.description ?? '',
-    'period.start': formatDateLong(start),
-    'period.end': formatDateLong(end),
-    'period.label': period.label,
-    'period.month': monthLabel(start, end),
+    'period.start': formatDateLong(shownStart),
+    'period.end': formatDateLong(shownEnd),
+    'period.label': reportPeriodLabel(shownStart, shownEnd),
+    'period.month': monthLabel(shownStart, shownEnd),
     today: formatDateLong(todayStr()),
     author: settings.author,
     company: settings.company,
@@ -223,7 +227,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           ['Consent(s)', project.consents ?? ''],
           ['Regulator', project.regulator ?? ''],
           ['Location', project.location ?? ''],
-          ['Reporting period', `${formatDateLong(start)} – ${formatDateLong(end)}`],
+          ['Reporting period', `${formatDateLong(shownStart)} – ${formatDateLong(shownEnd)}`],
           ['Sites covered', subset ? b.sites.map((s) => s.code).join(', ') : ''],
           ['Prepared by', fill(blk.preparedBy)],
           ['Reviewed by', fill(blk.reviewedBy)],
@@ -707,7 +711,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     footer: fill(t.footerText),
     title: `${project.name} – ${t.name}`,
     author: settings.author || settings.company,
-    fileName: `${project.name} - ${t.name} - ${wholeMonth(start, end) ? monthLabel(start, end) : `${formatDate(start, { format: 'D MMM YYYY' })} to ${formatDate(end, { format: 'D MMM YYYY' })}`}`.replace(/[\\/:*?"<>|]+/g, '-'),
+    fileName: `${project.name} - ${t.name} - ${wholeMonth(shownStart, shownEnd) ? monthLabel(shownStart, shownEnd) : `${formatDate(shownStart, { format: 'D MMM YYYY' })} to ${formatDate(shownEnd, { format: 'D MMM YYYY' })}`}`.replace(/[\\/:*?"<>|]+/g, '-'),
   };
 }
 

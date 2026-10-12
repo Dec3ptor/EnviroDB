@@ -16,6 +16,7 @@ import {
   IconCloudOff,
   IconAlertTriangle,
   IconDroplet,
+  IconFlask,
 } from '@tabler/icons-react';
 import { db } from '../db/db';
 import { getAutosaveState, onAutosaveChange, regrantAutosave, type AutosaveState } from '../db/backup';
@@ -75,9 +76,12 @@ export function Shell() {
     { to: '/', label: 'Dashboard', icon: IconLayoutDashboard, active: path === '/' },
     { to: '/projects', label: 'Projects', icon: IconFolders, active: path === '/projects' },
     { to: '/import', label: 'Import data', icon: IconUpload, active: path.startsWith('/import') },
+  ];
+  // reference data shared by every project
+  const library = [
     { to: '/guidelines', label: 'Guidelines', icon: IconBook2, active: path.startsWith('/guidelines') },
     { to: '/templates', label: 'Report templates', icon: IconTemplate, active: path.startsWith('/templates') },
-    { to: '/settings', label: 'Settings & backup', icon: IconSettings, active: path.startsWith('/settings') },
+    { to: '/parameters', label: 'Parameters', icon: IconFlask, active: path.startsWith('/parameters') },
   ];
   const recent = [...(projects ?? [])].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, 8);
 
@@ -101,9 +105,6 @@ export function Shell() {
           </Group>
           <Group gap="xs" wrap="nowrap">
             <AutosaveIndicator />
-            <Button component={Link} to="/import" leftSection={<IconUpload size={16} />} size="sm" visibleFrom="xs">
-              Import results
-            </Button>
             <ActionIcon variant="default" size="lg" onClick={() => toggleColorScheme()} aria-label="Toggle colour scheme">
               {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
             </ActionIcon>
@@ -115,8 +116,12 @@ export function Shell() {
           {nav.map((n) => (
             <NavLink key={n.to} component={Link} to={n.to} label={n.label} leftSection={<n.icon size={18} stroke={1.6} />} active={n.active} variant="light" style={{ borderRadius: 8 }} />
           ))}
+          <Divider my={6} label="Library" labelPosition="left" />
+          {library.map((n) => (
+            <NavLink key={n.to} component={Link} to={n.to} label={n.label} leftSection={<n.icon size={18} stroke={1.6} />} active={n.active} variant="light" style={{ borderRadius: 8 }} />
+          ))}
         </AppShell.Section>
-        <Divider my="sm" label="Projects" labelPosition="left" />
+        <Divider my={6} label="Recent projects" labelPosition="left" />
         <AppShell.Section grow component={ScrollArea}>
           {recent.map((p) => (
             <NavLink
@@ -137,6 +142,7 @@ export function Shell() {
           )}
         </AppShell.Section>
         <AppShell.Section>
+          <NavLink component={Link} to="/settings" label="Settings & backup" leftSection={<IconSettings size={18} stroke={1.6} />} active={path.startsWith('/settings')} variant="light" style={{ borderRadius: 8 }} />
           <Text size="xs" c="dimmed" px="sm" py={4}>
             Data stays in this browser unless you export or autosave it.
           </Text>

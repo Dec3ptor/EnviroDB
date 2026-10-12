@@ -280,11 +280,19 @@ export function ReportsTab() {
                     value={stored.id}
                     onChange={setTemplateId}
                     allowDeselect={false}
-                    description={stored.description}
+                    title={stored.description}
+                    comboboxProps={{ width: 'max-content' }}
+                    renderOption={({ option }) => (
+                      <div style={{ maxWidth: 380 }}>
+                        <Text size="sm">{option.label}</Text>
+                        <Text size="xs" c="dimmed">
+                          {templates.find((t) => t.id === option.value)?.description}
+                        </Text>
+                      </div>
+                    )}
                   />
                   <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} extra={[...oblPresets, ...rounds]} width="100%" />
                   <ReportSites sites={data.sites} chosen={chosenSites} onChange={chooseSites} rememberedFor={obligation ? `“${obligation.name}”` : 'this template'} />
-                  {orientationControl}
                   {editedBanner}
                   <Stack gap={6}>
                     <Button fullWidth leftSection={<IconFileTypeDocx size={18} />} loading={busy === 'docx'} onClick={() => exportDoc('docx')}>
@@ -293,9 +301,6 @@ export function ReportsTab() {
                     <Button fullWidth variant="light" leftSection={<IconFileTypePdf size={18} />} loading={busy === 'pdf'} onClick={() => exportDoc('pdf')}>
                       Download PDF
                     </Button>
-                    <Text size="xs" c="dimmed">
-                      The preview shows the PDF exactly. The Word file has the same sections, page orientation and graphs, with headings in Word's Heading styles.
-                    </Text>
                   </Stack>
                   {obligation && (
                     <Group justify="space-between">
@@ -320,9 +325,6 @@ export function ReportsTab() {
                       )}
                     </Group>
                   )}
-                  <Button variant="subtle" size="compact-sm" leftSection={<IconLayoutList size={14} />} onClick={() => setTab('layout')} style={{ alignSelf: 'flex-start' }}>
-                    Change sections, graphs and page layout
-                  </Button>
                 </Stack>
               </Tabs.Panel>
 
@@ -331,7 +333,7 @@ export function ReportsTab() {
                   {orientationControl}
                   {editedBanner}
                   <Text size="xs" c="dimmed">
-                    Drag the ⋮⋮ handle to put a section exactly where you want it (a heading brings its content), or use the arrows to move a section past the one above or below. Tap a section to change it; ⋯ duplicates, removes, starts a new page or puts it on landscape pages.
+                    Tap a section to change it. Drag ⋮⋮ to move it – a heading brings its content – or use the arrows; ⋯ has more.
                   </Text>
                   <SectionsEditor blocks={template.blocks} onChange={(blocks) => changeTemplate({ ...template, blocks })} orientation={template.orientation} open={open} onOpen={setOpen} />
                   <Anchor component={Link} to={`/templates/${stored.id}`} size="xs">

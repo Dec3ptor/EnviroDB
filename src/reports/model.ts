@@ -122,7 +122,7 @@ export const PLACEHOLDERS: Array<[string, string]> = [
   ['project.location', 'Location'],
   ['period.start', 'Period start (long date)'],
   ['period.end', 'Period end (long date)'],
-  ['period.label', 'Period label'],
+  ['period.label', 'The period, e.g. July 2025 to June 2026'],
   ['period.month', 'Month(s) of the period, e.g. September 2026'],
   ['today', "Today's date"],
   ['author', 'Your name (Settings)'],

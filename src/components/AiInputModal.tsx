@@ -128,10 +128,10 @@ function AiInputForm({ start }: { start?: AiInputStart }) {
           <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} extra={presets} width="100%" />
         </Grid.Col>
         <Grid.Col span={{ base: 24, sm: 7 }}>
-          <SitePicker sites={sites} value={siteIds} onChange={setSiteIds} w="100%" />
+          <SitePicker compact sites={sites} value={siteIds} onChange={setSiteIds} w="100%" />
         </Grid.Col>
         <Grid.Col span={{ base: 24, sm: 7 }}>
-          <ParamPicker params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} w="100%" />
+          <ParamPicker compact params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} w="100%" />
         </Grid.Col>
       </Grid>
 

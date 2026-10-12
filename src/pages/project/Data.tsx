@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Accordion, Alert, Badge, Button, Card, Drawer, Group, Menu, NumberInput, Pill, Popover, SegmentedControl, Select, Stack, Table, Text, TextInput, ActionIcon, Textarea, UnstyledButton, CloseButton } from '@mantine/core';
+import { Accordion, Badge, Button, Card, Drawer, Group, Menu, NumberInput, Pill, Popover, SegmentedControl, Select, Stack, Table, Text, TextInput, ActionIcon, Textarea, UnstyledButton, CloseButton, Tooltip } from '@mantine/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router-dom';
 import { modals } from '@mantine/modals';
@@ -21,7 +21,7 @@ import { AiInputModal } from '../../components/AiInputModal';
 import { applyView, DEFAULT_SORT, describeFilter, FILTER_OPS, SHOW_ROWS, sortLabel, type FilterOp, type ShowRows, type SortKey, type SortState, type ValueFilter } from '../../lib/tableView';
 import type { Parameter } from '../../db/types';
 
-function Legend({ guidelineNames }: { guidelineNames: string[] }) {
+function Legend({ guidelineNames, hardness }: { guidelineNames: string[]; hardness?: boolean }) {
   return (
     <Group gap="lg" wrap="wrap">
       <Text size="xs">
@@ -38,6 +38,11 @@ function Legend({ guidelineNames }: { guidelineNames: string[] }) {
       </Text>
       <Text size="xs" c="dimmed">
         &lt; = below detection limit · hover a cell for details · click a row to edit
+        {hardness && (
+          <Tooltip multiline w={300} label="Hardness-dependent metals are compared with hardness-modified guideline values where hardness was measured in the same sample (ANZECC 2000). Change this in Setup.">
+            <span style={{ textDecoration: 'underline dotted', cursor: 'help' }}> · metals hardness-modified</span>
+          </Tooltip>
+        )}
       </Text>
     </Group>
   );
@@ -500,42 +505,12 @@ export function DataTab() {
     <Stack gap="md">
       <Card padding="md">
         <Group align="flex-end" gap="sm" wrap="wrap">
-          <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} />
-          <SitePicker sites={sites} value={siteIds} onChange={setSiteIds} w={240} />
-          <ParamPicker params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} w={300} />
-          <GuidelinePicker sets={guidelineSets} value={setIds} onChange={setSetIds} w={300} />
-          <SegmentedControl
-            value={layout}
-            onChange={(v) => setLayout(v as typeof layout)}
-            data={[
-              { value: 'samplesAsRows', label: 'Dates down' },
-              { value: 'parametersAsRows', label: 'Dates across' },
-            ]}
-          />
-          <Menu>
-            <Menu.Target>
-              <Button variant="default" leftSection={<IconDownload size={16} />} loading={wordBusy}>
-                Export
-              </Button>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item leftSection={<IconFileTypeDocx size={16} />} onClick={exportWord}>
-                Word (formatted tables, landscape)
-              </Menu.Item>
-              <Menu.Item leftSection={<IconFileSpreadsheet size={16} />} onClick={() => exportPivotXlsx(exportArgs)}>
-                Excel (with highlighting)
-              </Menu.Item>
-              <Menu.Item leftSection={<IconDownload size={16} />} onClick={() => exportPivotCsv(exportArgs)}>
-                CSV
-              </Menu.Item>
-              <Menu.Divider />
-              <Menu.Item leftSection={<IconSparkles size={16} />} onClick={() => setAiOpen(true)}>
-                Copy for AI input (this period, sites and parameters)
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
+          <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} width={{ base: '100%', xs: 250 }} />
+          <SitePicker compact sites={sites} value={siteIds} onChange={setSiteIds} w={{ base: '100%', xs: 180 }} />
+          <ParamPicker compact params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} w={{ base: '100%', xs: 210 }} />
+          <GuidelinePicker compact sets={guidelineSets} value={setIds} onChange={setSetIds} w={{ base: '100%', xs: 210 }} label="Compare with" placeholder="No guidelines" />
         </Group>
-        <Group align="flex-end" gap="sm" wrap="wrap" mt="sm">
+        <Group align="center" gap="sm" wrap="wrap" mt="sm">
           <TextInput
             leftSection={<IconSearch size={16} />}
             placeholder="Search sample names, lab jobs, notes…"
@@ -545,10 +520,10 @@ export function DataTab() {
             rightSection={search ? <CloseButton size="sm" aria-label="Clear search" onClick={() => setSearch('')} /> : null}
             w={{ base: '100%', sm: 300 }}
           />
-          <Select aria-label="Show" data={SHOW_ROWS} value={show} onChange={(v) => v && setShow(v as ShowRows)} allowDeselect={false} w={{ base: '100%', sm: 320 }} comboboxProps={{ width: 'max-content' }} />
+          <Select aria-label="Show" data={SHOW_ROWS} value={show} onChange={(v) => v && setShow(v as ShowRows)} allowDeselect={false} w={{ base: '100%', sm: 300 }} comboboxProps={{ width: 'max-content' }} />
           <Popover opened={!!draft} onChange={(o) => !o && setDraft(null)} position="bottom-start" withArrow shadow="md" trapFocus>
             <Popover.Target>
-              <Button variant="default" leftSection={<IconFilter size={16} />} onClick={() => setDraft(draft ? null : { paramId: columns[0]?.id ?? '', op: '>' })} disabled={!columns.length}>
+              <Button variant="subtle" leftSection={<IconFilter size={16} />} onClick={() => setDraft(draft ? null : { paramId: columns[0]?.id ?? '', op: '>' })} disabled={!columns.length}>
                 Filter by value
               </Button>
             </Popover.Target>
@@ -566,6 +541,38 @@ export function DataTab() {
               )}
             </Popover.Dropdown>
           </Popover>
+          <Group gap="sm" ml="auto" wrap="nowrap">
+            <SegmentedControl
+              value={layout}
+              onChange={(v) => setLayout(v as typeof layout)}
+              data={[
+                { value: 'samplesAsRows', label: 'Dates down' },
+                { value: 'parametersAsRows', label: 'Dates across' },
+              ]}
+            />
+            <Menu position="bottom-end">
+              <Menu.Target>
+                <Button variant="default" leftSection={<IconDownload size={16} />} loading={wordBusy}>
+                  Export
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item leftSection={<IconFileTypeDocx size={16} />} onClick={exportWord}>
+                  Word (formatted tables, landscape)
+                </Menu.Item>
+                <Menu.Item leftSection={<IconFileSpreadsheet size={16} />} onClick={() => exportPivotXlsx(exportArgs)}>
+                  Excel (with highlighting)
+                </Menu.Item>
+                <Menu.Item leftSection={<IconDownload size={16} />} onClick={() => exportPivotCsv(exportArgs)}>
+                  CSV
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Item leftSection={<IconSparkles size={16} />} onClick={() => setAiOpen(true)}>
+                  Copy for AI input (this period, sites and parameters)
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </Group>
         </Group>
         {(filters.length > 0 || sorted || show !== 'all' || search) && (
           <Group gap={6} mt="sm" wrap="wrap">
@@ -595,17 +602,12 @@ export function DataTab() {
           </Group>
         )}
       </Card>
-      <Group justify="space-between">
-        <Legend guidelineNames={guidelineNames} />
+      <Group justify="space-between" gap="xs">
+        <Legend guidelineNames={guidelineNames} hardness={project.hardnessAdjust && setIds.some((id) => setMap.get(id)?.values.some((v) => v.hardness))} />
         <Text size="sm" c={narrowed ? undefined : 'dimmed'} fw={narrowed ? 600 : undefined}>
           {narrowed ? `Showing ${view.length} of ${rows.length} samples` : `${rows.length} samples`} · {columns.length} parameters
         </Text>
       </Group>
-      {project.hardnessAdjust && setIds.some((id) => setMap.get(id)?.values.some((v) => v.hardness)) && (
-        <Alert variant="light" color="blue" py={6}>
-          <Text size="xs">Hardness-dependent metals are compared with hardness-modified values where hardness was measured in the same sample (ANZECC 2000). Change this in Setup.</Text>
-        </Alert>
-      )}
       {view.length ? (
         layout === 'samplesAsRows' ? <SamplesAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} head={head} /> : <ParamsAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} />
       ) : (
