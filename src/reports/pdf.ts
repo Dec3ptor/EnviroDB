@@ -82,6 +82,7 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
         out.push({
           table: { widths: [45 * MM, '*'], body: n.details.map(([k, v]) => [{ text: k, color: '#555555' }, { text: v }]) },
           layout: { hLineWidth: () => 0, vLineWidth: () => 0, paddingTop: () => 3, paddingBottom: () => 3, paddingLeft: () => 0 },
+          margin: [0, 0, 0, n.pageBreakAfter ? 0 : 10 * MM], // space before the text that follows on the same page
         } as Content);
       return out; // a title page's page break is applied to the content that follows (see toPdfDefinition)
     }

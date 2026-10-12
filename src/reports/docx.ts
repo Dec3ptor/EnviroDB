@@ -79,6 +79,7 @@ function nodeToDocx(n: DocNode, doc: ReportDoc, contentWidthMm: number): Array<P
         out.push(new Paragraph({ tabStops: [{ type: TabStopType.LEFT, position: 2600 }], spacing: { after: 60 }, children: [new TextRun({ text: k, color: '555555', size: base }), new TextRun({ text: `\t${v}`, size: base })] }));
       }
       if (n.pageBreakAfter) out.push(new Paragraph({ children: [new PageBreak()] }));
+      else out.push(new Paragraph({ spacing: { after: 240 } })); // space before the text that follows on the same page
       return out;
     }
     case 'h':
