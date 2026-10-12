@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActionIcon, Alert, Badge, Button, Card, ColorInput, FileButton, Grid, Group, Menu, NumberInput, ScrollArea, Select, SimpleGrid, Stack, Switch, Text, TextInput, Title, Tooltip, Loader, Code, Image } from '@mantine/core';
+import { ActionIcon, Alert, Badge, Button, Card, ColorInput, FileButton, Grid, Group, Menu, NumberInput, Select, SimpleGrid, Stack, Switch, Text, TextInput, Title, Tooltip, Loader, Code, Image } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { modals } from '@mantine/modals';
@@ -18,13 +18,13 @@ import { PdfPreview } from '../reports/PdfPreview';
 import { SectionsEditor } from '../components/report/SectionsEditor';
 import { readImageFile } from '../lib/image';
 import { roundPeriods } from '../lib/latest';
-import { JumpToPreview } from '../components/report/JumpToPreview';
+import { JumpToPreview, usePreviewPane } from '../components/report/JumpToPreview';
 import { hasMixedPages, samePages } from '../components/report/sections';
 import { newBlock } from '../components/report/blocks';
 import { cmToPx, renderChartPng } from '../charts/render';
 import { exportReport, type ExportKind } from '../reports/export';
 
-function Preview({ template }: { template: ReportTemplate }) {
+function Preview({ template, fill }: { template: ReportTemplate; fill?: boolean }) {
   const data = useProject();
   const settings = useSettings();
   const rounds = useMemo(() => roundPeriods(data, 12), [data]);
@@ -54,7 +54,7 @@ function Preview({ template }: { template: ReportTemplate }) {
     }
   };
   return (
-    <Stack gap="xs">
+    <Stack gap="xs" style={fill ? { flex: 1, minHeight: 0 } : undefined}>
       <Group align="flex-end" justify="space-between" wrap="wrap">
         <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={data.project.yearStartMonth} extra={rounds} />
         <Group gap="xs">
@@ -66,7 +66,7 @@ function Preview({ template }: { template: ReportTemplate }) {
           </Button>
         </Group>
       </Group>
-      <PdfPreview doc={doc} building={busy} />
+      <PdfPreview doc={doc} building={busy} fill={fill} />
     </Stack>
   );
 }
@@ -81,6 +81,7 @@ export function TemplateEditorPage() {
   const [previewProject, setPreviewProject] = useState<string | null>(null);
   const settingsCol = useRef<HTMLDivElement>(null);
   const previewCard = useRef<HTMLDivElement>(null);
+  const pane = usePreviewPane(previewCard, 'xl');
   if (stored && (!t || t.id !== stored.id)) setT(structuredClone(stored)); // load once per template
   useEffect(() => {
     if (!previewProject && projects?.length) setPreviewProject([...projects].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0].id);
@@ -218,17 +219,15 @@ export function TemplateEditorPage() {
           </Stack>
         </Grid.Col>
         <Grid.Col span={{ base: 12, xl: 7 }}>
-          <Card padding="md" bg="var(--mantine-color-gray-1)" ref={previewCard} style={{ scrollMarginTop: 72 }}>
+          <Card padding="md" bg="var(--mantine-color-gray-1)" ref={previewCard} style={{ scrollMarginTop: 72, ...pane.style }}>
             <Group justify="space-between" mb="xs" wrap="wrap">
               <Text fw={600}>Live preview</Text>
               <Select size="xs" data={(projects ?? []).map((p) => ({ value: p.id, label: p.name }))} value={previewProject} onChange={setPreviewProject} placeholder="Preview with project…" w={300} />
             </Group>
             {previewProject ? (
-              <ScrollArea h="calc(100vh - 240px)" type="auto">
-                <ProjectDataProvider key={previewProject} projectId={previewProject}>
-                  <Preview template={t} />
-                </ProjectDataProvider>
-              </ScrollArea>
+              <ProjectDataProvider key={previewProject} projectId={previewProject}>
+                <Preview template={t} fill={pane.fill} />
+              </ProjectDataProvider>
             ) : (
               <Alert>Create a project (or load the demo) to preview templates with real data.</Alert>
             )}

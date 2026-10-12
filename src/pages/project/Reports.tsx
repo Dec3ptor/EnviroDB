@@ -21,7 +21,7 @@ import { saveObligation, saveTemplate } from '../../db/repo';
 import type { ReportTemplate, TextBlock } from '../../db/types';
 import { SectionsEditor } from '../../components/report/SectionsEditor';
 import { PagesControl } from '../../components/report/PagesControl';
-import { JumpToPreview } from '../../components/report/JumpToPreview';
+import { JumpToPreview, usePreviewPane } from '../../components/report/JumpToPreview';
 import { ReportSites } from '../../components/report/ReportSites';
 
 const same = (a: ReportTemplate, b: ReportTemplate) => JSON.stringify({ ...a, updatedAt: '' }) === JSON.stringify({ ...b, updatedAt: '' });
@@ -164,6 +164,7 @@ export function ReportsTab() {
   const [tab, setTab] = useState<string | null>('report');
   const settingsCard = useRef<HTMLDivElement>(null);
   const previewCard = useRef<HTMLDivElement>(null);
+  const pane = usePreviewPane(previewCard, 'lg');
   const [open, setOpen] = useState<string | null>(null);
 
   const draftKey = template ? `draft:${project.id}:${template.id}:${period.start}:${period.end}` : '';
@@ -371,8 +372,8 @@ export function ReportsTab() {
         </Stack>
       </Grid.Col>
       <Grid.Col span={{ base: 12, lg: 8 }}>
-        <Card padding="sm" bg="var(--mantine-color-gray-1)" ref={previewCard} style={{ scrollMarginTop: 72 }}>
-          <PdfPreview doc={doc} building={building} />
+        <Card padding="sm" bg="var(--mantine-color-gray-1)" ref={previewCard} style={{ scrollMarginTop: 72, ...pane.style }}>
+          <PdfPreview doc={doc} building={building} fill={pane.fill} />
         </Card>
       </Grid.Col>
       <JumpToPreview preview={previewCard} back={settingsCard} />

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { ActionIcon, Alert, Badge, Group, Loader, Text, Tooltip } from '@mantine/core';
 import { IconZoomIn, IconZoomOut, IconZoomReset } from '@tabler/icons-react';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -27,17 +27,18 @@ interface PageSize {
 
 const ZOOMS = [1, 1.5, 2, 3];
 
-function PdfPage({ pdf, n, width, height, label }: { pdf: PDFDocumentProxy | null; n: number; width: number; height: number; label: string }) {
+function PdfPage({ pdf, n, width, height, label, scroller }: { pdf: PDFDocumentProxy | null; n: number; width: number; height: number; label: string; scroller?: RefObject<HTMLDivElement | null> }) {
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     const el = holder.current;
     if (!el) return;
-    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { rootMargin: '800px 0px' });
+    // draw pages as they come near: near the preview's own scroll area when it has one, else the window
+    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { root: scroller?.current ?? null, rootMargin: '800px 0px' });
     io.observe(el);
     return () => io.disconnect();
-  }, []);
+  }, [scroller]);
   useEffect(() => {
     const c = canvas.current;
     if (!c || !pdf) return;
@@ -86,8 +87,11 @@ function PdfPage({ pdf, n, width, height, label }: { pdf: PDFDocumentProxy | nul
   );
 }
 
-/** Pages of the report's PDF, drawn to scale. */
-export function PdfPreview({ doc, building }: { doc: ReportDoc | null; building?: boolean }) {
+/**
+ * Pages of the report's PDF, drawn to scale. With `fill` the preview takes the height it is given and scrolls its
+ * pages itself (the page count and zoom stay in view), so reading the preview doesn't scroll the whole page.
+ */
+export function PdfPreview({ doc, building, fill }: { doc: ReportDoc | null; building?: boolean; fill?: boolean }) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const current = useRef<PDFDocumentLoadingTask | null>(null);
   const [pages, setPages] = useState<PageSize[]>([]);
@@ -154,7 +158,7 @@ export function PdfPreview({ doc, building }: { doc: ReportDoc | null; building?
   const busy = making || !!building || (!!doc && doc !== shown);
 
   return (
-    <div data-ready={!busy}>
+    <div data-ready={!busy} style={fill ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>
       <Group justify="space-between" mb="xs" wrap="wrap" gap="xs">
         <Group gap={6}>
           <Text size="sm" fw={500}>
@@ -190,7 +194,16 @@ export function PdfPreview({ doc, building }: { doc: ReportDoc | null; building?
           The preview couldn't be drawn: {error}
         </Alert>
       )}
-      <div ref={box} style={{ overflowX: zoom > 1 ? 'auto' : 'hidden', opacity: busy && pages.length ? 0.75 : 1, transition: 'opacity 150ms' }}>
+      <div
+        ref={box}
+        data-pdf-scroller={fill || undefined}
+        style={{
+          overflowX: zoom > 1 ? 'auto' : 'hidden',
+          ...(fill ? { flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', paddingTop: 2 } : {}),
+          opacity: busy && pages.length ? 0.75 : 1,
+          transition: 'opacity 150ms',
+        }}
+      >
         {!pages.length && !error && (
           <Group justify="center" p="xl">
             <Loader />
@@ -198,7 +211,7 @@ export function PdfPreview({ doc, building }: { doc: ReportDoc | null; building?
         )}
         <div style={{ width: zoom > 1 ? widest * scale : undefined }}>
           {pages.map((p, i) => (
-            <PdfPage key={i} pdf={pdf} n={i + 1} width={p.width * scale} height={p.height * scale} label={`Page ${i + 1} of ${pages.length}${p.width > p.height ? ' · landscape' : ''}`} />
+            <PdfPage key={i} pdf={pdf} n={i + 1} width={p.width * scale} height={p.height * scale} label={`Page ${i + 1} of ${pages.length}${p.width > p.height ? ' · landscape' : ''}`} scroller={fill ? box : undefined} />
           ))}
         </div>
       </div>
