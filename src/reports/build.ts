@@ -13,7 +13,7 @@ import { statLabel } from '../lib/stats';
 import { fmtNum } from '../lib/values';
 import { logoSizeMm } from '../lib/image';
 import { buildChartSpec, chartOption } from '../charts/timeSeries';
-import { FILLS, fillPlaceholders, parseMarkup, type Cell, type DocNode, type ReportDoc } from './model';
+import { FILLS, fillPlaceholders, inline, parseMarkup, type Cell, type DocNode, type ReportDoc } from './model';
 import { CELL_PAD_MM, longestWordMm, textWidthMm } from './measure';
 
 export interface BuildOptions {
@@ -84,6 +84,10 @@ export const DEFAULT_LOGO_MM = 12;
 
 /** Space between graphs placed side by side (mm). */
 export const CHART_GAP_MM = 6;
+
+/** Default height of signatures in a sign-off (mm), and the space between signatories side by side. */
+export const DEFAULT_SIGNATURE_MM = 15;
+export const SIGN_GAP_MM = 8;
 
 function chunk<T>(list: T[], n: number): T[][] {
   const out: T[][] = [];
@@ -657,6 +661,31 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         return;
       }
       nodes.push({ t: 'table', caption: tableCaption(`Samples collected, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths: required.size ? [width * 0.1, width * 0.1, width * 0.1, width * 0.1, '*'] : [width * 0.12, width * 0.12, '*'], fontSize: t.fontSize - 1 });
+    },
+    signatures: (blk) => {
+      const items = blk.signatories
+        .map((s) => {
+          const image = s.self ? settings.signatureImage : s.image;
+          const lines = fill(s.self ? (settings.signatureDetails ?? settings.company) : s.details)
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .map(inline);
+          const date = fill(s.date).replace(/^\s*date\b\s*[:–-]?\s*/i, '').trim();
+          return { role: fill(s.role).trim(), name: (s.self ? settings.author : fill(s.name)).trim(), lines, date: date || undefined, image };
+        })
+        .filter((s) => s.name || s.lines.length || s.image); // nobody named yet
+      if (!items.length) return;
+      const cols = Math.min(3, items.length);
+      const colWidthMm = Math.min(80, (width - SIGN_GAP_MM * (cols - 1)) / cols);
+      const imageHeightMm = Math.min(40, Math.max(8, blk.imageHeightMm ?? DEFAULT_SIGNATURE_MM)); // also while a size is being typed
+      nodes.push({
+        t: 'signatures',
+        cols,
+        colWidthMm,
+        imageHeightMm,
+        items: items.map(({ image, ...s }) => ({ ...s, image: image ? { dataUrl: image, ...logoSizeMm(image, imageHeightMm, colWidthMm - 2) } : undefined })),
+      });
     },
     pageBreak: () => {}, // see below
   };

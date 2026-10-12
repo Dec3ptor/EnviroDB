@@ -25,11 +25,14 @@ import {
 } from 'docx';
 import type { Cell, DocNode, ReportDoc, Run } from './model';
 import { dataUrlToBytes } from '../charts/render';
-import { CHART_GAP_MM, type Orientation } from './build';
+import { CHART_GAP_MM, SIGN_GAP_MM, type Orientation } from './build';
 
 const hex = (c?: string) => (c ? c.replace('#', '').toUpperCase() : undefined);
 const TWIP_PER_MM = 56.6929;
 const PX_PER_CM = 96 / 2.54;
+const twips = (mm: number) => Math.round(mm * TWIP_PER_MM);
+const px = (mm: number) => Math.round((mm / 25.4) * 96); // docx sizes images in pixels at 96 dpi
+const imageType = (dataUrl: string) => (dataUrl.startsWith('data:image/jpeg') ? 'jpg' : 'png');
 
 function runs(rs: Run[], size: number): TextRun[] {
   return rs.map((r) => new TextRun({ text: r.text, bold: r.bold, italics: r.italic, size }));
@@ -69,9 +72,7 @@ function nodeToDocx(n: DocNode, doc: ReportDoc, contentWidthMm: number): Array<P
     case 'title': {
       const out: Array<Paragraph | Table> = [];
       if (n.logo) {
-        const type = n.logo.dataUrl.startsWith('data:image/jpeg') ? 'jpg' : 'png';
-        const px = (mm: number) => Math.round((mm / 25.4) * 96); // docx sizes images in pixels at 96 dpi
-        out.push(new Paragraph({ children: [new ImageRun({ type, data: dataUrlToBytes(n.logo.dataUrl), transformation: { width: px(n.logo.widthMm), height: px(n.logo.heightMm) } })], spacing: { after: 300 } }));
+        out.push(new Paragraph({ children: [new ImageRun({ type: imageType(n.logo.dataUrl), data: dataUrlToBytes(n.logo.dataUrl), transformation: { width: px(n.logo.widthMm), height: px(n.logo.heightMm) } })], spacing: { after: 300 } }));
       }
       out.push(new Paragraph({ spacing: { before: 1200, after: 120 }, border: { left: { style: BorderStyle.SINGLE, size: 36, color: hex(t.accent)!, space: 12 } }, children: [new TextRun({ text: n.title, bold: true, size: base + 24, color: hex(t.accent) })] }));
       if (n.subtitle) out.push(new Paragraph({ spacing: { after: 600 }, border: { left: { style: BorderStyle.SINGLE, size: 36, color: hex(t.accent)!, space: 12 } }, children: [new TextRun({ text: n.subtitle, size: base + 8, color: '333333' })] }));
@@ -126,6 +127,53 @@ function nodeToDocx(n: DocNode, doc: ReportDoc, contentWidthMm: number): Array<P
           width: { size: Math.round(n.items.reduce((s, _, i) => s + cellMm(i), 0) * TWIP_PER_MM), type: WidthType.DXA },
           columnWidths: n.items.map((_, i) => Math.round(cellMm(i) * TWIP_PER_MM)),
           rows: [new TableRow({ children: cells, cantSplit: true })],
+        }),
+        new Paragraph({ children: [], spacing: { after: 60 } }),
+      ];
+    }
+    case 'signatures': {
+      // a borderless table, one cell per signatory; the signatures sit on a common line so the names line up
+      const small = base - 2;
+      const gap = twips(SIGN_GAP_MM);
+      const col = twips(n.colWidthMm);
+      const lineHeight = Math.round(t.fontSize * 1.2 * 20); // an empty paragraph's height, in twips
+      const person = (s: (typeof n.items)[number] | undefined, last: boolean) => {
+        const children: Paragraph[] = [];
+        if (s?.role) children.push(new Paragraph({ keepNext: true, spacing: { after: 0 }, children: [new TextRun({ text: s.role, size: small, color: '555555' })] }));
+        if (s?.image)
+          children.push(
+            new Paragraph({
+              keepNext: true,
+              spacing: { before: twips(n.imageHeightMm - s.image.heightMm) + 40, after: 60 },
+              children: [new ImageRun({ type: imageType(s.image.dataUrl), data: dataUrlToBytes(s.image.dataUrl), transformation: { width: px(s.image.widthMm), height: px(s.image.heightMm) } })],
+            }),
+          );
+        else if (s)
+          children.push(
+            new Paragraph({
+              keepNext: true,
+              spacing: { before: Math.max(0, twips(n.imageHeightMm) + 40 - lineHeight), after: 60 },
+              indent: { right: Math.max(0, twips(n.colWidthMm - 60)) },
+              border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: '777777', space: 1 } },
+              children: [],
+            }),
+          );
+        if (s?.name) children.push(new Paragraph({ keepNext: true, spacing: { after: 0 }, children: [new TextRun({ text: s.name, bold: true, size: base })] }));
+        for (const line of s?.lines ?? []) children.push(new Paragraph({ keepNext: true, spacing: { after: 0 }, children: line.map((r) => new TextRun({ text: r.text, bold: r.bold, italics: r.italic, size: base, color: '333333' })) }));
+        if (s?.date) children.push(new Paragraph({ spacing: { before: 40, after: 0 }, children: [new TextRun({ text: `Date: ${s.date}`, size: small, color: '555555' })] }));
+        return new TableCell({ width: { size: col + (last ? 0 : gap), type: WidthType.DXA }, margins: { left: 0, right: last ? 0 : gap, bottom: 200 }, children: children.length ? children : [new Paragraph({})] });
+      };
+      const rows: TableRow[] = [];
+      for (let i = 0; i < n.items.length; i += n.cols)
+        rows.push(new TableRow({ cantSplit: true, children: Array.from({ length: n.cols }, (_, k) => person(n.items[i + k], k === n.cols - 1)) }));
+      return [
+        new Paragraph({ keepNext: true, spacing: { before: 120, after: 0 }, children: [] }),
+        new Table({
+          layout: TableLayoutType.FIXED,
+          borders: TableBorders.NONE,
+          width: { size: n.cols * col + (n.cols - 1) * gap, type: WidthType.DXA },
+          columnWidths: Array.from({ length: n.cols }, (_, k) => col + (k < n.cols - 1 ? gap : 0)),
+          rows,
         }),
         new Paragraph({ children: [], spacing: { after: 60 } }),
       ];

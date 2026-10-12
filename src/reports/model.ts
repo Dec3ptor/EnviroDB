@@ -26,6 +26,8 @@ export type DocNode =
   /** Graphs side by side (two per row). */
   | { t: 'figures'; items: Array<{ dataUrl: string; widthCm: number; heightCm: number; caption?: string }> }
   | { t: 'note'; text: string }
+  /** Sign-off: signatories side by side, `cols` to a row; without an image a line is left to sign by hand. */
+  | { t: 'signatures'; cols: number; colWidthMm: number; imageHeightMm: number; items: Array<{ role: string; name: string; lines: Run[][]; date?: string; image?: { dataUrl: string; widthMm: number; heightMm: number } }> }
   /** New page; `orientation` changes the orientation of the pages that follow. */
   | { t: 'pagebreak'; orientation?: 'portrait' | 'landscape' };
 

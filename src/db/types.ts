@@ -258,6 +258,7 @@ export type ReportBlockType =
   | 'siteTable'
   | 'samplingTable'
   | 'roundReview'
+  | 'signatures'
   | 'pageBreak';
 
 export interface ReportBlockBase {
@@ -365,6 +366,28 @@ export interface RoundReviewBlock extends ReportBlockBase {
 export interface SamplingTableBlock extends ReportBlockBase {
   type: 'samplingTable';
 }
+/** One person signing off a report. */
+export interface Signatory {
+  id: string;
+  /** e.g. Prepared by, Reviewed by, Approved for release by. */
+  role: string;
+  /** The person preparing the report: name, details and signature come from Settings, so they are the same in every report. */
+  self?: boolean;
+  /** Name, details and signature of anyone else (not used for `self`). */
+  name: string;
+  /** Lines under the name – job title, qualifications, company. **bold**, *italic* and {{placeholders}} work. */
+  details: string;
+  /** Signature image (PNG or JPEG data URL); without one a line is left to sign by hand. */
+  image?: string;
+  /** e.g. {{today}}; blank = no date line. */
+  date?: string;
+}
+export interface SignaturesBlock extends ReportBlockBase {
+  type: 'signatures';
+  signatories: Signatory[];
+  /** Height of the signatures on the page (mm). */
+  imageHeightMm?: number;
+}
 export interface PageBreakBlock extends ReportBlockBase {
   type: 'pageBreak';
   /** Orientation of the pages from here on (unset = keep the current orientation). */
@@ -384,6 +407,7 @@ export type ReportBlock =
   | SiteTableBlock
   | SamplingTableBlock
   | RoundReviewBlock
+  | SignaturesBlock
   | PageBreakBlock;
 
 export interface ReportTemplate {
@@ -422,4 +446,8 @@ export interface Settings {
   lastBackupAt?: string;
   /** Unit for showing guideline concentrations on the Guidelines page ('published' = as stored). */
   guidelineUnit?: string;
+  /** Your signature for report sign-offs (PNG or JPEG data URL). */
+  signatureImage?: string;
+  /** Lines under your name in sign-offs, e.g. job title and company (unset = the company). */
+  signatureDetails?: string;
 }

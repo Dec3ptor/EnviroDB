@@ -4,6 +4,7 @@ import { db } from '../../db/db';
 import type { ReportBlock, ReportBlockType } from '../../db/types';
 import { GuidelinePicker, ParamPicker } from '../common';
 import { uid } from '../../lib/ids';
+import { SignaturesForm } from './Signatures';
 
 // Report template blocks ("sections"): labels, defaults, one-line summaries and settings forms.
 
@@ -20,6 +21,7 @@ export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string
   siteTable: { label: 'Site table', help: 'Monitoring locations with coordinates' },
   samplingTable: { label: 'Sampling table', help: 'Samples collected per site vs the required programme' },
   roundReview: { label: 'Results vs earlier monitoring', help: "Each site's latest sample in the period beside its previous result, the change, the earlier median and usual range" },
+  signatures: { label: 'Signatures', help: 'Sign-off with names and signatures – paste a signature from an email or Word, or upload one' },
   pageBreak: { label: 'New page', help: 'Start a new page, and optionally switch to portrait or landscape from here' },
 };
 
@@ -44,6 +46,8 @@ export function newBlock(type: ReportBlockType): ReportBlock {
       return { id, type, title: 'Summary statistics', siteIds: [], parameterIds: [], stats: ['n', 'nd', 'min', 'median', 'max', 'exceed'] };
     case 'chart':
       return { id, type, parameterIds: [], siteIds: [], range: 'years', years: 3, showGuidelines: true, guidelineSetIds: null, showRules: true, logScale: false, size: 'full', aspect: 0.5, widthCm: 16, heightCm: 8, caption: '' };
+    case 'signatures':
+      return { id, type, signatories: [{ id: uid('sg'), role: 'Prepared by', self: true, name: '', details: '' }, { id: uid('sg'), role: 'Reviewed by', name: '', details: '' }] };
     case 'roundReview':
       return { id, type, title: 'Results compared with earlier monitoring', siteIds: [], parameterIds: [], compare: ['previous', 'change', 'median', 'range', 'note'], historyYears: 0, guidelineSetIds: null, ruleColumns: 'all', highlight: true };
     default:
@@ -65,6 +69,8 @@ export function blockSummary(b: ReportBlock): string {
       return `${b.parameterIds.length ? `${b.parameterIds.length} parameters` : 'Key parameters (those with consent rules)'} · ${b.range === 'years' ? `last ${b.years} years` : b.range === 'all' ? 'all data' : 'report period'} · ${(b.size ?? 'full') === 'full' ? 'full width' : b.size === 'half' ? 'two per row' : `${b.widthCm} × ${b.heightCm} cm`}`;
     case 'roundReview':
       return `${b.title ?? ''} · ${b.historyYears ? `last ${b.historyYears} years` : 'all earlier results'}`;
+    case 'signatures':
+      return b.signatories.map((s) => `${s.role || 'Signed'}: ${s.self ? 'you' : s.name || '(no name yet)'}`).join(' · ') || 'Nobody yet';
     case 'pageBreak':
       return b.orientation ? `New page – ${b.orientation} from here on` : 'New page';
     default:
@@ -285,6 +291,8 @@ export function BlockForm({ block, onChange }: { block: ReportBlock; onChange: (
           <Switch label="Highlight exceedances" checked={block.highlight} onChange={(e) => set({ highlight: e.currentTarget.checked })} />
         </Stack>
       );
+    case 'signatures':
+      return <SignaturesForm block={block} onChange={onChange} />;
     case 'pageBreak':
       return (
         <div>

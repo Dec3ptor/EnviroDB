@@ -141,7 +141,7 @@ describe('editing the layout', () => {
 
   it('the arrows move a section past the next section, and anything else one row', () => {
     const down = names(stepSection(annual.blocks, at('Results'), 1)!);
-    expect(down.slice(at('Results'))).toEqual(['Graphs', 'chart', 'Results', 'resultsTable', 'Summary statistics', 'statsTable', 'Discussion and conclusions', 'text']);
+    expect(down.slice(at('Results'))).toEqual(['Graphs', 'chart', 'Results', 'resultsTable', 'Summary statistics', 'statsTable', 'Discussion and conclusions', 'text', 'signatures']);
     expect(stepSection(annual.blocks, at('Introduction'), -1)).toBeNull(); // never above the title page
     expect(stepSection(annual.blocks, at('Discussion and conclusions'), 1)).toBeNull();
     // a paragraph moves one row
@@ -275,5 +275,66 @@ describe('consent values in results tables', () => {
     expect(tssCol).toBeGreaterThan(1);
     const limitRow = first.body.find((r) => r[0].text === 'Limit')!;
     expect(limitRow[tssCol].text).toBe('100\n(DP1)');
+  });
+});
+
+describe('signatures', () => {
+  type Sign = Extract<ReportDoc['nodes'][number], { t: 'signatures' }>;
+  const signOff = (doc: ReportDoc) => doc.nodes.find((n): n is Sign => n.t === 'signatures');
+  const block: ReportBlock = {
+    id: 'sig',
+    type: 'signatures',
+    signatories: [
+      { id: 's1', role: 'Prepared by', self: true, name: 'ignored', details: 'ignored' },
+      { id: 's2', role: 'Reviewed by', name: 'Jane Doe', details: 'Principal Environmental Consultant\n\n**{{company}}**', image: png(300, 100), date: 'Date: {{today}}' },
+      { id: 's3', role: 'Approved for release by', name: '', details: '' }, // nobody named yet: left out
+    ],
+  };
+  const template: ReportTemplate = { ...annual, id: 'sig', blocks: [...annual.blocks.filter((b) => b.type !== 'signatures'), block] };
+  const me = { ...DEFAULT_SETTINGS, author: 'Ben Foote', company: 'WSP', signatureImage: png(200, 100) };
+
+  it('signs off with your signature from Settings and the people named, side by side', async () => {
+    const b = await loadBundle(projectId);
+    const doc = buildReport({ bundle: b, template, period, settings: me });
+    const n = signOff(doc)!;
+    expect(n.cols).toBe(2);
+    expect(n.colWidthMm).toBe(80); // capped: (170 − 8) / 2 would be wider
+    expect(n.items.map((s) => [s.role, s.name])).toEqual([
+      ['Prepared by', 'Ben Foote'],
+      ['Reviewed by', 'Jane Doe'],
+    ]);
+    expect(n.items[0].lines).toEqual([[{ text: 'WSP' }]]); // the company until you set the lines under your name
+    expect(n.items[1].lines).toEqual([[{ text: 'Principal Environmental Consultant' }], [{ text: 'WSP', bold: true }]]);
+    expect(n.items[1].date).toMatch(/^\d{1,2} \w+ \d{4}$/); // {{today}}, without a second "Date:"
+    expect(n.items[0].image).toMatchObject({ widthMm: 30, heightMm: 15 }); // 15 mm high, in proportion
+    expect(n.items[1].image).toMatchObject({ widthMm: 45, heightMm: 15 });
+    // your own lines once set; nobody named at all: no sign-off
+    expect(signOff(buildReport({ bundle: b, template, period, settings: { ...me, signatureDetails: 'Environmental Scientist\nWSP' } }))!.items[0].lines).toEqual([[{ text: 'Environmental Scientist' }], [{ text: 'WSP' }]]);
+    const nobody: ReportTemplate = { ...template, blocks: [...annual.blocks.filter((x) => x.type !== 'signatures'), { ...block, signatories: [block.signatories[0], block.signatories[2]] } as ReportBlock] };
+    expect(signOff(buildReport({ bundle: b, template: nobody, period, settings: DEFAULT_SETTINGS }))).toBeUndefined();
+  });
+
+  it('draws the signatures at that size in PDF and Word, with a line to sign by hand where there is no image', async () => {
+    const b = await loadBundle(projectId);
+    const three: ReportTemplate = { ...template, blocks: template.blocks.map((x) => (x.id === 'sig' ? ({ ...block, signatories: [...block.signatories.slice(0, 2), { id: 's4', role: 'Approved for release by', name: 'John Smith', details: '' }] } as ReportBlock) : x)) };
+    const doc = buildReport({ bundle: b, template: three, period, settings: me });
+    expect(signOff(doc)!.cols).toBe(3);
+    const pdf = JSON.stringify(toPdfDefinition(doc).content);
+    const MM = 2.834645669;
+    const sizes = Array.from(pdf.matchAll(/"image":"data:image\/png[^"]*","width":([\d.]+),"height":([\d.]+)/g)).map((m) => [+(+m[1] / MM).toFixed(2), +(+m[2] / MM).toFixed(2)]);
+    expect(sizes).toEqual([
+      [30, 15],
+      [45, 15],
+    ]);
+    expect(pdf).toContain('"canvas":[{"type":"line"'); // John Smith signs by hand
+    expect(pdf).toContain('"text":"Ben Foote","bold":true');
+    const xml = await (await JSZip.loadAsync(await (await docxBlob(doc)).arrayBuffer())).file('word/document.xml')!.async('string');
+    const ext = Array.from(xml.matchAll(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/g)).map((m) => [+(+m[1] / 36000).toFixed(0), +(+m[2] / 36000).toFixed(0)]); // EMU → mm
+    expect(ext).toEqual([
+      [30, 15],
+      [45, 15],
+    ]);
+    for (const text of ['Prepared by', 'Ben Foote', 'Reviewed by', 'Jane Doe', 'Approved for release by', 'John Smith', 'Date: ']) expect(xml).toContain(text);
+    expect(xml).toMatch(/<w:pBdr><w:bottom [^>]*w:val="single"/); // the signing line
   });
 });

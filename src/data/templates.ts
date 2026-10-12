@@ -4,6 +4,19 @@ const UPDATED = '2026-10-01';
 let n = 0;
 const id = (prefix: string) => `${prefix}-${++n}`;
 
+/**
+ * A sign-off at the end: you (name and signature from Settings) and a reviewer, who is left out until named.
+ * Fixed ids, so adding it doesn't renumber the blocks that saved report commentary is kept against.
+ */
+const signOff = (key: string): ReportBlock => ({
+  id: `${key}-sign`,
+  type: 'signatures',
+  signatories: [
+    { id: `${key}-sign-1`, role: 'Prepared by', self: true, name: '', details: '' },
+    { id: `${key}-sign-2`, role: 'Reviewed by', name: '', details: '' },
+  ],
+});
+
 const base = {
   orientation: 'portrait' as const,
   pageSize: 'A4' as const,
@@ -45,6 +58,7 @@ const annual: ReportBlock[] = [
   { id: id('a'), type: 'chart', parameterIds: [], siteIds: [], range: 'years', years: 3, showGuidelines: true, guidelineSetIds: null, showRules: true, logScale: false, widthCm: 16, heightCm: 8, caption: '' },
   { id: id('a'), type: 'heading', text: 'Discussion and conclusions', level: 1 },
   { id: id('a'), type: 'text', text: 'Add discussion of the results, any exceedances, the actions taken and recommendations here.', prompt: true },
+  signOff('a'),
 ];
 
 const quarterly: ReportBlock[] = [
@@ -59,6 +73,7 @@ const quarterly: ReportBlock[] = [
   { id: id('q'), type: 'chart', parameterIds: [], siteIds: [], range: 'years', years: 2, showGuidelines: true, guidelineSetIds: null, showRules: true, logScale: false, size: 'full', aspect: 0.5, widthCm: 16, heightCm: 8, caption: '' },
   { id: id('q'), type: 'heading', text: 'Comments', level: 1 },
   { id: id('q'), type: 'text', text: 'No issues were identified during the period.', prompt: true },
+  signOff('q'),
 ];
 
 const round: ReportBlock[] = [
@@ -79,6 +94,7 @@ const round: ReportBlock[] = [
   { id: id('r'), type: 'chart', parameterIds: [], siteIds: [], range: 'years', years: 3, showGuidelines: true, guidelineSetIds: null, showRules: true, logScale: false, size: 'full', aspect: 0.45, widthCm: 16, heightCm: 8, caption: '', markPeriod: true },
   { id: id('r'), type: 'heading', text: 'Comments', level: 1 },
   { id: id('r'), type: 'text', text: 'Add comments on this round’s results here, e.g. anything unusual and the follow-up.', prompt: true },
+  signOff('r'),
 ];
 
 const notification: ReportBlock[] = [
@@ -94,6 +110,7 @@ const notification: ReportBlock[] = [
   { id: id('n'), type: 'heading', text: 'Actions taken', level: 2 },
   { id: id('n'), type: 'text', text: '- Investigation of the cause is under way.\n- Re-sampling has been scheduled.', prompt: true },
   { id: id('n'), type: 'chart', parameterIds: [], siteIds: [], range: 'years', years: 1, showGuidelines: false, guidelineSetIds: null, showRules: true, logScale: false, widthCm: 16, heightCm: 7, caption: '' },
+  signOff('n'),
 ];
 
 const appendix: ReportBlock[] = [

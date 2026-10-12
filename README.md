@@ -48,8 +48,16 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   only* (or any other site type), so a groundwater report has no effluent results. Every table, graph,
   compliance check and summary follows, the title page lists the sites covered, and the choice is
   remembered for that reporting obligation.
+- **Sign off reports.** A *Signatures* section puts the people signing side by side – role,
+  signature, name and the lines under it (job title, company). Click a person's signature box and
+  paste: an image, or a whole signature copied from an email or a Word document (the image, name and
+  lines are filled in; a sign-off table copied from an earlier report adds everyone in it). You can
+  also drop or upload an image; blank paper around a signature is trimmed off. Set your own signature
+  once in Settings and every report you sign as *Me* uses it. Without an image, a line is left to sign
+  by hand. The built-in templates end with a sign-off (people without a name are left out).
 - **Change a report's layout on the spot.** On the Reports tab, *Edit layout* lets you drag
-  sections into a new order (a heading takes its whole section with it), add, duplicate or
+  sections exactly where you want them (a heading takes its whole section with it, so you can put a
+  heading straight above a table), add, duplicate or
   remove sections, graphs and tables, start a section on a new page, and put the whole
   report – or just one section, such as a wide results table – on landscape pages. Graphs
   fill the page width, or sit two per row. Keep the changes for that project, save them as a

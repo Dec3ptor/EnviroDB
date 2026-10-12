@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActionIcon, Alert, Anchor, Badge, Button, Card, FileButton, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Table, TagsInput, Text, TextInput, Title, Autocomplete, Pagination } from '@mantine/core';
+import { ActionIcon, Alert, Anchor, Badge, Button, Card, FileButton, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Table, TagsInput, Text, TextInput, Textarea, Title, Autocomplete, Pagination } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -8,7 +8,8 @@ import { db, DATA_TABLES, ensureBuiltIns, saveSettings } from '../db/db';
 import { autosaveSupported, downloadWorkspaceBackup, getAutosaveState, linkAutosaveFile, onAutosaveChange, readJsonFile, regrantAutosave, restoreWorkspace, unlinkAutosaveFile, type AutosaveState } from '../db/backup';
 import { useSettings } from '../hooks/useSettings';
 import { PageHeader } from '../components/common';
-import type { Parameter } from '../db/types';
+import type { Parameter, Settings } from '../db/types';
+import { SignatureInput, myDetails } from '../components/report/Signatures';
 import { createParameter, saveParameter } from '../db/repo';
 import { PARAMETER_GROUPS } from '../data/parameters';
 import { COMMON_UNITS } from '../lib/units';
@@ -127,10 +128,12 @@ export function SettingsPage() {
   const settings = useSettings();
   const [author, setAuthor] = useState(settings.author);
   const [company, setCompany] = useState(settings.company);
+  const [sigLines, setSigLines] = useState(myDetails(settings));
   useEffect(() => {
     setAuthor(settings.author);
     setCompany(settings.company);
-  }, [settings.author, settings.company]);
+    setSigLines(settings.signatureDetails ?? settings.company);
+  }, [settings.author, settings.company, settings.signatureDetails]);
   const [auto, setAuto] = useState<AutosaveState>(getAutosaveState());
   useEffect(() => {
     const off = onAutosaveChange(setAuto);
@@ -176,6 +179,27 @@ export function SettingsPage() {
             onChange={(v) => v && saveSettings({ dateFormat: v as typeof settings.dateFormat })}
             allowDeselect={false}
           />
+        </SimpleGrid>
+        <Text size="sm" fw={500} mt="md">
+          Your signature
+        </Text>
+        <Text size="xs" c="dimmed" mb={6}>
+          For report sign-offs where you are the signatory (“Me”). Paste your signature into the box – an image, or a whole signature copied from an email or a Word document – or upload one. It stays on this computer with the rest of your data.
+        </Text>
+        <SimpleGrid cols={{ base: 1, sm: 2 }}>
+          <SignatureInput
+            image={settings.signatureImage}
+            name={settings.author}
+            onImage={(signatureImage) => saveSettings({ signatureImage })}
+            onPeople={([{ person, images }]) => {
+              const patch: Partial<Settings> = {};
+              if (person.name) patch.author = person.name;
+              if (person.name || person.details.length) patch.signatureDetails = person.details.join('\n');
+              if (images[0]) patch.signatureImage = images[0];
+              void saveSettings(patch);
+            }}
+          />
+          <Textarea label="Lines under your name" description="One per line, e.g. job title, qualifications, company" autosize minRows={2} maxRows={6} value={sigLines} onChange={(e) => setSigLines(e.currentTarget.value)} onBlur={() => sigLines !== myDetails(settings) && saveSettings({ signatureDetails: sigLines })} />
         </SimpleGrid>
       </Card>
 

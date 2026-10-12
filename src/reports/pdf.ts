@@ -1,6 +1,6 @@
 import type { Content, TDocumentDefinitions, TableCell } from 'pdfmake/interfaces';
 import type { Cell, DocNode, ReportDoc, Run } from './model';
-import { CHART_GAP_MM, type Orientation } from './build';
+import { CHART_GAP_MM, SIGN_GAP_MM, type Orientation } from './build';
 import { downloadBlob } from '../db/backup';
 
 const MM = 2.834645669; // points per mm
@@ -123,6 +123,23 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
           unbreakable: true,
         } as Content,
       ];
+    }
+    case 'signatures': {
+      // the signatures sit on a common line, so the names line up whether or not there is a signature image
+      const box = n.imageHeightMm * MM;
+      const colW = n.colWidthMm * MM;
+      const person = (s: (typeof n.items)[number]): Content => {
+        const stack: Content[] = [];
+        if (s.role) stack.push({ text: s.role, fontSize: t.fontSize - 1, color: '#555555' });
+        if (s.image) stack.push({ image: s.image.dataUrl, width: s.image.widthMm * MM, height: s.image.heightMm * MM, margin: [0, box - s.image.heightMm * MM + 2, 0, 3] });
+        else stack.push({ canvas: [{ type: 'line', x1: 0, y1: box + 2, x2: Math.min(colW, 60 * MM), y2: box + 2, lineWidth: 0.5, lineColor: '#777777' }], margin: [0, 0, 0, 3] });
+        if (s.name) stack.push({ text: s.name, bold: true });
+        for (const line of s.lines) stack.push({ text: runs(line), color: '#333333' });
+        if (s.date) stack.push({ text: `Date: ${s.date}`, fontSize: t.fontSize - 1, color: '#555555', margin: [0, 2, 0, 0] });
+        return { width: colW, stack } as Content;
+      };
+      const rows = Array.from({ length: Math.ceil(n.items.length / n.cols) }, (_, i) => n.items.slice(i * n.cols, (i + 1) * n.cols));
+      return [{ stack: rows.map((row, i) => ({ columns: row.map(person), columnGap: SIGN_GAP_MM * MM, margin: [0, i ? 12 : 0, 0, 0] })), unbreakable: true, margin: [0, 12, 0, 10] } as Content];
     }
     case 'table': {
       const out: Content[] = [];
