@@ -9,6 +9,7 @@ import { useProject } from '../../hooks/useProjectData';
 import { useSettings } from '../../hooks/useSettings';
 import { PeriodPicker, defaultPeriod, type PeriodValue } from '../../components/common';
 import { nextDueReport, obligationPeriod, obligationPresets } from '../../lib/schedule';
+import { roundPeriods } from '../../lib/latest';
 import { formatDate, todayStr } from '../../lib/dates';
 import { uid } from '../../lib/ids';
 import { buildReport } from '../../reports/build';
@@ -56,6 +57,7 @@ export function ReportsTab() {
   const [params] = useSearchParams();
 
   const oblPresets = useMemo(() => obligationPresets(obligations), [obligations]);
+  const rounds = useMemo(() => roundPeriods(data, 12), [data]); // "Monitoring round – September 2026", newest first
 
   const [initial] = useState(() => {
     const oId = params.get('obligation');
@@ -79,6 +81,18 @@ export function ReportsTab() {
   const [period, setPeriod] = useState<PeriodValue>(initial.period);
   const [templateId, setTemplateId] = useState<string | null>(initial.templateId ?? settings.defaultTemplateId ?? 'tpl-annual');
   const stored = templates?.find((t) => t.id === templateId) ?? templates?.find((t) => t.id === 'tpl-annual');
+
+  // A template for one monitoring round starts on the latest round, unless the period is already a round or
+  // belongs to a reporting obligation that uses this template.
+  const seenTemplate = useRef<string | null>(null);
+  useEffect(() => {
+    if (!stored || seenTemplate.current === stored.id) return;
+    seenTemplate.current = stored.id;
+    if (stored.period !== 'latestRound' || !rounds.length || period.key.startsWith('round:')) return;
+    const ob = period.key.startsWith('obl:') ? obligations.find((o) => o.id === period.key.split(':')[1]) : undefined;
+    if (ob?.templateId === stored.id) return;
+    setPeriod(rounds[0]);
+  }, [stored, rounds, period.key, obligations]);
 
   // Layout changes made here are kept (per project and template) until saved as a template or discarded.
   const editKey = stored ? `layout:${project.id}:${stored.id}` : '';
@@ -268,7 +282,7 @@ export function ReportsTab() {
                     allowDeselect={false}
                     description={stored.description}
                   />
-                  <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} extra={oblPresets} width="100%" />
+                  <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} extra={[...oblPresets, ...rounds]} width="100%" />
                   <ReportSites sites={data.sites} chosen={chosenSites} onChange={chooseSites} rememberedFor={obligation ? `“${obligation.name}”` : 'this template'} />
                   {orientationControl}
                   {editedBanner}

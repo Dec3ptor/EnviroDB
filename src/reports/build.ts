@@ -4,7 +4,8 @@ import type { ProjectBundle } from '../lib/analysis';
 import { displayValue, evaluateAll, flagResults, keyParameters, limitToSites, statsTable, type CellFlag } from '../lib/analysis';
 import type { RuleEvaluation } from '../lib/compliance';
 import { STATUS_META } from '../lib/compliance';
-import { addDays, addMonths, formatDate, formatDateLong, todayStr } from '../lib/dates';
+import { addDays, addMonths, formatDate, formatDateLong, todayStr, toUtcMs } from '../lib/dates';
+import { monthLabel, reviewCell, type ReviewCell } from '../lib/latest';
 import { guidelineFor } from '../lib/guidelines';
 import { scheduleStep, frequencyLabel } from '../lib/schedule';
 import { convert, unitLabel } from '../lib/units';
@@ -90,6 +91,17 @@ function chunk<T>(list: T[], n: number): T[][] {
   return out.length ? out : [[]];
 }
 
+/** True when the period is exactly one calendar month. */
+const wholeMonth = (start: string, end: string) => start.slice(0, 7) === end.slice(0, 7) && start.endsWith('-01') && addDays(end, 1).endsWith('-01');
+
+/** Note on a result compared with the site's history. */
+function historyNote(c: ReviewCell | null): string {
+  if (!c) return '';
+  if (c.record) return c.record === 'high' ? 'Highest on record' : 'Lowest on record';
+  if (c.unusual) return c.unusual === 'high' ? 'Above usual range' : 'Below usual range';
+  return c.previous ? '' : 'First result';
+}
+
 const flagFill = (f?: CellFlag) => (f ? (f.kind === 'limit' ? FILLS.limit : f.kind === 'guideline' ? FILLS.guideline : FILLS.check) : undefined);
 
 function listText(items: string[]): string {
@@ -125,6 +137,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     'period.start': formatDateLong(start),
     'period.end': formatDateLong(end),
     'period.label': period.label,
+    'period.month': monthLabel(start, end),
     today: formatDateLong(todayStr()),
     author: settings.author,
     company: settings.company,
@@ -519,14 +532,96 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const chartSites = (blk.siteIds.length ? blk.siteIds : b.sites.map((s) => s.id)).filter((id) => b.siteMap.has(id));
         if (!chartSites.length) continue;
         const spec = buildChartSpec({ index: b.index, param: p, sites: opts.bundle.sites, siteIds: chartSites, start: cStart, end, guidelineSets: sets, rules: b.rules, showRules: blk.showRules, log: blk.logScale });
+        if (blk.markPeriod && blk.range !== 'period') spec.band = { from: toUtcMs(start), to: toUtcMs(addDays(end, 1)) };
         if (!spec.series.length) continue;
-        const caption = figCaption(`${p.name} at ${listText(spec.series.map((s) => s.name))}${blk.range === 'period' ? '' : `, ${formatDate(cStart ?? spec.series[0].points[0].date)} – ${formatDate(end)}`}${blk.caption ? `. ${fill(blk.caption)}` : ''}`);
+        const caption = figCaption(`${p.name} at ${listText(spec.series.map((s) => s.name))}${blk.range === 'period' ? '' : `, ${formatDate(cStart ?? spec.series[0].points[0].date)} – ${formatDate(end)}`}${spec.band ? '. The shaded band is the reporting period' : ''}${blk.caption ? `. ${fill(blk.caption)}` : ''}`);
         const option = chartOption({ ...spec, subtitle: undefined, title: `${p.name} (${unitLabel(p.unit)})` }, { forExport: true, width: Math.round((size.widthCm / 2.54) * 96) });
         const dataUrl = opts.renderChart ? opts.renderChart(option, size.widthCm, size.heightCm) : '';
         figures.push({ dataUrl, ...size, caption });
       }
       if (blk.size === 'half') chunk(figures, 2).forEach((items) => items.length && nodes.push({ t: 'figures', items }));
       else figures.forEach((f) => nodes.push({ t: 'image', ...f }));
+    },
+    roundReview: (blk) => {
+      const sites = blk.siteIds.length ? b.sites.filter((s) => blk.siteIds.includes(s.id)) : b.sites;
+      const sets = setsFor(blk.guidelineSetIds);
+      const flags = blk.highlight ? flagsFor(sets.map((s) => s.id)) : new Map<string, CellFlag>();
+      const since = blk.historyYears ? addMonths(start, -12 * blk.historyYears) : undefined;
+      const show = new Set(blk.compare);
+      const pt = big;
+      const PAD = CELL_PAD_MM;
+      const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+      const linesW = (s: string, bold = false) => Math.max(0, ...s.split('\n').map((line) => textWidthMm(line, pt, bold)));
+      const title = fill(blk.title) || 'Results compared with earlier monitoring';
+      const made: Array<Extract<DocNode, { t: 'table' }>> = [];
+      for (const site of sites) {
+        // the site's latest sample in the period
+        const sample = samplesInPeriod
+          .filter((s) => s.siteId === site.id && (b.index.bySample.get(s.id)?.length ?? 0) > 0)
+          .reduce<Sample | undefined>((best, s) => (!best || s.date > best.date ? s : best), undefined);
+        if (!sample) continue;
+        const params = paramList(blk.parameterIds, [sample]);
+        if (!params.length) continue;
+        const rules = tableRules(blk.ruleColumns, params, [site.id]);
+        const levels = ruleLevels(rules).filter((l) => params.some((p) => ruleText(rules, l, p, [site.id])));
+        const head: Cell[] = [{ text: 'Parameter' }, { text: 'Unit' }, ...[...levels, ...sets.map((s) => s.shortName)].map((text) => ({ text, align: 'center' as const })), { text: 'Result', align: 'center' }];
+        if (show.has('previous')) head.push({ text: 'Previous', align: 'center' });
+        if (show.has('change')) head.push({ text: 'Change', align: 'center' });
+        if (show.has('median')) head.push({ text: 'Earlier median', align: 'center' });
+        if (show.has('range')) head.push({ text: 'Usual range', align: 'center' });
+        if (show.has('note')) head.push({ text: 'Note' });
+        const body: Cell[][] = params.map((p) => {
+          const c = reviewCell(b, sample, p, since);
+          const r = c?.result;
+          const f = r ? flags.get(r.id) : undefined;
+          const row: Cell[] = [
+            { text: p.name },
+            { text: unitLabel(p.unit) },
+            ...levels.map((l) => ({ text: ruleText(rules, l, p, [site.id]), align: 'center' as const, fill: FILLS.guidelineRow })),
+            ...sets.map((s) => ({ text: guidelineText(s, p), align: 'center' as const, fill: FILLS.guidelineRow })),
+            r ? { text: displayValue(r, p).text, align: 'right', fill: flagFill(f), bold: !!f && f.kind !== 'check' } : { text: '–', align: 'center', color: '#999999' },
+          ];
+          if (show.has('previous')) row.push({ text: c?.previous ? `${c.previous.text}\n${formatDate(c.previous.date, { format: 'D MMM YYYY' })}` : '–', align: 'right' });
+          if (show.has('change')) {
+            const ch = c?.change;
+            row.push({ text: ch === undefined ? '' : `${ch >= 0 ? '+' : '−'}${fmtNum(Math.abs(ch) >= 10 ? Math.round(Math.abs(ch)) : Math.round(Math.abs(ch) * 10) / 10)}%`, align: 'right' });
+          }
+          if (show.has('median')) row.push({ text: c?.median === undefined ? '' : fmtNum(c.median, p.decimals), align: 'right' });
+          if (show.has('range')) row.push({ text: c?.usual ? `${fmtNum(c.usual.lo, p.decimals)}–${fmtNum(c.usual.hi, p.decimals)}` : '', align: 'center' });
+          if (show.has('note')) {
+            const note = historyNote(c);
+            row.push({ text: note, bold: !!(c?.record || c?.unusual), italic: note === 'First result' });
+          }
+          return row;
+        });
+        // column widths: sized to their content; the note column takes what is left
+        const widths: Array<number | '*'> = head.map((h, k) => {
+          if (show.has('note') && k === head.length - 1) return '*';
+          const content = Math.max(...body.map((row) => linesW(row[k].text)));
+          const need = Math.max(Math.max(...h.text.split(' ').map((w) => textWidthMm(w, pt, true))), content) + PAD;
+          return k === 0 ? clamp(need, 26, 44) : k === 1 ? clamp(need, 9, 20) : clamp(need, 11, 26);
+        });
+        const table: Extract<DocNode, { t: 'table' }> = {
+          t: 'table',
+          caption: tableCaption(`${title} – ${site.code}${site.name ? ` (${site.name})` : ''}, ${formatDate(sample.date, { format: 'D MMM YYYY' })}`),
+          head: [head],
+          body,
+          widths,
+          fontSize: pt,
+        };
+        made.push(table);
+        nodes.push(table);
+      }
+      if (!made.length) {
+        nodes.push({ t: 'p', runs: [{ text: 'No samples were collected in this period.', italic: true }] });
+        return;
+      }
+      const notes = resultNotes(sets, blk.highlight, made.some((x) => x.body.some((row) => row.some((c) => c.fill === FILLS.guidelineRow && c.text.includes('(')))));
+      const history = since ? `since ${formatDate(since, { format: 'D MMM YYYY' })}` : 'on record';
+      if (show.has('previous') || show.has('change')) notes.push('Previous: the last result at the site before this one. Change: from the previous result (not given when either is below the detection limit).');
+      if (show.has('median') || show.has('range') || show.has('note'))
+        notes.push(`Earlier median and usual range (5th–95th percentile) use the site's results ${history} before this sample; the usual range needs at least 6 earlier results. Notes flag results outside the usual range or the highest / lowest on record.`);
+      made[made.length - 1].notes = notes;
     },
     siteTable: () => {
       if (!b.sites.length) return;
@@ -583,7 +678,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     footer: fill(t.footerText),
     title: `${project.name} – ${t.name}`,
     author: settings.author || settings.company,
-    fileName: `${project.name} - ${t.name} - ${formatDate(start, { format: 'D MMM YYYY' })} to ${formatDate(end, { format: 'D MMM YYYY' })}`.replace(/[\\/:*?"<>|]+/g, '-'),
+    fileName: `${project.name} - ${t.name} - ${wholeMonth(start, end) ? monthLabel(start, end) : `${formatDate(start, { format: 'D MMM YYYY' })} to ${formatDate(end, { format: 'D MMM YYYY' })}`}`.replace(/[\\/:*?"<>|]+/g, '-'),
   };
 }
 

@@ -257,6 +257,7 @@ export type ReportBlockType =
   | 'chart'
   | 'siteTable'
   | 'samplingTable'
+  | 'roundReview'
   | 'pageBreak';
 
 export interface ReportBlockBase {
@@ -340,9 +341,26 @@ export interface ChartBlock extends ReportBlockBase {
   widthCm: number;
   heightCm: number;
   caption?: string;
+  /** Shade the reporting period, e.g. this monitoring round against the earlier years. */
+  markPeriod?: boolean;
 }
 export interface SiteTableBlock extends ReportBlockBase {
   type: 'siteTable';
+}
+/** What a monitoring round's results are compared with, besides limits and guidelines. */
+export type RoundCompare = 'previous' | 'change' | 'median' | 'range' | 'note';
+/** Each site's latest sample in the period, compared with the site's earlier results (one table per site). */
+export interface RoundReviewBlock extends ReportBlockBase {
+  type: 'roundReview';
+  title?: string;
+  siteIds: ID[]; // [] = all
+  parameterIds: ID[]; // [] = all measured
+  compare: RoundCompare[];
+  /** Earlier results from this many years before the period (0 = all). */
+  historyYears: number;
+  guidelineSetIds: ID[] | null; // null = project default
+  ruleColumns?: 'none' | 'limits' | 'all';
+  highlight: boolean;
 }
 export interface SamplingTableBlock extends ReportBlockBase {
   type: 'samplingTable';
@@ -365,6 +383,7 @@ export type ReportBlock =
   | ChartBlock
   | SiteTableBlock
   | SamplingTableBlock
+  | RoundReviewBlock
   | PageBreakBlock;
 
 export interface ReportTemplate {
@@ -383,6 +402,8 @@ export interface ReportTemplate {
   logoHeightMm?: number;
   /** Number headings (1, 1.1 …) and captions (Table 1, Figure 1 …). */
   numbering?: boolean;
+  /** The period this template is usually for: 'latestRound' = the month of the latest monitoring round. */
+  period?: 'latestRound';
   blocks: ReportBlock[];
   builtIn?: boolean;
   updatedAt: string;

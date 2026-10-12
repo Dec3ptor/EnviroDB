@@ -39,6 +39,8 @@ export interface ChartSpec {
   hasNd: boolean;
   xMin?: number;
   xMax?: number;
+  /** A time range to shade, e.g. the reporting period against earlier years (UTC ms). */
+  band?: { from: number; to: number };
 }
 
 export interface ChartInput {
@@ -286,6 +288,16 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
       })),
     };
   });
+  if (spec.band) {
+    series.push({
+      type: 'line',
+      name: '__band',
+      data: [],
+      silent: true,
+      z: 1, // behind everything
+      markArea: { silent: true, itemStyle: { color: ink.grid, opacity: 0.55 }, data: [[{ xAxis: spec.band.from }, { xAxis: spec.band.to }]] },
+    });
+  }
   if (styles.length) {
     series.push({
       type: 'line',

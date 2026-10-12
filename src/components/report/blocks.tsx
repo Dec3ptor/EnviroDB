@@ -19,6 +19,7 @@ export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string
   chart: { label: 'Graphs', help: 'One graph per parameter with guideline / limit lines' },
   siteTable: { label: 'Site table', help: 'Monitoring locations with coordinates' },
   samplingTable: { label: 'Sampling table', help: 'Samples collected per site vs the required programme' },
+  roundReview: { label: 'Results vs earlier monitoring', help: "Each site's latest sample in the period beside its previous result, the change, the earlier median and usual range" },
   pageBreak: { label: 'New page', help: 'Start a new page, and optionally switch to portrait or landscape from here' },
 };
 
@@ -43,6 +44,8 @@ export function newBlock(type: ReportBlockType): ReportBlock {
       return { id, type, title: 'Summary statistics', siteIds: [], parameterIds: [], stats: ['n', 'nd', 'min', 'median', 'max', 'exceed'] };
     case 'chart':
       return { id, type, parameterIds: [], siteIds: [], range: 'years', years: 3, showGuidelines: true, guidelineSetIds: null, showRules: true, logScale: false, size: 'full', aspect: 0.5, widthCm: 16, heightCm: 8, caption: '' };
+    case 'roundReview':
+      return { id, type, title: 'Results compared with earlier monitoring', siteIds: [], parameterIds: [], compare: ['previous', 'change', 'median', 'range', 'note'], historyYears: 0, guidelineSetIds: null, ruleColumns: 'all', highlight: true };
     default:
       return { id, type } as ReportBlock;
   }
@@ -60,6 +63,8 @@ export function blockSummary(b: ReportBlock): string {
       return `${b.title ?? ''} · ${b.layout === 'parametersAsRows' ? 'parameters down' : 'dates down'}${b.splitBySite ? ' · one table per site' : ''}${b.ruleColumns === 'all' ? ' · with consent limits & triggers' : b.ruleColumns === 'limits' ? ' · with consent limits' : ''}`;
     case 'chart':
       return `${b.parameterIds.length ? `${b.parameterIds.length} parameters` : 'Key parameters (those with consent rules)'} · ${b.range === 'years' ? `last ${b.years} years` : b.range === 'all' ? 'all data' : 'report period'} · ${(b.size ?? 'full') === 'full' ? 'full width' : b.size === 'half' ? 'two per row' : `${b.widthCm} × ${b.heightCm} cm`}`;
+    case 'roundReview':
+      return `${b.title ?? ''} · ${b.historyYears ? `last ${b.historyYears} years` : 'all earlier results'}`;
     case 'pageBreak':
       return b.orientation ? `New page – ${b.orientation} from here on` : 'New page';
     default:
@@ -224,8 +229,60 @@ export function BlockForm({ block, onChange }: { block: ReportBlock; onChange: (
             <Switch label="Guideline lines" checked={block.showGuidelines} onChange={(e) => set({ showGuidelines: e.currentTarget.checked })} />
             <Switch label="Consent limit / trigger lines" checked={block.showRules} onChange={(e) => set({ showRules: e.currentTarget.checked })} />
             <Switch label="Log scale" checked={block.logScale} onChange={(e) => set({ logScale: e.currentTarget.checked })} />
+            {block.range !== 'period' && <Switch label="Shade the report period" checked={!!block.markPeriod} onChange={(e) => set({ markPeriod: e.currentTarget.checked })} />}
           </Group>
           <TextInput label="Extra caption text (optional)" value={block.caption ?? ''} onChange={(e) => set({ caption: e.currentTarget.value })} />
+        </Stack>
+      );
+    case 'roundReview':
+      return (
+        <Stack gap="xs">
+          <TextInput label="Table title" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} description="One table per site, for its latest sample in the report period" />
+          <Checkbox.Group label="Compare each result with" value={block.compare} onChange={(v) => set({ compare: v as typeof block.compare })}>
+            <Group gap="sm" mt={4}>
+              <Checkbox value="previous" label="Previous result" />
+              <Checkbox value="change" label="Change" />
+              <Checkbox value="median" label="Earlier median" />
+              <Checkbox value="range" label="Usual range" />
+              <Checkbox value="note" label="Unusual / record notes" />
+            </Group>
+          </Checkbox.Group>
+          <div>
+            <Text size="sm" fw={500} mb={4}>
+              Earlier results to compare with
+            </Text>
+            <SegmentedControl
+              fullWidth
+              size="xs"
+              value={String(block.historyYears)}
+              onChange={(v) => set({ historyYears: Number(v) })}
+              data={[
+                { value: '0', label: 'All' },
+                { value: '5', label: '5 years' },
+                { value: '3', label: '3 years' },
+                { value: '1', label: '1 year' },
+              ]}
+            />
+          </div>
+          <ParamPicker params={params} value={block.parameterIds} onChange={(v) => set({ parameterIds: v })} label="Parameters (empty = all measured)" />
+          <div>
+            <Text size="sm" fw={500} mb={4}>
+              Consent values to compare with
+            </Text>
+            <SegmentedControl
+              size="xs"
+              value={block.ruleColumns ?? 'none'}
+              onChange={(v) => set({ ruleColumns: v as NonNullable<typeof block.ruleColumns> })}
+              data={[
+                { value: 'none', label: 'None' },
+                { value: 'limits', label: 'Limits' },
+                { value: 'all', label: 'Limits & triggers' },
+              ]}
+            />
+          </div>
+          <Switch label="Use the project's default guideline sets" checked={block.guidelineSetIds === null} onChange={(e) => set({ guidelineSetIds: e.currentTarget.checked ? null : [] })} />
+          {block.guidelineSetIds !== null && <GuidelinePicker sets={sets} value={block.guidelineSetIds} onChange={(v) => set({ guidelineSetIds: v })} label="Guideline columns" />}
+          <Switch label="Highlight exceedances" checked={block.highlight} onChange={(e) => set({ highlight: e.currentTarget.checked })} />
         </Stack>
       );
     case 'pageBreak':

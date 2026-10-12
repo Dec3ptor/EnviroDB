@@ -62,7 +62,7 @@ const RULE_PT = 0.4;
 function fitWidths(widths: Array<number | '*' | 'auto'>, contentWidthPt: number): Array<number | '*' | 'auto'> {
   const fixed = widths.reduce<number>((s, w) => s + (typeof w === 'number' ? w * MM : 0), 0);
   const flex = widths.filter((w) => typeof w !== 'number').length;
-  const avail = contentWidthPt - RULE_PT - flex * 40;
+  const avail = contentWidthPt - RULE_PT - flex * (40 + 2 * CELL_PAD_PT + RULE_PT); // flexible columns keep 40pt of text
   const k = fixed > avail ? avail / fixed : 1;
   return widths.map((w) => (typeof w === 'number' ? Math.max(6, w * MM * k - 2 * CELL_PAD_PT - RULE_PT) : w));
 }

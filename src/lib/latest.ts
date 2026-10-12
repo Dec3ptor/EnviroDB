@@ -39,20 +39,22 @@ export interface ReviewCell {
   previous?: { value: number; text: string; date: string };
   change?: number; // % change from the previous result
   usual?: { lo: number; hi: number; n: number }; // 5th–95th percentile of earlier results
+  /** Median of the earlier results (with at least 3). */
+  median?: number;
   unusual?: 'high' | 'low';
   record?: 'high' | 'low';
 }
 
 const MIN_HISTORY = 6;
 
-/** A result in context: previous result and the site's usual range before this sample. */
-export function reviewCell(b: Pick<ProjectBundle, 'index' | 'project'>, sample: Sample, p: Parameter): ReviewCell | null {
+/** A result in context: previous result and the site's usual range before this sample (from `since`, if given). */
+export function reviewCell(b: Pick<ProjectBundle, 'index' | 'project'>, sample: Sample, p: Parameter, since?: string): ReviewCell | null {
   const r = (b.index.bySample.get(sample.id) ?? []).find((x) => x.parameterId === p.id);
   if (!r) return null;
   const value = convert(r.value, r.unit, p.unit);
   const cell: ReviewCell = { result: r, value };
   const earlier = resultsFor(b.index, p.id, [sample.siteId])
-    .filter((x) => x.date < sample.date)
+    .filter((x) => x.date < sample.date && (!since || x.date >= since))
     .map((x) => ({ x, v: convert(x.value, x.unit, p.unit) }))
     .filter((e): e is { x: Result; v: number } => e.v !== null);
   const prev = earlier[earlier.length - 1];
@@ -60,6 +62,7 @@ export function reviewCell(b: Pick<ProjectBundle, 'index' | 'project'>, sample: 
     cell.previous = { value: prev.v, text: `${prev.x.qualifier}${fmtNum(prev.v, p.decimals)}`, date: prev.x.date };
     if (value !== null && prev.x.qualifier !== '<' && r.qualifier !== '<' && prev.v !== 0) cell.change = ((value - prev.v) / Math.abs(prev.v)) * 100;
   }
+  if (earlier.length >= 3) cell.median = percentile(earlier.map((e) => e.v), 50, b.project.percentileMethod) ?? undefined;
   if (earlier.length >= MIN_HISTORY && value !== null) {
     const vals = earlier.map((e) => e.v);
     const lo = percentile(vals, 5, b.project.percentileMethod) ?? Math.min(...vals);
@@ -87,3 +90,24 @@ export function reviewLines(c: ReviewCell, p: Parameter, siteCode: string, unit:
   else if (c.unusual === 'low') out.push('Unusually low for this site');
   return out;
 }
+
+/** "September 2026" for a period within one month, "August – September 2026" across months of one year. */
+export function monthLabel(start: string, end: string): string {
+  const [ys, ms] = [+start.slice(0, 4), +start.slice(5, 7)];
+  const [ye, me] = [+end.slice(0, 4), +end.slice(5, 7)];
+  if (ys === ye && ms === me) return `${MONTH_LONG[ms - 1]} ${ys}`;
+  if (ys === ye) return `${MONTH_LONG[ms - 1]} – ${MONTH_LONG[me - 1]} ${ys}`;
+  return `${MONTH_LONG[ms - 1]} ${ys} – ${MONTH_LONG[me - 1]} ${ye}`;
+}
+
+/** Period choices for the months with sampling, newest first: "Monitoring round – September 2026". */
+export function roundPeriods(b: Pick<ProjectBundle, 'samples' | 'sites' | 'index'>, months = 12): Array<{ key: string; start: string; end: string; label: string }> {
+  return samplingRounds(b, months)
+    .filter((r) => r.key !== 'latest')
+    .map((r) => {
+      const [y, m] = [+r.key.slice(0, 4), +r.key.slice(5, 7)];
+      const end = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+      return { key: `round:${r.key}`, start: `${r.key}-01`, end, label: `Monitoring round – ${MONTH_LONG[m - 1]} ${y}` };
+    });
+}
+

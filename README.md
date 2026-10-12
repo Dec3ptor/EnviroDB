@@ -39,6 +39,11 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   statistics, graphs, site and sampling tables, and your own text with `{{placeholders}}`).
   Reports export to **PDF** and **Word**. The preview shows the actual PDF pages, portrait
   and landscape, so what you see is what you download.
+- **Report the latest monitoring round.** The *Monitoring round summary* template is titled by the
+  round's month ("Monitoring results – September 2026") and opens on the latest round; earlier rounds
+  are in the period list. Each site's result sits beside its previous result, the change, the earlier
+  median and usual range (5th–95th percentile), with unusual and record values noted, plus consent and
+  guideline columns – choose the columns and how many years back to compare. Graphs shade the round.
 - **Choose the sites a report covers.** On the Reports tab, tap sites in or out, or pick *Groundwater
   only* (or any other site type), so a groundwater report has no effluent results. Every table, graph,
   compliance check and summary follows, the title page lists the sites covered, and the choice is

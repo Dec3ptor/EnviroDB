@@ -13,13 +13,14 @@ import { readWorkbook } from '../src/importers/workbook';
 import { planSheets, parseWithPlan } from '../src/importers/detect';
 import { buildParamIndex, matchParameter, matchSite } from '../src/lib/matching';
 import { normUnit } from '../src/lib/units';
+import { fmtNum } from '../src/lib/values';
 import { analyteMapKey } from '../src/importers/model';
 import { commitImport } from '../src/importers/commit';
 import { exportProjectPackage, importProjectPackage } from '../src/db/backup';
 import { AI_PROMPTS, DEFAULT_SECTIONS, buildAiInput, csvCell, withRequest } from '../src/lib/aiInput';
 import { flagResults, pivot } from '../src/lib/analysis';
 import { applyView, DEFAULT_SORT, passesFilter } from '../src/lib/tableView';
-import { reviewCell, reviewLines, samplingRounds } from '../src/lib/latest';
+import { monthLabel, reviewCell, reviewLines, roundPeriods, samplingRounds } from '../src/lib/latest';
 import { nextDueReport } from '../src/lib/schedule';
 import { newObligation } from '../src/db/repo';
 import { buildChartSpec, chartOption, thresholdStyles } from '../src/charts/timeSeries';
@@ -308,6 +309,68 @@ describe('data table sort and filter', () => {
     expect(view({ search: 'gw1' }).every((r) => r.site.code === 'GW1')).toBe(true);
     const newest = view({ sort: { key: 'date', dir: 'desc' } });
     expect(newest[0].sample.date >= newest[newest.length - 1].sample.date).toBe(true);
+  });
+});
+
+describe('monitoring round report', () => {
+  it('names months and lists the sampling months as periods', () => {
+    expect(monthLabel('2026-09-01', '2026-09-30')).toBe('September 2026');
+    expect(monthLabel('2026-08-01', '2026-09-30')).toBe('August – September 2026');
+    expect(monthLabel('2025-12-01', '2026-01-31')).toBe('December 2025 – January 2026');
+  });
+
+  it("reports the latest round, titled by its month, against each site's earlier results", async () => {
+    const b = await loadBundle(projectId);
+    const round = roundPeriods(b, 12)[0];
+    expect(round.key).toMatch(/^round:\d{4}-\d{2}$/);
+    expect(round.start.endsWith('-01')).toBe(true);
+    const tpl = BUILT_IN_TEMPLATES.find((t) => t.id === 'tpl-round')!;
+    expect(tpl.period).toBe('latestRound');
+    const options: unknown[] = [];
+    const doc = buildReport({ bundle: b, template: tpl, period: round, settings: DEFAULT_SETTINGS, renderChart: (o) => (options.push(o), 'data:image/png;base64,') });
+    const month = monthLabel(round.start, round.end);
+    expect((doc.nodes[0] as { subtitle?: string }).subtitle).toBe(`Monitoring results – ${month}`);
+    expect(doc.fileName).toContain(month);
+    // one comparison table per site sampled that month
+    const tables = doc.nodes.filter((n): n is Extract<typeof n, { t: 'table' }> => n.t === 'table' && !!n.caption?.includes('Results compared with earlier monitoring'));
+    const sampled = new Set(b.samples.filter((s) => s.date.slice(0, 10) >= round.start && s.date.slice(0, 10) <= round.end).map((s) => s.siteId));
+    expect(tables.length).toBe(sampled.size);
+    const dp1 = tables.find((t) => t.caption!.includes('DP1'))!;
+    const head = dp1.head[0].map((c) => c.text);
+    expect(head.slice(-6)).toEqual(['Result', 'Previous', 'Change', 'Earlier median', 'Usual range', 'Note']);
+    expect(head).toContain('Limit');
+    // the TSS row agrees with the review of that sample
+    const site = b.sites.find((s) => s.code === 'DP1')!;
+    const sample = b.samples.filter((s) => s.siteId === site.id && s.date.slice(0, 10) >= round.start && s.date.slice(0, 10) <= round.end).sort((x, y) => (x.date < y.date ? 1 : -1))[0];
+    const tss = b.paramMap.get('tss')!;
+    const cell = reviewCell(b, sample, tss)!;
+    const row = dp1.body.find((r) => r[0].text === 'Total Suspended Solids')!.map((c) => c.text);
+    const at = (h: string) => row[head.indexOf(h)];
+    expect(at('Previous').split('\n')[0]).toBe(cell.previous!.text);
+    expect(at('Usual range')).toBe(cell.usual ? `${fmtNum(cell.usual.lo, tss.decimals)}–${fmtNum(cell.usual.hi, tss.decimals)}` : '');
+    expect(at('Earlier median')).toBe(cell.median === undefined ? '' : fmtNum(cell.median, tss.decimals));
+    expect(tables.at(-1)!.notes!.join(' ')).toMatch(/usual range \(5th–95th percentile\)/); // notes go under the last table
+    // graphs shade this round
+    expect(options.length).toBeGreaterThan(0);
+    expect(JSON.stringify(options[0])).toContain('"name":"__band"');
+    expect(doc.nodes.some((n) => n.t === 'image' && /shaded band is the reporting period/.test(n.caption ?? ''))).toBe(true);
+  });
+
+  it('lets you choose the columns and how far back to compare', async () => {
+    const b = await loadBundle(projectId);
+    const round = roundPeriods(b, 12)[0];
+    const block = BUILT_IN_TEMPLATES.find((t) => t.id === 'tpl-round')!.blocks.find((x) => x.type === 'roundReview')!;
+    const build = (patch: object) => {
+      const tpl = { ...BUILT_IN_TEMPLATES.find((t) => t.id === 'tpl-round')!, id: 'x', blocks: [{ ...block, ...patch, ruleColumns: 'none', guidelineSetIds: [] } as typeof block] };
+      return buildReport({ bundle: b, template: tpl, period: round, settings: DEFAULT_SETTINGS }).nodes.filter((n): n is Extract<typeof n, { t: 'table' }> => n.t === 'table');
+    };
+    expect(build({ compare: ['previous'] })[0].head[0].map((c) => c.text)).toEqual(['Parameter', 'Unit', 'Result', 'Previous']);
+    // a shorter history gives a usual range from fewer results, or none
+    const all = build({ compare: ['range'], historyYears: 0 });
+    const oneYear = build({ compare: ['range'], historyYears: 1 });
+    expect(all.at(-1)!.notes!.join(' ')).toMatch(/on record/);
+    expect(oneYear.at(-1)!.notes!.join(' ')).toMatch(/since \d{1,2} \w{3} \d{4}/);
+    expect(JSON.stringify(oneYear.map((t) => t.body))).not.toBe(JSON.stringify(all.map((t) => t.body)));
   });
 });
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Badge, Button, Card, ColorInput, FileButton, Grid, Group, Menu, NumberInput, ScrollArea, Select, SimpleGrid, Stack, Switch, Text, TextInput, Title, Tooltip, Loader, Code, Image } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -17,6 +17,7 @@ import { buildReport, DEFAULT_LOGO_MM } from '../reports/build';
 import { PdfPreview } from '../reports/PdfPreview';
 import { SectionsEditor } from '../components/report/SectionsEditor';
 import { readImageFile } from '../lib/image';
+import { roundPeriods } from '../lib/latest';
 import { JumpToPreview } from '../components/report/JumpToPreview';
 import { hasMixedPages, samePages } from '../components/report/sections';
 import { newBlock } from '../components/report/blocks';
@@ -26,7 +27,8 @@ import { exportReport, type ExportKind } from '../reports/export';
 function Preview({ template }: { template: ReportTemplate }) {
   const data = useProject();
   const settings = useSettings();
-  const [period, setPeriod] = useState<PeriodValue>(() => defaultPeriod(data.project.yearStartMonth, 'lastRy'));
+  const rounds = useMemo(() => roundPeriods(data, 12), [data]);
+  const [period, setPeriod] = useState<PeriodValue>(() => (template.period === 'latestRound' && rounds[0]) || defaultPeriod(data.project.yearStartMonth, 'lastRy'));
   const [doc, setDoc] = useState<ReportDoc | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -54,7 +56,7 @@ function Preview({ template }: { template: ReportTemplate }) {
   return (
     <Stack gap="xs">
       <Group align="flex-end" justify="space-between" wrap="wrap">
-        <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={data.project.yearStartMonth} />
+        <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={data.project.yearStartMonth} extra={rounds} />
         <Group gap="xs">
           <Button size="xs" leftSection={<IconFileTypeDocx size={16} />} loading={exporting === 'docx'} onClick={() => run('docx')}>
             Download Word

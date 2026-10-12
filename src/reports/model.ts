@@ -121,6 +121,7 @@ export const PLACEHOLDERS: Array<[string, string]> = [
   ['period.start', 'Period start (long date)'],
   ['period.end', 'Period end (long date)'],
   ['period.label', 'Period label'],
+  ['period.month', 'Month(s) of the period, e.g. September 2026'],
   ['today', "Today's date"],
   ['author', 'Your name (Settings)'],
   ['company', 'Company (Settings)'],
