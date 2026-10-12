@@ -6,6 +6,7 @@ import { db } from '../db/db';
 import type { ExceedanceNote, GuidelineSet, ImportBatch, MonitoringSchedule, Parameter, Project, ReportObligation, Result, Rule, Sample, Site } from '../db/types';
 import { buildIndex, type DataIndex } from '../lib/dataIndex';
 import { SERIES_LIGHT } from '../theme';
+import { compareParams } from '../data/parameters';
 
 export interface ProjectData {
   project: Project;
@@ -56,7 +57,7 @@ export function ProjectDataProvider({ projectId, children }: { projectId: string
   const value = useMemo<ProjectData | null>(() => {
     if (!project || !sites || !samples || !results || !rules || !notes || !schedules || !obligations || !imports || !params || !guidelineSets) return null;
     const sortedSites = [...sites].sort((a, b) => a.order - b.order || a.code.localeCompare(b.code));
-    const sortedParams = [...params].sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999) || a.name.localeCompare(b.name));
+    const sortedParams = [...params].sort(compareParams);
     const index = buildIndex(samples, results, sortedSites, sortedParams);
     const colorIdx = new Map(sortedSites.map((s, i) => [s.id, i]));
     return {

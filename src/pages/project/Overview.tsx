@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Anchor, Badge, Button, Card, Checkbox, Grid, Group, SegmentedControl, Select, SimpleGrid, Stack, Switch, Table, Text, Title, Tooltip, useComputedColorScheme } from '@mantine/core';
+import { Anchor, Badge, Button, Card, Checkbox, Grid, Group, Select, SimpleGrid, Stack, Switch, Table, Text, Title, Tooltip, useComputedColorScheme } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconArrowRight, IconCalendarDue, IconFlask, IconShieldCheck } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
-import { defaultPeriod, LevelBadge, PeriodPicker, RuleStatusBadge, StatTile, type PeriodValue } from '../../components/common';
-import { displayValue, evaluateAll, flagResults, keyParameters, type CellFlag } from '../../lib/analysis';
+import { ConsentViewControl, defaultPeriod, LevelBadge, PeriodPicker, RuleStatusBadge, StatTile, type PeriodValue } from '../../components/common';
+import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResults, keyParameters, type CellFlag, type ConsentView } from '../../lib/analysis';
 import { reviewCell, reviewLines, samplingRounds, type ReviewCell } from '../../lib/latest';
 import { addMonths, daysUntil, formatDate, formatMonthYear, MONTH_SHORT, relativeDays, todayStr } from '../../lib/dates';
 import { byDueDate, nextObligation, OBLIGATION_STATUS } from '../../lib/schedule';
@@ -119,7 +119,7 @@ function LatestResultsReview() {
   const { sites, project, siteMap } = data;
   const rounds = useMemo(() => samplingRounds(data), [data]);
   const [roundKey, setRoundKey] = useState('latest');
-  const [scope, setScope] = useState<'all' | 'key'>('all');
+  const [scope, setScope] = useState<'all' | ConsentView>('all');
   const [issuesOnly, setIssuesOnly] = useState(false);
   const round = rounds.find((r) => r.key === roundKey) ?? rounds[0];
   const flags = useMemo(() => {
@@ -128,18 +128,19 @@ function LatestResultsReview() {
     const [start, end] = [dates[0], dates[dates.length - 1]];
     return flagResults(data, evaluateAll(data, start, end), project.guidelineSetIds, start, end);
   }, [data, round, project.guidelineSetIds]);
-  const keys = useMemo(() => new Set(keyParameters(data, 12)), [data]);
+  const consent = useMemo(() => ({ consent: consentParameterIds(data, 'consent'), limits: consentParameterIds(data, 'limits'), triggers: consentParameterIds(data, 'triggers') }), [data]);
+  const counts = useMemo(() => countWithData(consent, new Set(data.index.paramIdsWithData)), [consent, data.index]);
   const table = useMemo(() => {
     if (!round) return [];
     const measured = new Set(round.samples.flatMap((s) => (data.index.bySample.get(s.id) ?? []).map((r) => r.parameterId)));
     return data.params
-      .filter((p) => measured.has(p.id) && (scope === 'all' || keys.has(p.id)))
+      .filter((p) => measured.has(p.id) && (scope === 'all' || consent[scope].has(p.id)))
       .map((p) => {
         const cells = round.samples.map((s) => reviewCell(data, s, p));
         const issue = cells.some((c) => c && (flags.has(c.result.id) || c.unusual));
         return { p, cells, issue };
       });
-  }, [data, round, scope, keys, flags]);
+  }, [data, round, scope, consent, flags]);
   if (!round) return null;
   const all = table.flatMap((t) => t.cells).filter((c): c is ReviewCell => !!c);
   const exceed = all.filter((c) => ['limit', 'guideline'].includes(flags.get(c.result.id)?.kind ?? '')).length;
@@ -167,14 +168,7 @@ function LatestResultsReview() {
         </div>
         <Group gap="sm" align="flex-end" wrap="wrap">
           <Select aria-label="Sampling round" data={rounds.map((r) => ({ value: r.key, label: r.label }))} value={round.key} onChange={(v) => v && setRoundKey(v)} allowDeselect={false} w={260} comboboxProps={{ width: 'max-content' }} />
-          <SegmentedControl
-            value={scope}
-            onChange={(v) => setScope(v as typeof scope)}
-            data={[
-              { value: 'all', label: 'All parameters' },
-              { value: 'key', label: 'Key parameters' },
-            ]}
-          />
+          {counts.consent > 0 && <ConsentViewControl value={scope} onChange={setScope} counts={counts} />}
           <Switch label="Only show issues" checked={issuesOnly} onChange={(e) => setIssuesOnly(e.currentTarget.checked)} />
         </Group>
       </Group>

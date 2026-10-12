@@ -12,6 +12,7 @@ import { SITE_ROLES, SITE_TYPES } from '../../db/types';
 import { COMMON_UNITS, unitLabel } from '../../lib/units';
 import { db } from '../../db/db';
 import { MoreOptions } from '../../components/common';
+import { compareParams } from '../../data/parameters';
 
 function SiteRow({ site, index, count, onMove }: { site: Site; index: number; count: number; onMove: (dir: -1 | 1) => void }) {
   const [s, setS] = useState(site);
@@ -131,7 +132,7 @@ function BulkSitesModal({ onClose }: { onClose: () => void }) {
 
 function ParametersCard() {
   const { index, paramMap, results } = useProject();
-  const used = index.paramIdsWithData.map((id) => paramMap.get(id)).filter((p): p is NonNullable<typeof p> => !!p).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const used = index.paramIdsWithData.map((id) => paramMap.get(id)).filter((p): p is NonNullable<typeof p> => !!p).sort(compareParams);
   const [units, setUnits] = useState<Record<string, string>>({});
   if (!used.length) return null;
   const counts = new Map<string, number>();

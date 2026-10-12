@@ -6,25 +6,30 @@ import type { Parameter } from '../db/types';
 
 type P = Omit<Parameter, 'builtIn' | 'order'>;
 
+// Measured on site, listed first as in field sheets and monitoring tables.
 const field: P[] = [
-  { id: 'ph', name: 'pH', group: 'Physical & field', unit: 'pH', aliases: ['pH', 'pH (lab)', 'pH lab', 'lab pH', 'pH value', 'pH units'], decimals: 1 },
-  { id: 'ph-field', name: 'pH (field)', group: 'Physical & field', unit: 'pH', aliases: ['field pH', 'pH field', 'pH - field', 'pH (insitu)', 'in situ pH'], decimals: 1 },
-  { id: 'temp', name: 'Temperature', short: 'Temp', group: 'Physical & field', unit: '°C', aliases: ['temperature', 'temp', 'water temperature', 'water temp', 'field temperature', 'temperature (field)', 'temp (field)'], decimals: 1 },
-  { id: 'ec', name: 'Electrical Conductivity', short: 'EC', group: 'Physical & field', unit: 'µS/cm', aliases: ['electrical conductivity (ec)', 'electrical conductivity', 'conductivity', 'ec', 'specific conductance', 'spc', 'cond', 'conductivity (lab)', 'ec (lab)'] },
-  { id: 'ec-field', name: 'Electrical Conductivity (field)', short: 'EC (field)', group: 'Physical & field', unit: 'µS/cm', aliases: ['field ec', 'ec field', 'field conductivity', 'conductivity (field)', 'ec (field)', 'specific conductivity (field)'] },
-  { id: 'do', name: 'Dissolved Oxygen', short: 'DO', group: 'Physical & field', unit: 'mg/L', aliases: ['dissolved oxygen', 'do', 'do (mg/l)', 'dissolved oxygen (field)', 'do conc', 'oxygen dissolved'], decimals: 1 },
-  { id: 'do-sat', name: 'Dissolved Oxygen Saturation', short: 'DO %', group: 'Physical & field', unit: '% sat', aliases: ['do %', 'do saturation', 'dissolved oxygen saturation', '% do', 'do sat', 'dissolved oxygen (% saturation)', 'do (%)', 'oxygen saturation'], decimals: 0 },
-  { id: 'turbidity', name: 'Turbidity', short: 'Turb', group: 'Physical & field', unit: 'NTU', aliases: ['turbidity', 'turb', 'turbidity (lab)'] },
-  { id: 'colour-true', name: 'True Colour', short: 'Colour', group: 'Physical & field', unit: 'Hazen units', aliases: ['true colour', 'true hazen colour', 'true color', 'true hazen color', 'colour (true)', 'true colour (hazen)', 'hazen colour', 'colour', 'color'] },
-  { id: 'turbidity-field', name: 'Turbidity (field)', short: 'Turb (field)', group: 'Physical & field', unit: 'NTU', aliases: ['field turbidity', 'turbidity field', 'turbidity (field)'] },
-  { id: 'tss', name: 'Total Suspended Solids', short: 'TSS', group: 'Physical & field', unit: 'mg/L', aliases: ['total suspended solids', 'tss', 'suspended solids', 'ss', 'suspended solids (total)', 'total suspended solids (tss)', 'non-filterable residue', 'nfr'] },
-  { id: 'vss', name: 'Volatile Suspended Solids', short: 'VSS', group: 'Physical & field', unit: 'mg/L', aliases: ['volatile suspended solids', 'vss', 'volatile suspended solids (vss)'] },
-  { id: 'tds', name: 'Total Dissolved Solids', short: 'TDS', group: 'Physical & field', unit: 'mg/L', aliases: ['total dissolved solids', 'tds', 'total dissolved solids (tds)', 'dissolved solids'] },
-  { id: 'clarity', name: 'Visual Clarity', group: 'Physical & field', unit: 'm', aliases: ['visual clarity', 'clarity', 'black disc', 'black disc clarity', 'water clarity'] },
-  { id: 'flow', name: 'Flow', group: 'Physical & field', unit: 'L/s', aliases: ['flow', 'flow rate', 'discharge rate', 'discharge volume rate'] },
-  { id: 'swl', name: 'Groundwater Level', short: 'SWL', group: 'Physical & field', unit: 'm', aliases: ['swl', 'static water level', 'depth to water', 'groundwater level', 'water level', 'dtw', 'depth to groundwater'], decimals: 2 },
-  { id: 'orp', name: 'Redox Potential', short: 'ORP', group: 'Physical & field', unit: 'mV', aliases: ['orp', 'redox', 'redox potential', 'oxidation reduction potential', 'eh'], decimals: 0 },
-  { id: 'salinity', name: 'Salinity', group: 'Physical & field', unit: 'ppt', aliases: ['salinity'] },
+  { id: 'ph-field', name: 'pH (field)', group: 'Field', unit: 'pH', aliases: ['field pH', 'pH field', 'pH - field', 'pH (insitu)', 'in situ pH'], decimals: 1 },
+  { id: 'temp', name: 'Temperature', short: 'Temp', group: 'Field', unit: '°C', aliases: ['temperature', 'temp', 'water temperature', 'water temp', 'field temperature', 'temperature (field)', 'temp (field)'], decimals: 1 },
+  { id: 'ec-field', name: 'Electrical Conductivity (field)', short: 'EC (field)', group: 'Field', unit: 'µS/cm', aliases: ['field ec', 'ec field', 'field conductivity', 'conductivity (field)', 'ec (field)', 'specific conductivity (field)'] },
+  { id: 'do', name: 'Dissolved Oxygen', short: 'DO', group: 'Field', unit: 'mg/L', aliases: ['dissolved oxygen', 'do', 'do (mg/l)', 'dissolved oxygen (field)', 'do conc', 'oxygen dissolved'], decimals: 1 },
+  { id: 'do-sat', name: 'Dissolved Oxygen Saturation', short: 'DO %', group: 'Field', unit: '% sat', aliases: ['do %', 'do saturation', 'dissolved oxygen saturation', '% do', 'do sat', 'dissolved oxygen (% saturation)', 'do (%)', 'oxygen saturation'], decimals: 0 },
+  { id: 'turbidity-field', name: 'Turbidity (field)', short: 'Turb (field)', group: 'Field', unit: 'NTU', aliases: ['field turbidity', 'turbidity field', 'turbidity (field)'] },
+  { id: 'orp', name: 'Redox Potential', short: 'ORP', group: 'Field', unit: 'mV', aliases: ['orp', 'redox', 'redox potential', 'oxidation reduction potential', 'eh'], decimals: 0 },
+  { id: 'salinity', name: 'Salinity', group: 'Field', unit: 'ppt', aliases: ['salinity'] },
+  { id: 'clarity', name: 'Visual Clarity', group: 'Field', unit: 'm', aliases: ['visual clarity', 'clarity', 'black disc', 'black disc clarity', 'water clarity'] },
+  { id: 'flow', name: 'Flow', group: 'Field', unit: 'L/s', aliases: ['flow', 'flow rate', 'discharge rate', 'discharge volume rate'] },
+  { id: 'swl', name: 'Groundwater Level', short: 'SWL', group: 'Field', unit: 'm', aliases: ['swl', 'static water level', 'depth to water', 'groundwater level', 'water level', 'dtw', 'depth to groundwater'], decimals: 2 },
+];
+
+// Laboratory physical measurements.
+const physical: P[] = [
+  { id: 'ph', name: 'pH', group: 'Physical', unit: 'pH', aliases: ['pH', 'pH (lab)', 'pH lab', 'lab pH', 'pH value', 'pH units'], decimals: 1 },
+  { id: 'ec', name: 'Electrical Conductivity', short: 'EC', group: 'Physical', unit: 'µS/cm', aliases: ['electrical conductivity (ec)', 'electrical conductivity', 'conductivity', 'ec', 'specific conductance', 'spc', 'cond', 'conductivity (lab)', 'ec (lab)'] },
+  { id: 'turbidity', name: 'Turbidity', short: 'Turb', group: 'Physical', unit: 'NTU', aliases: ['turbidity', 'turb', 'turbidity (lab)'] },
+  { id: 'tss', name: 'Total Suspended Solids', short: 'TSS', group: 'Physical', unit: 'mg/L', aliases: ['total suspended solids', 'tss', 'suspended solids', 'ss', 'suspended solids (total)', 'total suspended solids (tss)', 'non-filterable residue', 'nfr'] },
+  { id: 'vss', name: 'Volatile Suspended Solids', short: 'VSS', group: 'Physical', unit: 'mg/L', aliases: ['volatile suspended solids', 'vss', 'volatile suspended solids (vss)'] },
+  { id: 'tds', name: 'Total Dissolved Solids', short: 'TDS', group: 'Physical', unit: 'mg/L', aliases: ['total dissolved solids', 'tds', 'total dissolved solids (tds)', 'dissolved solids'] },
+  { id: 'colour-true', name: 'True Colour', short: 'Colour', group: 'Physical', unit: 'Hazen units', aliases: ['true colour', 'true hazen colour', 'true color', 'true hazen color', 'colour (true)', 'true colour (hazen)', 'hazen colour', 'colour', 'color'] },
 ];
 
 const general: P[] = [
@@ -158,11 +163,37 @@ const pfas: P[] = [
   { id: 'pfhxs', name: 'PFHxS', group: 'PFAS', unit: 'µg/L', aliases: ['pfhxs', 'perfluorohexane sulfonate', 'perfluorohexanesulfonic acid', 'perfluorohexane sulphonate'] },
 ];
 
-export const BUILT_IN_PARAMETERS: Parameter[] = [...field, ...general, ...nutrients, ...micro, ...metalParams(), ...hydrocarbons, ...pfas].map(
-  (p, i) => ({ ...p, builtIn: true, order: i }),
-);
+// dissolved metals together, then total metals (the generator gives each metal's two fractions in turn)
+const metals = metalParams();
+export const BUILT_IN_PARAMETERS: Parameter[] = [
+  ...field,
+  ...physical,
+  ...general,
+  ...nutrients,
+  ...micro,
+  ...metals.filter((p) => p.group === 'Metals (dissolved)'),
+  ...metals.filter((p) => p.group === 'Metals (total)'),
+  ...hydrocarbons,
+  ...pfas,
+].map((p, i) => ({ ...p, builtIn: true, order: i }));
 
-export const PARAMETER_GROUPS = ['Physical & field', 'General chemistry', 'Nutrients', 'Microbiology', 'Metals (dissolved)', 'Metals (total)', 'Hydrocarbons', 'PFAS', 'Other'];
+/** Parameter groups in the order they are listed everywhere: field measurements first, then the laboratory groups. */
+export const PARAMETER_GROUPS = ['Field', 'Physical', 'General chemistry', 'Nutrients', 'Microbiology', 'Metals (dissolved)', 'Metals (total)', 'Hydrocarbons', 'PFAS', 'Other'];
+
+const GROUP_RANK = new Map(PARAMETER_GROUPS.map((g, i) => [g, i]));
+
+/** The logical order for parameters: by group (see PARAMETER_GROUPS), then their place in the group, then name. */
+export function compareParams(a: Pick<Parameter, 'group' | 'order' | 'name'>, b: Pick<Parameter, 'group' | 'order' | 'name'>): number {
+  const rank = (p: Pick<Parameter, 'group'>) => GROUP_RANK.get(p.group) ?? GROUP_RANK.get('Other')!;
+  return rank(a) - rank(b) || (a.order ?? 99999) - (b.order ?? 99999) || a.name.localeCompare(b.name);
+}
+
+/** The group for a parameter still in the old combined "Physical & field" group. */
+export function splitPhysicalAndField(p: Pick<Parameter, 'id' | 'name'>): string {
+  const builtIn = BUILT_IN_PARAMETERS.find((x) => x.id === p.id);
+  if (builtIn) return builtIn.group;
+  return /\bfield\b|in.?situ/i.test(p.name) ? 'Field' : 'Physical';
+}
 
 /** Element symbol / name lookup used by the fuzzy matcher. */
 export const ELEMENT_NAMES: Record<string, string> = Object.fromEntries(

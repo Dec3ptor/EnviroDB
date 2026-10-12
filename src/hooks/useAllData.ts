@@ -4,6 +4,7 @@ import { db } from '../db/db';
 import type { Project } from '../db/types';
 import { buildIndex } from '../lib/dataIndex';
 import type { ProjectBundle } from '../lib/analysis';
+import { compareParams } from '../data/parameters';
 
 /** Loads every project's data (for the dashboard). */
 export function useAllBundles(): { bundles: ProjectBundle[]; projects: Project[]; loading: boolean } {
@@ -30,7 +31,7 @@ export function useAllBundles(): { bundles: ProjectBundle[]; projects: Project[]
       return m;
     };
     const sitesBy = by(sites), samplesBy = by(samples), resultsBy = by(results), rulesBy = by(rules), notesBy = by(notes), schBy = by(schedules), oblBy = by(obligations);
-    const sortedParams = [...params].sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
+    const sortedParams = [...params].sort(compareParams);
     const paramMap = new Map(sortedParams.map((p) => [p.id, p]));
     const setMap = new Map(sets.map((s) => [s.id, s]));
     const bundles = projects.map<ProjectBundle>((project) => {

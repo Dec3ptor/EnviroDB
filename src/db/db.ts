@@ -15,7 +15,7 @@ import type {
   Settings,
   Site,
 } from './types';
-import { BUILT_IN_PARAMETERS } from '../data/parameters';
+import { BUILT_IN_PARAMETERS, splitPhysicalAndField } from '../data/parameters';
 import { BUILT_IN_GUIDELINES } from '../data/guidelines';
 import { BUILT_IN_TEMPLATES } from '../data/templates';
 
@@ -67,6 +67,9 @@ export const DEFAULT_SETTINGS: Settings = {
   dateFormat: 'D MMM YYYY',
 };
 
+/** Before field and laboratory physical measurements were separate groups. */
+const LEGACY_FIELD_GROUP = 'Physical & field';
+
 /** Insert / refresh built-in reference data while keeping the user's own additions. */
 export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<void> {
   await database.transaction('rw', database.parameters, database.guidelineSets, database.templates, async () => {
@@ -77,11 +80,16 @@ export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<voi
       if (!cur) toPut.push(p);
       else {
         const aliases = Array.from(new Set([...cur.aliases, ...p.aliases]));
-        if (aliases.length !== cur.aliases.length || cur.hardnessExponent !== p.hardnessExponent || !cur.builtIn) {
-          toPut.push({ ...cur, aliases, hardnessExponent: p.hardnessExponent, builtIn: true });
+        // the user's names, units and groups are kept; the old combined group is split, and the built-in order followed
+        const group = cur.group === LEGACY_FIELD_GROUP ? p.group : cur.group;
+        if (aliases.length !== cur.aliases.length || cur.hardnessExponent !== p.hardnessExponent || !cur.builtIn || group !== cur.group || cur.order !== p.order) {
+          toPut.push({ ...cur, aliases, hardnessExponent: p.hardnessExponent, builtIn: true, group, order: p.order });
         }
       }
+      existing.delete(p.id);
     }
+    // the user's own parameters in the old "Physical & field" group go to Field or Physical
+    for (const cur of existing.values()) if (cur.group === LEGACY_FIELD_GROUP) toPut.push({ ...cur, group: splitPhysicalAndField(cur) });
     if (toPut.length) await database.parameters.bulkPut(toPut);
     await database.guidelineSets.bulkPut(BUILT_IN_GUIDELINES);
     await database.templates.bulkPut(BUILT_IN_TEMPLATES);

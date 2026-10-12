@@ -62,7 +62,8 @@ describe('consent set-up with an AI tool', () => {
     expect(t).toContain('# Task: turn resource consent conditions into EnviroDB set-up data');
     expect(t).toContain("Today's date is 11 Oct 2026.");
     expect(t).toContain('"format": "envirodb-consent-setup"');
-    expect(t).toMatch(/Physical & field: .*Turbidity/);
+    expect(t).toMatch(/- Field: pH \(field\); Temperature/);
+    expect(t).toMatch(/- Physical: pH; .*Turbidity/);
     expect(t).toContain('Dissolved Zinc');
     expect(t).toContain('- US1 – Upstream (Surface water)');
     expect(t).toContain('- anzg-fw-95: ANZG (2018) Freshwater – 95% species protection');

@@ -5,7 +5,7 @@ import { IconDeviceFloppy, IconPlus, IconSearch } from '@tabler/icons-react';
 import { db } from '../db/db';
 import type { Parameter } from '../db/types';
 import { createParameter, saveParameter } from '../db/repo';
-import { PARAMETER_GROUPS } from '../data/parameters';
+import { PARAMETER_GROUPS, compareParams } from '../data/parameters';
 import { COMMON_UNITS } from '../lib/units';
 import { PageHeader } from '../components/common';
 
@@ -52,7 +52,7 @@ export function ParametersPage() {
     () =>
       (params ?? [])
         .filter((p) => (!group || p.group === group) && (!q || [p.name, p.short, p.id, ...p.aliases].join(' ').toLowerCase().includes(q.toLowerCase())))
-        .sort((a, b) => (a.order ?? 99999) - (b.order ?? 99999) || a.name.localeCompare(b.name)),
+        .sort(compareParams),
     [params, q, group],
   );
   useEffect(() => setPage(1), [q, group]);

@@ -206,6 +206,35 @@ export function statsTable(b: ProjectBundle, siteIds: string[], paramIds: string
 }
 
 /** Parameters that have consent rules, falling back to the most-sampled parameters. */
+/** Which parameters to show: everything the consent covers, or only those with a limit, or with a trigger (or alert). */
+export type ConsentView = 'consent' | 'limits' | 'triggers';
+
+export const isLimitLevel = (level: string) => /limit/i.test(level);
+export const isTriggerLevel = (level: string) => /trigger|alert/i.test(level);
+
+/**
+ * Parameters the consent covers: those in its active rules – a limit, trigger or other condition, or every
+ * parameter of a guideline set a rule compares with – and, for 'consent', those its sampling schedules require.
+ */
+export function consentParameterIds(b: Pick<ProjectBundle, 'rules' | 'schedules' | 'setMap'>, view: ConsentView = 'consent'): Set<string> {
+  const out = new Set<string>();
+  for (const r of b.rules) {
+    if (!r.active) continue;
+    if (view === 'limits' && !isLimitLevel(r.level)) continue;
+    if (view === 'triggers' && !isTriggerLevel(r.level)) continue;
+    if (r.kind === 'guideline') b.setMap.get(r.guidelineSetId ?? '')?.values.forEach((v) => out.add(v.parameterId));
+    else if (r.parameterId) out.add(r.parameterId);
+  }
+  if (view === 'consent') for (const s of b.schedules) if (s.active) s.parameterIds.forEach((id) => out.add(id));
+  return out;
+}
+
+/** How many of each consent view's parameters have results. */
+export function countWithData(sets: Record<ConsentView, Set<string>>, withData: Set<string>): Record<ConsentView, number> {
+  const n = (ids: Set<string>) => [...ids].filter((id) => withData.has(id)).length;
+  return { consent: n(sets.consent), limits: n(sets.limits), triggers: n(sets.triggers) };
+}
+
 export function keyParameters(b: ProjectBundle, max = 8): string[] {
   const ruled: string[] = [];
   for (const r of b.rules) {

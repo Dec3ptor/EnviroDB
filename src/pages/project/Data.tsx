@@ -6,13 +6,17 @@ import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconDeviceFloppy, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
-import { EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
-import { displayValue, evaluateAll, flagResults, pivot, type PivotRow } from '../../lib/analysis';
+import { ConsentViewControl, EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
+import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResults, pivot, type ConsentView, type PivotRow } from '../../lib/analysis';
 import { formatDate } from '../../lib/dates';
 import { unitLabel } from '../../lib/units';
 import { exportPivotCsv, exportPivotXlsx } from '../../reports/excel';
 import { deleteImport, deleteSamples } from '../../db/repo';
 import { db } from '../../db/db';
+import { compareParams } from '../../data/parameters';
+
+/** A parameter id no result has, so the table shows nothing rather than everything when a view has no parameters. */
+const NO_PARAMETERS = '\u0000none';
 import type { ReportBlock, Result, Sample } from '../../db/types';
 import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
@@ -58,7 +62,10 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
   const [s, setDraft] = useState<Sample | null>(sample ? { ...sample } : null);
   const [edits, setEdits] = useState<Record<string, string>>({});
   if (!s) return null;
-  const results = (index.bySample.get(s.id) ?? []).slice().sort((a, b) => (paramMap.get(a.parameterId)?.order ?? 0) - (paramMap.get(b.parameterId)?.order ?? 0));
+  const results = (index.bySample.get(s.id) ?? []).slice().sort((a, b) => {
+    const [pa, pb] = [paramMap.get(a.parameterId), paramMap.get(b.parameterId)];
+    return pa && pb ? compareParams(pa, pb) : Number(!pa) - Number(!pb);
+  });
   const save = async () => {
     await db.transaction('rw', db.samples, db.results, async () => {
       await db.samples.put(s);
@@ -419,8 +426,26 @@ export function DataTab() {
   const [show, setShow] = useState<ShowRows>('all');
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState<ValueFilter | null>(null);
+  const [consentView, setConsentView] = useState<'all' | ConsentView>('all');
+  const consent = useMemo(() => ({ consent: consentParameterIds(data, 'consent'), limits: consentParameterIds(data, 'limits'), triggers: consentParameterIds(data, 'triggers') }), [data]);
+  // the parameters shown: those picked (or all with data), narrowed to the consent view, in the logical order
+  const shownIds = useMemo(() => {
+    if (consentView === 'all' && !paramIds.length) return [];
+    const picked = paramIds.length ? paramIds : [...withData];
+    const ids = consentView === 'all' ? picked : picked.filter((id) => consent[consentView].has(id));
+    const ordered = ids
+      .map((id) => data.paramMap.get(id))
+      .filter((p): p is NonNullable<typeof p> => !!p)
+      .sort(compareParams)
+      .map((p) => p.id);
+    if (consentView === 'all') return ordered;
+    return ordered.length ? ordered : [NO_PARAMETERS];
+  }, [consentView, paramIds, withData, consent, data.paramMap]);
+  const noneInView = shownIds[0] === NO_PARAMETERS;
+  const consentCounts = useMemo(() => countWithData(consent, withData), [consent, withData]);
+  const exportIds = noneInView ? [] : shownIds;
 
-  const { columns, rows } = useMemo(() => pivot(data, { siteIds, paramIds, start: period.start, end: period.end }), [data, siteIds, paramIds, period]);
+  const { columns, rows } = useMemo(() => pivot(data, { siteIds, paramIds: shownIds, start: period.start, end: period.end }), [data, siteIds, shownIds, period]);
   const flags = useMemo(() => flagResults(data, evaluateAll(data, period.start, period.end), setIds, period.start, period.end), [data, setIds, period]);
   const guidelineNames = setIds.map((id) => setMap.get(id)?.shortName ?? '').filter(Boolean);
   const siteOrder = useMemo(() => new Map(sites.map((s, i) => [s.id, i])), [sites]);
@@ -461,7 +486,7 @@ export function DataTab() {
           type: 'resultsTable',
           title: 'Monitoring results',
           siteIds,
-          parameterIds: paramIds,
+          parameterIds: exportIds,
           layout: layout === 'samplesAsRows' ? 'parametersAsColumns' : 'parametersAsRows',
           guidelineSetIds: setIds,
           highlight: true,
@@ -505,10 +530,11 @@ export function DataTab() {
     <Stack gap="md">
       <Card padding="md">
         <Group align="flex-end" gap="sm" wrap="wrap">
-          <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} width={{ base: '100%', xs: 250 }} />
-          <SitePicker compact sites={sites} value={siteIds} onChange={setSiteIds} w={{ base: '100%', xs: 180 }} />
-          <ParamPicker compact params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} w={{ base: '100%', xs: 210 }} />
-          <GuidelinePicker compact sets={guidelineSets} value={setIds} onChange={setSetIds} w={{ base: '100%', xs: 210 }} label="Compare with" placeholder="No guidelines" />
+          <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} width={{ base: '100%', xs: 220 }} />
+          <SitePicker compact sites={sites} value={siteIds} onChange={setSiteIds} w={{ base: '100%', xs: 160 }} />
+          <ParamPicker compact params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} w={{ base: '100%', xs: 190 }} />
+          <ConsentViewControl label="Show" value={consentView} onChange={setConsentView} counts={consentCounts} />
+          <GuidelinePicker compact sets={guidelineSets} value={setIds} onChange={setSetIds} w={{ base: '100%', xs: 190 }} label="Compare with" placeholder="No guidelines" />
         </Group>
         <Group align="center" gap="sm" wrap="wrap" mt="sm">
           <TextInput
@@ -608,7 +634,18 @@ export function DataTab() {
           {narrowed ? `Showing ${view.length} of ${rows.length} samples` : `${rows.length} samples`} · {columns.length} parameters
         </Text>
       </Group>
-      {view.length ? (
+      {noneInView ? (
+        <EmptyState
+          title={`No ${consentView === 'limits' ? 'parameters with consent limits' : consentView === 'triggers' ? 'parameters with consent triggers' : 'consent parameters'} have results${paramIds.length ? ' among those chosen' : ''}`}
+          action={
+            <Button variant="light" onClick={() => setConsentView('all')}>
+              Show all parameters
+            </Button>
+          }
+        >
+          {consent[consentView === 'all' ? 'consent' : consentView].size ? 'Try another period or sites.' : 'Add the consent conditions on the Compliance tab, and the parameters each sampling schedule requires on the Schedule tab.'}
+        </EmptyState>
+      ) : view.length ? (
         layout === 'samplesAsRows' ? <SamplesAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} head={head} /> : <ParamsAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} />
       ) : (
         <EmptyState
@@ -624,7 +661,7 @@ export function DataTab() {
       )}
       <ImportHistory />
       <SampleDrawer key={selected?.id ?? 'none'} sample={selected} onClose={() => setSelected(null)} />
-      <AiInputModal opened={aiOpen} onClose={() => setAiOpen(false)} start={{ period, siteIds, paramIds }} />
+      <AiInputModal opened={aiOpen} onClose={() => setAiOpen(false)} start={{ period, siteIds, paramIds: exportIds }} />
     </Stack>
   );
 }

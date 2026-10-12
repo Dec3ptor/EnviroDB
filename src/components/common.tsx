@@ -1,11 +1,12 @@
 import { Fragment, type ReactNode, useMemo, useState } from 'react';
-import { Anchor, Badge, Box, Checkbox, CloseButton, Collapse, Combobox, Group, Input, InputBase, ScrollArea, Stack, Text, Title, Paper, Select, MultiSelect, ThemeIcon, UnstyledButton, useCombobox, type MultiSelectProps, type StyleProp } from '@mantine/core';
+import { Anchor, Badge, Box, Checkbox, CloseButton, Collapse, Combobox, Group, Input, InputBase, ScrollArea, SegmentedControl, Stack, Text, Title, Tooltip, Paper, Select, MultiSelect, ThemeIcon, UnstyledButton, useCombobox, type MultiSelectProps, type StyleProp } from '@mantine/core';
 import { DatePickerInput, type DatePickerInputProps } from '@mantine/dates';
 import { IconAlertTriangle, IconChevronRight, IconCircleCheck, IconCircleX, IconHelpCircle, IconMinus } from '@tabler/icons-react';
 import type { GuidelineSet, Parameter, Site } from '../db/types';
 import { STATUS_META, LEVEL_COLORS, type RuleStatus } from '../lib/compliance';
 import { formatDate, makeDate, periodPresets, todayStr, type Period } from '../lib/dates';
 import { PARAMETER_GROUPS } from '../data/parameters';
+import type { ConsentView } from '../lib/analysis';
 
 export function PageHeader({ title, description, actions, badge }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; badge?: ReactNode }) {
   return (
@@ -319,4 +320,39 @@ export function GuidelinePicker({ sets, value, onChange, label = 'Compare with g
   const data = useMemo(() => guidelineOptions(sets), [sets]);
   if (compact) return <CompactMultiSelect label={label} data={data} value={value} onChange={onChange} placeholder={placeholder} noun="guideline sets" w={rest.w} />;
   return <MultiSelect label={label} data={data} value={value} onChange={onChange} searchable clearable placeholder={value.length ? undefined : placeholder} maxDropdownHeight={360} {...rest} />;
+}
+
+const CONSENT_VIEWS: Array<[ConsentView, string, string]> = [
+  ['consent', 'In consent', 'In the consent: parameters with limits, triggers or other conditions, and those the sampling schedules require'],
+  ['limits', 'Limits', 'Parameters with a consent limit'],
+  ['triggers', 'Triggers', 'Parameters with a consent trigger or alert level'],
+];
+
+/** Show all parameters, or only those in the consent, with a limit, or with a trigger; `counts` are of those with results. */
+export function ConsentViewControl({ value, onChange, counts, label }: { value: 'all' | ConsentView; onChange: (v: 'all' | ConsentView) => void; counts: Record<ConsentView, number>; label?: string }) {
+  const control = (
+    <SegmentedControl
+      fullWidth
+      value={value}
+      onChange={(v) => onChange(v as 'all' | ConsentView)}
+      data={[
+        { value: 'all', label: 'All' },
+        ...CONSENT_VIEWS.map(([v, text, help]) => ({
+          value: v,
+          label: (
+            <Tooltip label={`${help} – ${counts[v]} with results`} multiline w={260} openDelay={300}>
+              <span>{text}</span>
+            </Tooltip>
+          ),
+        })),
+      ]}
+    />
+  );
+  return label ? (
+    <Input.Wrapper label={label} w={{ base: '100%', xs: 'auto' }}>
+      {control}
+    </Input.Wrapper>
+  ) : (
+    control
+  );
 }

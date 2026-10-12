@@ -22,7 +22,11 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   hardness-modified using the measured hardness.
 - **Browse, sort and filter data.** Click a column to sort (e.g. highest TSS first), filter by
   value (TSS > 100, zinc not detected…), show only samples with exceedances, search lab jobs
-  and notes, and export exactly what you see to Excel, CSV or Word.
+  and notes, and export exactly what you see to Excel, CSV or Word. Analytes are always listed in
+  the same order – field measurements, laboratory physical, general chemistry, nutrients,
+  microbiology, dissolved metals, total metals, then hydrocarbons and the rest – and a switch shows
+  just those in the consent (with limits, triggers or other conditions, or required by a sampling
+  schedule), only those with limits, or only those with triggers.
 - **Compare with guidelines.** Built-in values are ANZG (2018) / ANZECC (2000) freshwater
   and marine toxicant values at 99/95/90/80 % species protection, the ANZECC NZ physical and
   chemical stressor values, and selected DWSNZ (2022) MAVs. You can also add your own

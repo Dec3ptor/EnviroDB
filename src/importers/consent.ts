@@ -5,7 +5,7 @@
 
 import type { ChangeType, GuidelineSet, MonitoringSchedule, Operator, Parameter, Project, ReportObligation, Rule, RuleKind, Site, SiteRole, SiteType, StatName, WindowKind } from '../db/types';
 import { RULE_LEVELS, SITE_ROLES, SITE_TYPES } from '../db/types';
-import { PARAMETER_GROUPS } from '../data/parameters';
+import { PARAMETER_GROUPS, compareParams } from '../data/parameters';
 import { buildParamIndex, matchParameter, matchSite } from '../lib/matching';
 import { addDays, addMonths, formatDate, MONTH_LONG, parseDateString, reportingYear, todayStr } from '../lib/dates';
 import { normUnit, sameDimension, unitLabel } from '../lib/units';
@@ -177,7 +177,7 @@ export function buildConsentPrompt(ctx: ConsentContext, opts: { consentText?: st
   L.push('');
   L.push('## Parameters EnviroDB knows');
   const groups = new Map<string, string[]>();
-  for (const p of ctx.params) {
+  for (const p of [...ctx.params].sort(compareParams)) {
     const g = PARAMETER_GROUPS.includes(p.group) ? p.group : 'Other';
     groups.set(g, [...(groups.get(g) ?? []), p.name]);
   }
