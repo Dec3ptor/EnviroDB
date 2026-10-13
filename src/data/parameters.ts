@@ -36,6 +36,7 @@ const general: P[] = [
   { id: 'hardness', name: 'Total Hardness', short: 'Hardness', group: 'General chemistry', unit: 'mg/L', aliases: ['total hardness', 'hardness', 'hardness (as caco3)', 'total hardness as caco3', 'hardness as caco3', 'hardness (total)'] },
   { id: 'alkalinity', name: 'Total Alkalinity', short: 'Alkalinity', group: 'General chemistry', unit: 'mg/L', aliases: ['total alkalinity', 'alkalinity', 'alkalinity (total)', 'total alkalinity as caco3'] },
   { id: 'bicarbonate', name: 'Bicarbonate', short: 'HCO3', group: 'General chemistry', unit: 'mg/L', aliases: ['bicarbonate', 'hco3', 'bicarbonate as hco3'] },
+  { id: 'co3', name: 'Carbonate', short: 'CO3', group: 'General chemistry', unit: 'mg/L', aliases: ['carbonate', 'co3', 'carbonate as caco3', 'carbonate (as caco3)', 'carbonate alkalinity'] },
   { id: 'cl', name: 'Chloride', short: 'Cl', group: 'General chemistry', unit: 'mg/L', aliases: ['chloride', 'cl', 'dissolved chloride'] },
   { id: 'so4', name: 'Sulphate', short: 'SO4', group: 'General chemistry', unit: 'mg/L', aliases: ['sulphate', 'sulfate', 'so4', 'dissolved sulphate', 'sulphate (so4)', 'sulfate (so4)'] },
   { id: 'f', name: 'Fluoride', short: 'F', group: 'General chemistry', unit: 'mg/L', aliases: ['fluoride', 'f'] },

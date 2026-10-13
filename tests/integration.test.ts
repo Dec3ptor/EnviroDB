@@ -14,7 +14,7 @@ import { planSheets, parseWithPlan } from '../src/importers/detect';
 import { buildParamIndex, matchParameter, matchSite } from '../src/lib/matching';
 import { normUnit } from '../src/lib/units';
 import { fmtNum } from '../src/lib/values';
-import { analyteMapKey } from '../src/importers/model';
+import { analyteMapKey, PROVISIONAL_NOTE } from '../src/importers/model';
 import { commitImport } from '../src/importers/commit';
 import { exportProjectPackage, importProjectPackage } from '../src/db/backup';
 import { AI_PROMPTS, DEFAULT_SECTIONS, buildAiInput, csvCell, withRequest } from '../src/lib/aiInput';
@@ -22,7 +22,7 @@ import { flagResults, pivot } from '../src/lib/analysis';
 import { applyView, DEFAULT_SORT, passesFilter } from '../src/lib/tableView';
 import { monthLabel, reviewCell, reviewLines, roundPeriods, samplingRounds } from '../src/lib/latest';
 import { nextDueReport } from '../src/lib/schedule';
-import { newObligation } from '../src/db/repo';
+import { newObligation, newProject, newSite, saveProject, saveSite } from '../src/db/repo';
 import { buildChartSpec, chartOption, thresholdStyles } from '../src/charts/timeSeries';
 import * as echarts from 'echarts';
 
@@ -428,6 +428,78 @@ describe('importing lab results', () => {
     // the lab's "#1" comment is kept with the sample it refers to
     expect(dp1.notes).toBe('Lab comment #1 (Faecal Coliforms, Escherichia coli): Example comment: the sample was > 10 °C on receipt at the lab.');
     expect(gw1.notes).toBeUndefined();
+  });
+
+  it('reads monitoring-database exports: site and unit rows over the header a column out, status and lab reference columns', async () => {
+    // same layout as a real export, with made-up values
+    const buf = readFileSync(new URL('./fixtures/monitoring-export-synthetic.csv', import.meta.url));
+    const grids = await readWorkbook(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), 'export.csv');
+    const params = await db.parameters.toArray();
+    const index = buildParamIndex(params);
+    const plans = planSheets(grids, index);
+    expect(plans[0]).toMatchObject({ mode: 'wide', config: { headerRow: 2, unitRow: 1, shift: 1, siteMode: 'row', siteRow: 0, dateCol: 0, statusCol: 1, labCol: 2 } });
+    const parsed = parseWithPlan(grids, plans);
+    // the missed round and the rounds still to come are left out, and say so; dates without the 00:00 / 01:00 clock time
+    expect(parsed.samples.map((s) => [s.siteText, s.date, s.labNumber, s.status])).toEqual([
+      ['Wetland- Outlet SP2- M1', '2025-10-02', '25/90002-01', 'Processed'],
+      ['Wetland- Outlet SP2- M1', '2025-11-03', '25/90003-01', 'Processed'],
+      ['Wetland- Outlet SP2- M1', '2026-04-07', '26/90004-01', 'At Lab'],
+      ['Wetland- Outlet SP2- M1', '2026-05-04', '26/90005-01', 'Processed'],
+    ]);
+    expect(parsed.warnings.join(' ')).toMatch(/1 row marked as missed.*2 rows still due or waiting.*1 sample was still with the lab/);
+    const atLab = parsed.samples[2];
+    expect(atLab.provisional).toBe(true);
+    expect(atLab.notes).toMatch(new RegExp(`^${PROVISIONAL_NOTE}.*At Lab`));
+    expect(parsed.samples[0].provisional).toBeUndefined();
+    // every result column is recognised, with the unit written a column to its left; checks and "Completed" columns are not results
+    const first = parsed.samples[0];
+    const ids = Object.fromEntries(first.results.map((r) => [r.analyte, matchParameter(r.analyte, index).parameterId]));
+    expect(ids).toEqual({
+      'Alkalinity - Total': 'alkalinity',
+      'Ammoniacal Nitrogen as N': 'nh4-n',
+      Carbonate: 'co3',
+      'Copper - Total': 'cu-t',
+      'Electrical Conductivity (EC)': 'ec',
+      'pH - onsite reading': 'ph-field',
+      'Temperature - onsite reading': 'temp',
+      'Total Dissolved Solids - Gravimetric': 'tds',
+      'Total Nitrogen (Calculation)': 'tn',
+      'Total Oxidised Nitrogen (NO2N + NO3N)': 'nnn',
+      'Zinc Soluble': 'zn-d',
+    });
+    const unit = (a: string) => first.results.find((r) => r.analyte === a)?.unit;
+    expect([unit('Alkalinity - Total'), unit('Electrical Conductivity (EC)'), unit('Temperature - onsite reading'), unit('pH - onsite reading')]).toEqual(['g CaCO3/m³', 'µS/cm', 'Deg C', undefined]);
+    expect(normUnit('g CaCO3/m³')).toMatchObject({ key: 'g/m3', basis: 'as CaCO3', known: true });
+    expect(parsed.samples[1].results.find((r) => r.analyte === 'Carbonate')!.parsed).toMatchObject({ value: 1, qualifier: '<' });
+    expect(parsed.samples[1].results.find((r) => r.analyte === 'Zinc Soluble')!.parsed.value).toBe(0.0045);
+    expect(atLab.results.map((r) => r.analyte)).not.toContain('Total Dissolved Solids - Gravimetric'); // "No Result"
+
+    // importing it, then the same file once the lab has finished: results replaced and the provisional note gone
+    const project = newProject({ name: 'Export test' });
+    await saveProject(project);
+    const site = newSite(project.id, { code: 'SP2', aliases: ['Wetland- Outlet SP2- M1'] });
+    await saveSite(site);
+    const mapping = {
+      sites: Object.fromEntries(parsed.samples.map((s) => [s.key, matchSite(s.siteText, [site]).siteId])),
+      dates: {},
+      include: {},
+      params: Object.fromEntries(parsed.samples.flatMap((s) => s.results.map((r) => [analyteMapKey(r), matchParameter(r.analyte, index).parameterId]))),
+      units: {},
+    };
+    expect(Object.values(mapping.sites).every((x) => x === site.id)).toBe(true);
+    const done = await commitImport(project.id, parsed, mapping, { duplicates: 'replace', rememberAliases: false, fileName: 'export.csv' });
+    expect(done.newSamples).toBe(4);
+    const stored = await db.samples.where('projectId').equals(project.id).sortBy('date');
+    expect(stored[2].notes).toMatch(/^Provisional:/);
+    expect(stored.map((s) => s.labNumber)).toEqual(['25/90002-01', '25/90003-01', '26/90004-01', '26/90005-01']);
+    const later = readFileSync(new URL('./fixtures/monitoring-export-synthetic.csv', import.meta.url), 'utf8').replace('At Lab,26/90004-01,,No Result', 'Processed,26/90004-01,2026-04-30 10:00:00,0.2');
+    const grids2 = await readWorkbook(new TextEncoder().encode(later).buffer, 'export.csv');
+    const parsed2 = parseWithPlan(grids2, planSheets(grids2, index));
+    expect(parsed2.samples.some((s) => s.provisional)).toBe(false);
+    await commitImport(project.id, parsed2, mapping, { duplicates: 'replace', rememberAliases: false, fileName: 'export.csv' });
+    const restored = await db.samples.where('projectId').equals(project.id).sortBy('date');
+    expect(restored).toHaveLength(4);
+    expect(restored[2].notes).toBeUndefined();
   });
 
   it('imports the Hill-layout example and replaces on re-import', async () => {

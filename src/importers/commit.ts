@@ -2,7 +2,7 @@ import { db } from '../db/db';
 import type { ImportBatch, Parameter, Result, Sample } from '../db/types';
 import { addParameterAlias, addSiteAlias, touchProject } from '../db/repo';
 import { uid } from '../lib/ids';
-import { analyteMapKey, type ParsedImport } from './model';
+import { analyteMapKey, PROVISIONAL_NOTE, type ParsedImport } from './model';
 
 export interface ImportMapping {
   sites: Record<string, string | null>; // sample key → site id
@@ -83,7 +83,11 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
         if (!sample.labJob && (raw.labJob ?? parsed.labJob)) patch.labJob = raw.labJob ?? parsed.labJob;
         if (!sample.labName && opts.labName) patch.labName = opts.labName;
         if (sample.date.length === 10 && date.length > 10) patch.date = date;
-        if (raw.notes && !(sample.notes ?? '').includes(raw.notes)) patch.notes = [sample.notes, raw.notes].filter(Boolean).join('\n');
+        // final results replace provisional ones, and their note goes
+        let notes = sample.notes;
+        if (!raw.provisional && opts.duplicates !== 'skip' && notes?.includes(PROVISIONAL_NOTE)) notes = notes.split('\n').filter((l) => !l.startsWith(PROVISIONAL_NOTE)).join('\n') || undefined;
+        if (raw.notes && !(notes ?? '').includes(raw.notes)) notes = [notes, raw.notes].filter(Boolean).join('\n');
+        if (notes !== sample.notes) patch.notes = notes;
         if (Object.keys(patch).length) {
           Object.assign(sample, patch);
           samplesToPut.push(sample);

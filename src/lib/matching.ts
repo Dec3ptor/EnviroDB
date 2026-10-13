@@ -10,6 +10,9 @@ const SYNONYMS: Record<string, string> = {
   sulfate: 'sulphate', sulfide: 'sulphide', aluminum: 'aluminium', fecal: 'faecal', colour: 'color',
   ammoniacal: 'ammonia', ammonium: 'ammonia', nitrogen: 'n', phosphorus: 'p', oxidised: 'oxidized',
   and: '', the: '', as: '', of: '', in: '', by: '', lab: '', laboratory: '', conc: '', concentration: '', value: '',
+  // "pH - onsite reading", "Total Dissolved Solids - Gravimetric", "Total Nitrogen (Calculation)"
+  onsite: 'field', insitu: 'field', situ: 'field', reading: '', readings: '', measured: '', measurement: '',
+  gravimetric: '', calculation: '', calculated: '', calc: '',
 };
 
 function tokens(s: string): string[] {
@@ -132,6 +135,13 @@ export function matchParameter(name: string, index: ParamIndex, group?: string):
   const hits = index.keyed.get(key);
   if (hits?.length === 1) return { parameterId: hits[0], confidence: 'high', candidates: hits };
   if (hits && hits.length > 1) return { parameterId: null, confidence: 'low', candidates: hits };
+
+  // "Total Oxidised Nitrogen (NO2N + NO3N)", "Total Nitrogen (TN)": the name without its note in brackets
+  const plain = bare.replace(/\s*[([][^()[\]]*[)\]]\s*$/, '').trim();
+  if (plain && plain !== bare) {
+    const m = matchParameter(plain, index, group);
+    if (m.confidence === 'exact' || m.confidence === 'high') return { ...m, confidence: 'high' };
+  }
 
   // Fuzzy: compare canonical keys
   const scored: Array<[string, number]> = [];

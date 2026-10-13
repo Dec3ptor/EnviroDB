@@ -43,16 +43,18 @@ const EXAMPLES = [
   { file: 'example-lab-results-hill-layout.xlsx', label: 'Lab results (Hill Labs layout)' },
   { file: 'example-master-sheet.xlsx', label: 'Master sheet (sheet per site)' },
   { file: 'example-long-format.csv', label: 'Long table (CSV)' },
+  { file: 'example-monitoring-export.csv', label: 'Monitoring database export (CSV)' },
 ];
 
 // ------------------------------------------------------------ grid preview
 
-function GridPreview({ grid, roles }: { grid: SheetGrid; roles: { headerRow?: number; unitRow?: number | null; firstDataRow?: number; dateCol?: number; siteCol?: number | null; timeCol?: number | null; skip?: number[] } }) {
+function GridPreview({ grid, roles }: { grid: SheetGrid; roles: { headerRow?: number; unitRow?: number | null; siteRow?: number | null; firstDataRow?: number; dateCol?: number; siteCol?: number | null; timeCol?: number | null; skip?: number[] } }) {
   const rows = Math.min(grid.nRows, 30);
   const cols = Math.min(grid.nCols, 18);
   const bg = (r: number, c: number) => {
     if (r === roles.headerRow) return 'var(--mantine-color-blue-1)';
     if (r === roles.unitRow) return 'var(--mantine-color-grape-1)';
+    if (r === roles.siteRow) return 'var(--mantine-color-orange-1)';
     if (c === roles.dateCol && r >= (roles.firstDataRow ?? 0)) return 'var(--mantine-color-green-1)';
     if (c === roles.siteCol && r >= (roles.firstDataRow ?? 0)) return 'var(--mantine-color-orange-1)';
     if (c === roles.timeCol && r >= (roles.firstDataRow ?? 0)) return 'var(--mantine-color-lime-1)';
@@ -104,7 +106,11 @@ function WideConfigEditor({ grid, config, onChange }: { grid: SheetGrid; config:
   const g = gridFor(grid, config.orientation);
   const cols = colOptions(g, config.headerRow);
   const set = <K extends keyof WideConfig>(k: K, v: WideConfig[K]) => onChange({ ...config, [k]: v });
-  const nCols = wideColumns(grid, config).filter((c) => !c.skip).length;
+  const columns = wideColumns(grid, config);
+  const nCols = columns.filter((c) => !c.skip).length;
+  const optionalCol = (k: 'labCol' | 'statusCol', label: string) => (
+    <Select label={label} data={cols} value={config[k] == null ? null : String(config[k])} onChange={(v) => set(k, v === null ? null : Number(v))} w={180} clearable searchable placeholder="None" />
+  );
   return (
     <Stack gap="sm">
       <Group gap="sm" align="flex-end" wrap="wrap">
@@ -121,6 +127,21 @@ function WideConfigEditor({ grid, config, onChange }: { grid: SheetGrid; config:
         />
         <NumberInput label="Header row" min={1} max={g.nRows} value={config.headerRow + 1} onChange={(v) => set('headerRow', Math.max(0, Number(v) - 1))} w={110} />
         <NumberInput label="Units row" min={0} max={g.nRows} value={config.unitRow === null ? 0 : config.unitRow + 1} onChange={(v) => set('unitRow', Number(v) > 0 ? Number(v) - 1 : null)} w={110} description="0 = none" />
+        {(config.unitRow !== null || config.siteMode === 'row') && (
+          <Select
+            label="Units and sites sit"
+            data={[
+              { value: '0', label: 'Over their column' },
+              { value: '1', label: 'One column to the left' },
+              { value: '2', label: 'Two columns to the left' },
+              { value: '-1', label: 'One column to the right' },
+            ]}
+            value={String(config.shift ?? 0)}
+            onChange={(v) => v !== null && set('shift', Number(v))}
+            w={200}
+            allowDeselect={false}
+          />
+        )}
         <NumberInput label="First data row" min={1} max={g.nRows} value={config.firstDataRow + 1} onChange={(v) => set('firstDataRow', Math.max(0, Number(v) - 1))} w={120} />
         <Select label="Date column" data={cols} value={String(config.dateCol)} onChange={(v) => v && set('dateCol', Number(v))} w={200} allowDeselect={false} searchable />
         <Select label="Time column" data={cols} value={config.timeCol === null ? null : String(config.timeCol)} onChange={(v) => set('timeCol', v === null ? null : Number(v))} w={180} clearable placeholder="None" />
@@ -130,16 +151,20 @@ function WideConfigEditor({ grid, config, onChange }: { grid: SheetGrid; config:
           label="Site comes from"
           data={[
             { value: 'column', label: 'A column' },
+            { value: 'row', label: 'A row (e.g. “Sample:”)' },
             { value: 'sheet', label: `The sheet name (“${grid.name}”)` },
             { value: 'fixed', label: 'One site for the whole sheet' },
           ]}
           value={config.siteMode}
-          onChange={(v) => v && set('siteMode', v as WideConfig['siteMode'])}
+          onChange={(v) => v && onChange({ ...config, siteMode: v as WideConfig['siteMode'], siteRow: v === 'row' && config.siteRow == null ? Math.max(0, config.headerRow - 1) : config.siteRow })}
           w={260}
           allowDeselect={false}
         />
         {config.siteMode === 'column' && <Select label="Site column" data={cols} value={config.siteCol === null ? null : String(config.siteCol)} onChange={(v) => set('siteCol', v === null ? null : Number(v))} w={200} searchable />}
+        {config.siteMode === 'row' && <NumberInput label="Site row" min={1} max={g.nRows} value={(config.siteRow ?? 0) + 1} onChange={(v) => set('siteRow', Math.max(0, Number(v) - 1))} w={100} />}
         {config.siteMode === 'fixed' && <Autocomplete label="Site" data={sites.map((s) => s.code)} value={config.fixedSite} onChange={(v) => set('fixedSite', v)} w={200} placeholder="Site code" />}
+        {optionalCol('labCol', 'Lab number column')}
+        {optionalCol('statusCol', 'Status column')}
         <Text size="sm" c="dimmed" pb={6}>
           {nCols} analyte columns
         </Text>
@@ -158,7 +183,7 @@ function WideConfigEditor({ grid, config, onChange }: { grid: SheetGrid; config:
           </Text>
         ))}
       </Group>
-      <GridPreview grid={g} roles={{ headerRow: config.headerRow, unitRow: config.unitRow, firstDataRow: config.firstDataRow, dateCol: config.dateCol, siteCol: config.siteMode === 'column' ? config.siteCol : null, timeCol: config.timeCol, skip: config.skipCols }} />
+      <GridPreview grid={g} roles={{ headerRow: config.headerRow, unitRow: config.unitRow, siteRow: config.siteMode === 'row' ? config.siteRow : null, firstDataRow: config.firstDataRow, dateCol: config.dateCol, siteCol: config.siteMode === 'column' ? config.siteCol : null, timeCol: config.timeCol, skip: columns.filter((c) => c.skip).map((c) => c.col) }} />
     </Stack>
   );
 }
@@ -597,7 +622,16 @@ export function ImportWizard(_props: { projectId: string }) {
                           <Checkbox checked={include[s.key] !== false} onChange={(e) => setInclude({ ...include, [s.key]: e.currentTarget.checked })} aria-label="Include sample" />
                         </Table.Td>
                         <Table.Td>
-                          <Text size="sm">{s.sampleName}</Text>
+                          <Group gap={6} wrap="nowrap">
+                            <Text size="sm">{s.sampleName}</Text>
+                            {s.provisional && (
+                              <Tooltip label={`The file shows “${s.status}” – the results may not be final. They are imported with a note.`}>
+                                <Badge size="xs" color="orange" variant="light">
+                                  provisional
+                                </Badge>
+                              </Tooltip>
+                            )}
+                          </Group>
                         </Table.Td>
                         <Table.Td>
                           <Text size="xs" c="dimmed">

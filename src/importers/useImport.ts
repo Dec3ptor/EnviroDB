@@ -69,5 +69,5 @@ export function suggestCode(text: string): string {
   const t = text.trim();
   const m = t.match(/^([A-Za-z]{1,6}[-_ ]?\d{1,4}[A-Za-z]?)\b/);
   if (m) return m[1].replace(/\s+/g, '').toUpperCase();
-  return t.length <= 16 ? t : t.slice(0, 16).trim();
+  return t.length <= 16 ? t : t.slice(0, 16).replace(/[\s\-_,;:/.]+$/, '');
 }

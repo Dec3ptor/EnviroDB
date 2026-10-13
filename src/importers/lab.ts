@@ -91,15 +91,19 @@ export function findLabBlocks(g: SheetGrid): LabBlock[] {
       if (k !== labRow && sampleCols.some((c) => !isEmpty(cellAt(g, k, c)))) dataRows.push(k);
     }
     const columns = Array.from({ length: first }, (_, c) => {
-      let filled = 0, units = 0;
+      let filled = 0, units = 0, dates = 0;
       for (const k of dataRows) {
-        const t = cellText(cellAt(g, k, c));
+        const cell = cellAt(g, k, c);
+        const t = cellText(cell);
         if (!t) continue;
         filled++;
         if (looksLikeUnit(t)) units++;
+        if (cell.date || (typeof cell.v === 'string' && parseDateAny(cell.v))) dates++;
       }
-      return { c, filled, units };
+      return { c, filled, units, dates };
     });
+    // rows labelled with dates are sampling events, not analytes: a monitoring export with a "Sample:" row over its header
+    if (columns.some((x) => x.filled >= 3 && x.dates / x.filled > 0.5)) continue;
     // units: the nearest column left of the samples that holds mostly units
     const unitCol = [...columns].reverse().find((x) => x.filled && x.units / x.filled > 0.3)?.c ?? null;
     // names: the column with the most text, other than the units (the leftmost on a tie)

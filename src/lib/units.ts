@@ -100,11 +100,12 @@ export function normUnit(raw: string | undefined | null): NormUnit {
     basis = `at ${atMatch[1]}°C`;
     s = s.slice(0, atMatch.index).trim();
   }
-  // "g O2/m3" (Hill: BOD, COD)
-  const o2 = s.match(/^(\S+?)\s*O2\s*\/\s*(\S+)$/i);
+  // "g O2/m3" (Hill: BOD, COD), "g CaCO3/m³" (alkalinity), "g N/m3"
+  const o2 = s.match(/^(\S+?)\s*O2\s*\/\s*(\S+)$/i) ?? s.match(/^((?:[µμu]|m|n|k)?g)\s+([A-Za-z][A-Za-z0-9]*)\s*\/\s*(\S+)$/i);
   if (o2) {
-    basis = 'as O2';
-    s = `${o2[1]}/${o2[2]}`;
+    const [mass, of, per] = o2.length === 4 ? [o2[1], o2[2], o2[3]] : [o2[1], 'O2', o2[2]];
+    basis = `as ${of}`;
+    s = `${mass}/${per}`;
   }
   const asMatch = s.match(/\bas\s+([A-Za-z0-9-]+)\s*$/i);
   if (asMatch) {
@@ -120,6 +121,12 @@ export function normUnit(raw: string | undefined | null): NormUnit {
   if (s === '' && basis) s = '';
   const key = DEFS[s] ? s : ALIASES[s] ?? s;
   return { key, basis, known: !!DEFS[key] };
+}
+
+/** The kind of quantity a unit measures (concentration, conductivity, pH …), or null when unknown. */
+export function unitDim(raw: string | undefined | null): Dim | null {
+  const n = normUnit(raw);
+  return n.known ? DEFS[n.key].dim : null;
 }
 
 export function unitLabel(raw: string | undefined | null): string {

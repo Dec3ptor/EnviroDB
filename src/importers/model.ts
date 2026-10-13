@@ -21,7 +21,14 @@ export interface RawSample {
   results: RawResult[];
   /** Notes for the sample, e.g. the lab's comments on its results. */
   notes?: string;
+  /** Sampling status given in the file ("Processed", "At Lab" …). */
+  status?: string;
+  /** The lab had not finished with the sample: its note starts with PROVISIONAL_NOTE, removed once final results are imported. */
+  provisional?: boolean;
 }
+
+/** Start of the note on samples whose results were still with the lab when imported. */
+export const PROVISIONAL_NOTE = 'Provisional:';
 
 export interface ParsedImport {
   kind: 'lab' | 'wide' | 'long';
