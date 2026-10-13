@@ -156,7 +156,7 @@ function Welcome() {
         </Stack>
       </Paper>
       <Text size="sm" c="dimmed">
-        Your data is stored privately in this browser's database (IndexedDB) – nothing is uploaded. Use <Anchor component={Link} to="/settings">Settings & backup</Anchor> to autosave to a file in OneDrive/SharePoint or download backups.
+        Everything is saved to your team’s workspace folder as you work, and colleagues’ changes appear here within seconds. <Anchor component={Link} to="/settings">Settings & backup</Anchor> shows who’s connected and has backups.
       </Text>
     </Stack>
   );

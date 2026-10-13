@@ -171,7 +171,7 @@ export function RuleEditor({ rule, onClose, period }: { rule: Rule | null; onClo
           <Button
             disabled={!valid}
             onClick={async () => {
-              await saveRule(r);
+              await saveRule(r, rule ?? undefined);
               onClose();
             }}
           >

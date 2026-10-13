@@ -1,7 +1,5 @@
-import Dexie from 'dexie';
-import { db, DATA_TABLES, DEFAULT_SETTINGS, ensureBuiltIns, REPORT_WORK, saveSettings, type DataTable } from './db';
+import { db, DATA_TABLES, DEFAULT_SETTINGS, ensureBuiltIns, getSettings, REPORT_WORK, saveSettings, type DataTable } from './db';
 import type { MetaRecord, Project, Settings } from './types';
-import { onSaveableChange } from './changes';
 import { uid } from '../lib/ids';
 import { todayStr } from '../lib/dates';
 
@@ -27,7 +25,8 @@ export async function exportWorkspace(): Promise<WorkspaceBackup> {
       if (t === 'guidelineSets' || t === 'templates') rows = rows.filter((r: { builtIn?: boolean }) => !r.builtIn);
       data[t] = rows;
     }
-    meta = (await db.meta.toArray()).filter((r) => r.key === 'settings' || REPORT_WORK.test(r.key));
+    // the team's settings and your own, together as before
+    meta = [{ key: 'settings', value: await getSettings() }, ...(await db.meta.toArray()).filter((r) => REPORT_WORK.test(r.key))];
   });
   return { app: BACKUP_APP, kind: 'workspace', version: BACKUP_VERSION, exportedAt: new Date().toISOString(), data, meta };
 }
@@ -46,14 +45,19 @@ async function restoreMeta(meta: MetaRecord[] | undefined, mode: 'replace' | 'me
       await db.meta.bulkDelete(old);
     }
     if (work.length) await db.meta.bulkPut(work);
-    if (saved && typeof saved === 'object') {
-      const cur = { ...DEFAULT_SETTINGS, ...((await db.meta.get('settings'))?.value as Partial<Settings> | undefined) };
-      const blank = (v: unknown) => v === undefined || v === null || v === '';
-      const next: Record<string, unknown> = mode === 'replace' ? { ...DEFAULT_SETTINGS, ...saved, lastBackupAt: cur.lastBackupAt } : { ...cur };
-      if (mode === 'merge') for (const [k, v] of Object.entries(saved)) if (blank((cur as Record<string, unknown>)[k]) && !blank(v)) next[k] = v;
-      await db.meta.put({ key: 'settings', value: next });
-    }
   });
+  if (!saved || typeof saved !== 'object') return;
+  const cur = (await getSettings()) as unknown as Record<string, unknown>;
+  const from = saved as Record<string, unknown>;
+  const patch: Record<string, unknown> = {};
+  if (mode === 'replace') {
+    // as saved – but this browser's last backup date stays its own
+    for (const k of new Set([...Object.keys(cur), ...Object.keys(from)])) if (k !== 'lastBackupAt') patch[k] = from[k] ?? (DEFAULT_SETTINGS as unknown as Record<string, unknown>)[k];
+  } else {
+    const blank = (v: unknown) => v === undefined || v === null || v === '';
+    for (const [k, v] of Object.entries(from)) if (blank(cur[k]) && !blank(v)) patch[k] = v;
+  }
+  await saveSettings(patch as Partial<Settings>);
 }
 
 export function downloadBlob(blob: Blob, fileName: string) {
@@ -203,118 +207,5 @@ export async function readJsonFile(file: File): Promise<unknown> {
     return JSON.parse(text);
   } catch {
     throw new Error('Could not read the file – it is not valid JSON.');
-  }
-}
-
-// ------------------------------------------------------------ autosave to a file (File System Access API)
-// Lets the workspace be saved continuously into e.g. a OneDrive/SharePoint-synced folder.
-
-interface FsHandle {
-  name: string;
-  queryPermission(opts: { mode: 'readwrite' }): Promise<PermissionState>;
-  requestPermission(opts: { mode: 'readwrite' }): Promise<PermissionState>;
-  createWritable(): Promise<{ write(data: Blob | string): Promise<void>; close(): Promise<void> }>;
-  getFile(): Promise<File>;
-}
-
-type Picker = (opts: unknown) => Promise<FsHandle>;
-
-export const autosaveSupported = () => typeof (window as unknown as { showSaveFilePicker?: Picker }).showSaveFilePicker === 'function';
-
-export type AutosaveState = { status: 'off' } | { status: 'needs-permission' | 'on' | 'error'; fileName: string; lastSaved?: string; error?: string };
-
-let state: AutosaveState = { status: 'off' };
-let handle: FsHandle | null = null;
-const listeners = new Set<(s: AutosaveState) => void>();
-let timer: ReturnType<typeof setTimeout> | null = null;
-let writing = false;
-let pending = false;
-
-function setState(s: AutosaveState) {
-  state = s;
-  listeners.forEach((l) => l(s));
-}
-export const getAutosaveState = () => state;
-export function onAutosaveChange(fn: (s: AutosaveState) => void) {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
-
-async function write() {
-  if (!handle) return;
-  if (writing) {
-    pending = true;
-    return;
-  }
-  writing = true;
-  try {
-    const backup = await exportWorkspace();
-    const w = await handle.createWritable();
-    await w.write(JSON.stringify(backup));
-    await w.close();
-    const lastSaved = new Date().toISOString();
-    setState({ status: 'on', fileName: handle.name, lastSaved });
-    await db.meta.put({ key: 'autosaveLast', value: lastSaved });
-  } catch (e) {
-    setState({ status: 'error', fileName: handle.name, error: (e as Error).message });
-  } finally {
-    writing = false;
-    if (pending) {
-      pending = false;
-      scheduleAutosave();
-    }
-  }
-}
-
-export function scheduleAutosave(delay = 1500) {
-  if (!handle || state.status !== 'on') return;
-  if (timer) clearTimeout(timer);
-  timer = setTimeout(write, delay);
-}
-
-export async function linkAutosaveFile(): Promise<void> {
-  const picker = (window as unknown as { showSaveFilePicker: Picker }).showSaveFilePicker;
-  const h = await picker({
-    suggestedName: 'EnviroDB-workspace.json',
-    types: [{ description: 'EnviroDB workspace', accept: { 'application/json': ['.json'] } }],
-  });
-  handle = h;
-  await db.meta.put({ key: 'autosaveHandle', value: h });
-  setState({ status: 'on', fileName: h.name });
-  await write();
-}
-
-export async function unlinkAutosaveFile(): Promise<void> {
-  handle = null;
-  await db.meta.delete('autosaveHandle');
-  setState({ status: 'off' });
-}
-
-/** Called on start-up: restore the handle; permission must be re-granted by a click. */
-export async function initAutosave(): Promise<void> {
-  try {
-    const rec = await db.meta.get('autosaveHandle');
-    const last = (await db.meta.get('autosaveLast'))?.value as string | undefined;
-    if (!rec?.value) return;
-    handle = rec.value as FsHandle;
-    const perm = await handle.queryPermission({ mode: 'readwrite' });
-    setState({ status: perm === 'granted' ? 'on' : 'needs-permission', fileName: handle.name, lastSaved: last });
-  } catch {
-    setState({ status: 'off' });
-  }
-  // Save whenever any data table changes (ignore the meta table, which autosave itself writes), and when report
-  // work or settings are saved.
-  Dexie.on('storagemutated', (parts) => {
-    if (Object.keys(parts).some((k) => !k.includes('/meta/') && /\/(projects|sites|parameters|samples|results|guidelineSets|rules|notes|schedules|obligations|imports|templates)\//.test(k))) scheduleAutosave();
-  });
-  onSaveableChange(() => scheduleAutosave());
-}
-
-export async function regrantAutosave(): Promise<void> {
-  if (!handle) return;
-  const perm = await handle.requestPermission({ mode: 'readwrite' });
-  if (perm === 'granted') {
-    setState({ status: 'on', fileName: handle.name });
-    await write();
   }
 }

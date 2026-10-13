@@ -40,6 +40,8 @@ export function GuidelinesPage() {
   const names = useMemo(() => new Map((params ?? []).map((p) => [p.id, p.name])), [params]);
   const selected = sets?.find((s) => s.id === setId) ?? sets?.find((s) => s.id === 'anzg-fw-95');
   const [draft, setDraft] = useState<GuidelineSet | null>(null);
+  // the set as it was when editing started: saving changes only what was changed here
+  const [draftBase, setDraftBase] = useState<GuidelineSet | undefined>();
   const editing = draft && selected && draft.id === selected.id ? draft : null;
   const current = editing ?? selected;
 
@@ -110,6 +112,7 @@ export function GuidelinesPage() {
               onClick={async () => {
                 const s: GuidelineSet = { id: uid('gl'), name: 'Site-specific trigger values', shortName: 'SSTV', family: 'Custom', builtIn: false, values: [], updatedAt: new Date().toISOString() };
                 await saveGuidelineSet(s);
+                setDraftBase(s);
                 setDraft(s);
                 navigate(`/guidelines/${s.id}`);
               }}
@@ -167,7 +170,7 @@ export function GuidelinesPage() {
                       <Button variant="default" onClick={() => setDraft(null)}>
                         Cancel
                       </Button>
-                      <Button leftSection={<IconDeviceFloppy size={16} />} onClick={async () => { await saveGuidelineSet(editing); setDraft(null); notifications.show({ message: 'Guideline set saved', color: 'teal' }); }}>
+                      <Button leftSection={<IconDeviceFloppy size={16} />} onClick={async () => { await saveGuidelineSet(editing, draftBase?.id === editing.id ? draftBase : undefined); setDraft(null); notifications.show({ message: 'Guideline set saved', color: 'teal' }); }}>
                         Save
                       </Button>
                     </>
@@ -181,6 +184,7 @@ export function GuidelinesPage() {
                         leftSection={<IconCopy size={16} />}
                         onClick={async () => {
                           const c = await duplicateGuidelineSet(current);
+                          setDraftBase(c);
                           setDraft(c);
                           navigate(`/guidelines/${c.id}`);
                         }}
@@ -189,7 +193,7 @@ export function GuidelinesPage() {
                       </Button>
                       {!current.builtIn && (
                         <>
-                          <Button onClick={() => setDraft(structuredClone(current))}>Edit</Button>
+                          <Button onClick={() => { setDraftBase(current); setDraft(structuredClone(current)); }}>Edit</Button>
                           <ActionIcon
                             variant="subtle"
                             color="red"

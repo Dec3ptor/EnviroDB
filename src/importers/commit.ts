@@ -1,7 +1,7 @@
 import { db } from '../db/db';
 import type { ImportBatch, Parameter, Result, Sample } from '../db/types';
 import { addParameterAlias, addSiteAlias, touchProject } from '../db/repo';
-import { uid } from '../lib/ids';
+import { stableId, uid } from '../lib/ids';
 import { analyteMapKey, PROVISIONAL_NOTE, type ParsedImport } from './model';
 
 export interface ImportMapping {
@@ -62,7 +62,8 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
       let sample = sampleBySiteDay.get(k);
       if (!sample) {
         sample = {
-          id: uid('s'),
+          // named after its site and day, so two people importing the same results at once make one sample
+          id: stableId('s', projectId, siteId, date.slice(0, 10)),
           projectId,
           siteId,
           date,
@@ -105,7 +106,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
         }
         const unit = mapping.units[akey] ?? rr.unit ?? params.get(pid)?.unit ?? '';
         const res: Result = {
-          id: uid('r'),
+          id: opts.duplicates === 'keep' ? uid('r') : stableId('r', sample.id, pid),
           projectId,
           sampleId: sample.id,
           siteId,
@@ -143,7 +144,8 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
           batch.skipped++;
           return;
         }
-        toDelete.push(...ex.map((e) => e.id));
+        // the result itself is put again; others for the same analyte go
+        toDelete.push(...ex.filter((e) => e.id !== res.id).map((e) => e.id));
         batch.replaced++;
       }
       finalResults.push(res);

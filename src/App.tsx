@@ -6,7 +6,8 @@ import { DatesProvider } from '@mantine/dates';
 import { HashRouter, Route, Routes, Navigate } from 'react-router-dom';
 import { theme } from './theme';
 import { ensureBuiltIns, requestPersistence } from './db/db';
-import { initAutosave } from './db/backup';
+import { startWorkspace } from './sync/workspace';
+import { WorkspaceGate } from './components/workspace/Workspace';
 import { Shell } from './components/Shell';
 import { DashboardPage } from './pages/Dashboard';
 import { ProjectsPage } from './pages/Projects';
@@ -24,9 +25,9 @@ export function App() {
     (async () => {
       try {
         await ensureBuiltIns();
-        await initAutosave();
         void requestPersistence();
         setReady(true);
+        await startWorkspace();
       } catch (e) {
         setError((e as Error).message);
       }
@@ -47,23 +48,25 @@ export function App() {
               <Loader />
             </Center>
           ) : (
-            <HashRouter>
-              <Routes>
-                <Route element={<Shell />}>
-                  <Route index element={<DashboardPage />} />
-                  <Route path="projects" element={<ProjectsPage />} />
-                  <Route path="projects/:projectId/*" element={<ProjectLayout />} />
-                  <Route path="import" element={<ImportPage />} />
-                  <Route path="guidelines" element={<GuidelinesPage />} />
-                  <Route path="guidelines/:setId" element={<GuidelinesPage />} />
-                  <Route path="templates" element={<TemplatesPage />} />
-                  <Route path="templates/:templateId" element={<TemplateEditorPage />} />
-                  <Route path="parameters" element={<ParametersPage />} />
-                  <Route path="settings" element={<SettingsPage />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Route>
-              </Routes>
-            </HashRouter>
+            <WorkspaceGate>
+              <HashRouter>
+                <Routes>
+                  <Route element={<Shell />}>
+                    <Route index element={<DashboardPage />} />
+                    <Route path="projects" element={<ProjectsPage />} />
+                    <Route path="projects/:projectId/*" element={<ProjectLayout />} />
+                    <Route path="import" element={<ImportPage />} />
+                    <Route path="guidelines" element={<GuidelinesPage />} />
+                    <Route path="guidelines/:setId" element={<GuidelinesPage />} />
+                    <Route path="templates" element={<TemplatesPage />} />
+                    <Route path="templates/:templateId" element={<TemplateEditorPage />} />
+                    <Route path="parameters" element={<ParametersPage />} />
+                    <Route path="settings" element={<SettingsPage />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Route>
+                </Routes>
+              </HashRouter>
+            </WorkspaceGate>
           )}
         </ModalsProvider>
       </DatesProvider>

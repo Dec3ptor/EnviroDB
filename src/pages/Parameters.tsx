@@ -8,12 +8,12 @@ import { createParameter, saveParameter } from '../db/repo';
 import { PARAMETER_GROUPS, compareParams } from '../data/parameters';
 import { COMMON_UNITS } from '../lib/units';
 import { PageHeader } from '../components/common';
+import { useEditable } from '../hooks/useEditable';
 
 // The analyte dictionary: every parameter's name, group, unit and the other names it goes by in lab files.
 
 function ParamRow({ p }: { p: Parameter }) {
-  const [d, setD] = useState(p);
-  const dirty = JSON.stringify(d) !== JSON.stringify(p);
+  const [d, setD, { dirty, reset }] = useEditable(p);
   return (
     <Table.Tr>
       <Table.Td>
@@ -35,7 +35,7 @@ function ParamRow({ p }: { p: Parameter }) {
         <NumberInput size="xs" value={d.decimals ?? ''} onChange={(v) => setD({ ...d, decimals: v === '' ? undefined : Number(v) })} w={60} min={0} max={6} hideControls placeholder="auto" />
       </Table.Td>
       <Table.Td>
-        <ActionIcon disabled={!dirty} variant={dirty ? 'filled' : 'subtle'} onClick={() => saveParameter(d)} aria-label="Save">
+        <ActionIcon disabled={!dirty} variant={dirty ? 'filled' : 'subtle'} onClick={() => saveParameter(d, p).then(reset)} aria-label="Save">
           <IconDeviceFloppy size={16} />
         </ActionIcon>
       </Table.Td>

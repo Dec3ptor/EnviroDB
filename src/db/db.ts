@@ -1,4 +1,3 @@
-import { saveableChanged } from './changes';
 import Dexie, { type Table } from 'dexie';
 import type {
   ExceedanceNote,
@@ -19,6 +18,15 @@ import type {
 import { BUILT_IN_PARAMETERS, splitPhysicalAndField } from '../data/parameters';
 import { BUILT_IN_GUIDELINES } from '../data/guidelines';
 import { BUILT_IN_TEMPLATES } from '../data/templates';
+import { captureMiddleware, markUncaptured } from '../sync/capture';
+import type { DirtySegment, SyncRow } from '../sync/model';
+import type { SyncedFile } from '../sync/engine';
+
+/** This browser's own workspace details: its client id, your name, the folder, the workspace it holds. */
+export interface SyncLocal {
+  key: string;
+  value: unknown;
+}
 
 export class EnviroDatabase extends Dexie {
   projects!: Table<Project, string>;
@@ -34,9 +42,16 @@ export class EnviroDatabase extends Dexie {
   imports!: Table<ImportBatch, string>;
   templates!: Table<ReportTemplate, string>;
   meta!: Table<MetaRecord, string>;
+  // the shared workspace: what changed when (syncState), what is still to be written to the folder (syncDirty),
+  // colleagues' files already read (syncFiles) and this browser's own details (syncLocal)
+  syncState!: Table<SyncRow, string>;
+  syncDirty!: Table<DirtySegment, string>;
+  syncFiles!: Table<SyncedFile, string>;
+  syncLocal!: Table<SyncLocal, string>;
 
   constructor(name = 'EnviroDB') {
     super(name);
+    this.use(captureMiddleware);
     this.version(1).stores({
       projects: 'id, status, updatedAt',
       sites: 'id, projectId',
@@ -51,6 +66,12 @@ export class EnviroDatabase extends Dexie {
       imports: 'id, projectId, importedAt',
       templates: 'id',
       meta: 'key',
+    });
+    this.version(2).stores({
+      syncState: 'tk, [s+mine]',
+      syncDirty: 's',
+      syncFiles: 'path',
+      syncLocal: 'key',
     });
   }
 }
@@ -73,7 +94,9 @@ const LEGACY_FIELD_GROUP = 'Physical & field';
 
 /** Insert / refresh built-in reference data while keeping the user's own additions. */
 export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<void> {
-  await database.transaction('rw', database.parameters, database.guidelineSets, database.templates, async () => {
+  await migrateSettings(database);
+  await database.transaction('rw', database.parameters, database.guidelineSets, database.templates, async (tx) => {
+    markUncaptured(tx.idbtrans); // the same in every browser: not a change to share
     const existing = new Map((await database.parameters.toArray()).map((p) => [p.id, p]));
     const toPut: Parameter[] = [];
     for (const p of BUILT_IN_PARAMETERS) {
@@ -97,25 +120,75 @@ export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<voi
   });
 }
 
-export async function getSettings(database: EnviroDatabase = db): Promise<Settings> {
-  const rec = await database.meta.get('settings');
-  return { ...DEFAULT_SETTINGS, ...((rec?.value as Partial<Settings>) ?? {}) };
+/** Settings that are each person's own, kept in this browser. The others (company, letterhead) are the team's. */
+export const PERSONAL_SETTINGS: ReadonlyArray<keyof Settings> = ['author', 'signatureImage', 'signatureDetails', 'dateFormat', 'guidelineUnit', 'defaultTemplateId', 'lastBackupAt'];
+const isPersonal = (k: string) => (PERSONAL_SETTINGS as readonly string[]).includes(k);
+/** Meta record of this person's own settings (the team's are under "settings"). */
+export const MY_SETTINGS = 'mySettings';
+
+/** The settings in use: the team's, with this person's own on top. */
+export function combineSettings(team: unknown, mine: unknown): Settings {
+  const out: Record<string, unknown> = { ...DEFAULT_SETTINGS };
+  for (const [k, v] of Object.entries((team ?? {}) as Record<string, unknown>)) if (!isPersonal(k) && v !== undefined) out[k] = v;
+  for (const [k, v] of Object.entries((mine ?? {}) as Record<string, unknown>)) if (isPersonal(k) && v !== undefined) out[k] = v;
+  return out as unknown as Settings;
 }
 
+export async function getSettings(database: EnviroDatabase = db): Promise<Settings> {
+  const [team, mine] = await Promise.all([database.meta.get('settings'), database.meta.get(MY_SETTINGS)]);
+  return combineSettings(team?.value, mine?.value);
+}
+
+/** Saves the settings given (undefined removes one) – only those, so a colleague's change to another stays. */
 export async function saveSettings(patch: Partial<Settings>, database: EnviroDatabase = db): Promise<void> {
-  const cur = await getSettings(database);
-  await database.meta.put({ key: 'settings', value: { ...cur, ...patch } });
-  saveableChanged();
+  const parts: Record<string, Record<string, unknown>> = { settings: {}, [MY_SETTINGS]: {} };
+  for (const [k, v] of Object.entries(patch)) parts[isPersonal(k) ? MY_SETTINGS : 'settings'][k] = v;
+  await database.transaction('rw', database.meta, async () => {
+    for (const [key, part] of Object.entries(parts)) {
+      if (!Object.keys(part).length) continue;
+      const next = { ...(((await database.meta.get(key))?.value as Record<string, unknown> | undefined) ?? {}) };
+      for (const [k, v] of Object.entries(part)) {
+        if (v === undefined) delete next[k];
+        else next[k] = v;
+      }
+      await database.meta.put({ key, value: next });
+    }
+  });
+}
+
+/** Settings used to be one record: this person's own move to their own record (once). */
+async function migrateSettings(database: EnviroDatabase): Promise<void> {
+  await database.transaction('rw', database.meta, async (tx) => {
+    markUncaptured(tx.idbtrans);
+    if (await database.meta.get(MY_SETTINGS)) return;
+    const old = (await database.meta.get('settings'))?.value as Record<string, unknown> | undefined;
+    const mine: Record<string, unknown> = {};
+    const team: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(old ?? {})) if (v !== undefined) (isPersonal(k) ? mine : team)[k] = v;
+    await database.meta.put({ key: MY_SETTINGS, value: mine });
+    if (old) await database.meta.put({ key: 'settings', value: team });
+  });
 }
 
 /** Report work kept with the settings rather than in the data tables: commentary, figures, layout changes and site choices. */
 export const REPORT_WORK = /^(draft|figs|layout|sites):/;
 
-/** Save a piece of report work (or remove it with undefined), and let the autosave file know. */
+/** Save a piece of report work (or remove it with undefined). */
 export async function saveReportWork(key: string, value: unknown): Promise<void> {
   if (value === undefined) await db.meta.delete(key);
   else await db.meta.put({ key, value });
-  saveableChanged();
+}
+
+/**
+ * Change a piece of report work starting from what is saved now, rather than from what a screen loaded earlier –
+ * so a colleague's change to another part of it (another section's commentary, another figure) stays.
+ */
+export async function updateReportWork<T>(key: string, change: (current: T | undefined) => T | undefined): Promise<void> {
+  await db.transaction('rw', db.meta, async () => {
+    const next = change((await db.meta.get(key))?.value as T | undefined);
+    if (next === undefined) await db.meta.delete(key);
+    else await db.meta.put({ key, value: next });
+  });
 }
 
 /** Ask the browser not to evict our data under storage pressure. */

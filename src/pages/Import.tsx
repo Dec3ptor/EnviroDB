@@ -17,6 +17,7 @@ import { detectWide, gridFor, wideColumns, type WideConfig } from '../importers/
 import { detectLong, type LongConfig } from '../importers/long';
 import type { ParsedImport } from '../importers/model';
 import { analyteMapKey } from '../importers/model';
+import { stableId } from '../lib/ids';
 import { buildParamIndex } from '../lib/matching';
 import { useAnalyteRows, useSiteTextRows, suggestCode } from '../importers/useImport';
 import { commitImport, type CommitSummary, type ImportMapping } from '../importers/commit';
@@ -349,7 +350,8 @@ export function ImportWizard(_props: { projectId: string }) {
       setSiteMap((m) => ({ ...m, [text]: existing.id }));
       return;
     }
-    const s = newSite(project.id, { code, name: code !== text ? text : undefined, order: sites.length + 1, aliases: code !== text ? [text] : [] });
+    // named after the project and code, so two people importing the same file at once make one site
+    const s = newSite(project.id, { id: stableId('site', project.id, code.toLowerCase()), code, name: code !== text ? text : undefined, order: sites.length + 1, aliases: code !== text ? [text] : [] });
     await saveSite(s);
     setSiteMap((m) => ({ ...m, [text]: s.id }));
   };

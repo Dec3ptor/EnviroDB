@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { AppShell, Burger, Group, NavLink, Text, Button, ActionIcon, Tooltip, useMantineColorScheme, Divider, ScrollArea, Badge, Box } from '@mantine/core';
+import { useEffect } from 'react';
+import { AppShell, Burger, Group, NavLink, Text, ActionIcon, useMantineColorScheme, Divider, ScrollArea, Box } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IconLayoutDashboard,
@@ -12,57 +12,11 @@ import {
   IconSettings,
   IconMoon,
   IconSun,
-  IconCloudCheck,
-  IconCloudOff,
-  IconAlertTriangle,
   IconDroplet,
   IconFlask,
 } from '@tabler/icons-react';
 import { db } from '../db/db';
-import { getAutosaveState, onAutosaveChange, regrantAutosave, type AutosaveState } from '../db/backup';
-import { useSettings } from '../hooks/useSettings';
-
-function AutosaveIndicator() {
-  const [s, setS] = useState<AutosaveState>(getAutosaveState());
-  const settings = useSettings();
-  const navigate = useNavigate();
-  useEffect(() => {
-    const off = onAutosaveChange(setS);
-    return () => {
-      off();
-    };
-  }, []);
-  if (s.status === 'on')
-    return (
-      <Tooltip label={`Autosaving to ${s.fileName}${s.lastSaved ? ` – last saved ${new Date(s.lastSaved).toLocaleTimeString()}` : ''}`}>
-        <Badge color="teal" variant="light" leftSection={<IconCloudCheck size={14} />} style={{ cursor: 'pointer' }} onClick={() => navigate('/settings')}>
-          Autosave on
-        </Badge>
-      </Tooltip>
-    );
-  if (s.status === 'needs-permission')
-    return (
-      <Button size="compact-sm" color="orange" variant="light" leftSection={<IconAlertTriangle size={14} />} onClick={() => regrantAutosave()}>
-        Resume autosave to {s.fileName}
-      </Button>
-    );
-  if (s.status === 'error')
-    return (
-      <Tooltip label={s.error}>
-        <Badge color="red" leftSection={<IconAlertTriangle size={14} />}>
-          Autosave failed
-        </Badge>
-      </Tooltip>
-    );
-  const days = settings.lastBackupAt ? Math.floor((Date.now() - new Date(settings.lastBackupAt).getTime()) / 86400000) : null;
-  return (
-    <Tooltip label="Your data is stored in this browser. Link an autosave file (e.g. in OneDrive) or download a backup regularly.">
-      <Badge color={days === null || days > 7 ? 'orange' : 'gray'} variant="light" leftSection={<IconCloudOff size={14} />} style={{ cursor: 'pointer' }} onClick={() => navigate('/settings')}>
-        {days === null ? 'Not backed up' : `Backup ${days}d ago`}
-      </Badge>
-    </Tooltip>
-  );
-}
+import { WorkspaceBadge } from './workspace/Workspace';
 
 export function Shell() {
   const [opened, { toggle, close }] = useDisclosure();
@@ -104,7 +58,7 @@ export function Shell() {
             </Text>
           </Group>
           <Group gap="xs" wrap="nowrap">
-            <AutosaveIndicator />
+            <WorkspaceBadge />
             <ActionIcon variant="default" size="lg" onClick={() => toggleColorScheme()} aria-label="Toggle colour scheme">
               {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
             </ActionIcon>
@@ -144,7 +98,7 @@ export function Shell() {
         <AppShell.Section>
           <NavLink component={Link} to="/settings" label="Settings & backup" leftSection={<IconSettings size={18} stroke={1.6} />} active={path.startsWith('/settings')} variant="light" style={{ borderRadius: 8 }} />
           <Text size="xs" c="dimmed" px="sm" py={4}>
-            Data stays in this browser unless you export or autosave it.
+            Saved to your team’s workspace folder as you work.
           </Text>
         </AppShell.Section>
       </AppShell.Navbar>

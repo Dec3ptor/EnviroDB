@@ -6,6 +6,8 @@ import { notifications } from '@mantine/notifications';
 import { IconCheck, IconDeviceFloppy, IconFileTypeDocx, IconFileTypePdf, IconLayoutList, IconSettings, IconTemplate } from '@tabler/icons-react';
 import { db, saveReportWork } from '../../db/db';
 import { useProject } from '../../hooks/useProjectData';
+import { useSharedWork } from '../../hooks/useSharedWork';
+import { same as sameValue } from '../../sync/model';
 import { useSettings } from '../../hooks/useSettings';
 import { MoreOptions, PeriodPicker, defaultPeriod, type PeriodValue } from '../../components/common';
 import { nextDueReport, obligationPeriod, obligationPresets } from '../../lib/schedule';
@@ -17,7 +19,7 @@ import { PdfPreview } from '../../reports/PdfPreview';
 import type { ReportDoc } from '../../reports/model';
 import { cmToPx, renderChartPng } from '../../charts/render';
 import { exportReport } from '../../reports/export';
-import { saveObligation, saveTemplate } from '../../db/repo';
+import { saveTemplate, setSubmitted } from '../../db/repo';
 import type { FigureImage, FiguresBlock, LetterBlock, Project, ReportTemplate, TextBlock } from '../../db/types';
 import { FigureImages, FiguresLayout } from '../../components/report/Figures';
 import { SectionsEditor } from '../../components/report/SectionsEditor';
@@ -123,33 +125,20 @@ export function ReportsTab() {
     setPeriod(rounds[0]);
   }, [stored, rounds, period.key, obligations]);
 
-  // Layout changes made here are kept (per project and template) until saved as a template or discarded.
+  // Layout changes made here are kept (per project and template) until saved as a template or discarded – setting
+  // by setting, so two people adjusting the same report's layout keep each other's changes.
   const editKey = stored ? `layout:${project.id}:${stored.id}` : '';
-  const [edits, setEdits] = useState<{ key: string; t: ReportTemplate } | null>(null);
-  useEffect(() => {
-    let alive = true;
-    if (editKey) void db.meta.get(editKey).then((r) => alive && setEdits(r ? { key: editKey, t: r.value as ReportTemplate } : null));
-    return () => {
-      alive = false;
-    };
-  }, [editKey]);
-  const working = edits && edits.key === editKey ? edits.t : null;
+  const layout = useSharedWork<unknown>(editKey);
+  const working = useMemo(() => (stored && Object.keys(layout.value).length ? ({ ...stored, ...layout.value, id: stored.id } as ReportTemplate) : null), [stored, layout.value]);
   const template = working ?? stored;
   const edited = !!(working && stored && !same(working, stored));
   const changeTemplate = (t: ReportTemplate) => {
-    if (!editKey) return;
-    if (stored && same(t, stored)) {
-      setEdits(null);
-      void saveReportWork(editKey, undefined);
-      return;
-    }
-    setEdits({ key: editKey, t });
-    void saveReportWork(editKey, t);
+    if (!stored) return;
+    const s = stored as unknown as Record<string, unknown>;
+    // the settings that differ from the template (updatedAt aside)
+    layout.setAll(Object.fromEntries(Object.entries(t).filter(([k, v]) => k !== 'id' && k !== 'updatedAt' && !sameValue(v, s[k]))));
   };
-  const discard = () => {
-    setEdits(null);
-    if (editKey) void saveReportWork(editKey, undefined);
-  };
+  const discard = () => layout.clear();
   const [saveAs, setSaveAs] = useState(false);
   const saveAsNew = async (name: string) => {
     if (!template) return;
@@ -162,7 +151,7 @@ export function ReportsTab() {
   };
   const saveOver = async () => {
     if (!working || !stored || stored.builtIn) return;
-    await saveTemplate({ ...working, id: stored.id, builtIn: false, updatedAt: new Date().toISOString() });
+    await saveTemplate({ ...working, id: stored.id, builtIn: false }, stored);
     discard();
     notifications.show({ color: 'teal', message: `“${stored.name}” updated` });
   };
@@ -171,22 +160,14 @@ export function ReportsTab() {
   // obligation when the period is one of its periods, otherwise for the template.
   const oblId = period.key.startsWith('obl:') ? period.key.split(':')[1] : null;
   const sitesKey = stored ? `sites:${project.id}:${oblId ?? stored.id}` : '';
-  const [siteSel, setSiteSel] = useState<{ key: string; ids: string[] } | null>(null);
-  useEffect(() => {
-    let alive = true;
-    if (sitesKey) void db.meta.get(sitesKey).then((r) => alive && setSiteSel(r ? { key: sitesKey, ids: r.value as string[] } : null));
-    return () => {
-      alive = false;
-    };
-  }, [sitesKey]);
+  const siteSel = useLiveQuery(async () => (sitesKey ? ((await db.meta.get(sitesKey))?.value as string[] | undefined) ?? null : null), [sitesKey]);
   const chosenSites = useMemo(() => {
-    const ids = siteSel && siteSel.key === sitesKey ? siteSel.ids.filter((id) => data.siteMap.has(id)) : [];
+    const ids = (siteSel ?? []).filter((id) => data.siteMap.has(id));
     return ids.length && ids.length < data.sites.length ? ids : null; // null = every site
-  }, [siteSel, sitesKey, data.siteMap, data.sites.length]);
+  }, [siteSel, data.siteMap, data.sites.length]);
   const chooseSites = (ids: string[]) => {
     if (!sitesKey) return;
     const all = !ids.length || ids.length >= data.sites.length;
-    setSiteSel(all ? null : { key: sitesKey, ids });
     void saveReportWork(sitesKey, all ? undefined : ids);
   };
 
@@ -197,34 +178,16 @@ export function ReportsTab() {
   const [open, setOpen] = useState<string | null>(null);
 
   const draftKey = template ? `draft:${project.id}:${template.id}:${period.start}:${period.end}` : '';
-  const [prompts, setPrompts] = useState<Record<string, string>>({});
-  useEffect(() => {
-    // load the saved commentary once per template/period (not live, so typing is never overwritten)
-    let alive = true;
-    if (draftKey) void db.meta.get(draftKey).then((r) => alive && setPrompts((r?.value as Record<string, string>) ?? {}));
-    return () => {
-      alive = false;
-    };
-  }, [draftKey]);
+  // the commentary, section by section: colleagues' sections appear as they write them
+  const drafts = useSharedWork<string>(draftKey);
+  const prompts = drafts.value;
   const promptBlocks = (template?.blocks.filter((b) => b.type === 'text' && b.prompt) ?? []) as TextBlock[];
 
   // Images added to this report's Figures sections, saved with the project and period like the commentary
   const figKey = template ? `figs:${project.id}:${template.id}:${period.start}:${period.end}` : '';
-  const [figs, setFigs] = useState<{ key: string; images: Record<string, FigureImage[]> }>({ key: '', images: {} });
-  useEffect(() => {
-    let alive = true;
-    if (figKey) void db.meta.get(figKey).then((r) => alive && setFigs({ key: figKey, images: (r?.value as Record<string, FigureImage[]>) ?? {} }));
-    return () => {
-      alive = false;
-    };
-  }, [figKey]);
-  const reportFigures = figs.key === figKey ? figs.images : NO_FIGURES;
-  const saveFigures = (blockId: string, images: FigureImage[]) => {
-    const next = { ...reportFigures, [blockId]: images };
-    if (!images.length) delete next[blockId];
-    setFigs({ key: figKey, images: next });
-    if (figKey) void saveReportWork(figKey, Object.keys(next).length ? next : undefined);
-  };
+  const figWork = useSharedWork<FigureImage[]>(figKey);
+  const reportFigures = figWork.loading ? NO_FIGURES : figWork.value;
+  const saveFigures = (blockId: string, images: FigureImage[]) => figWork.setPart(blockId, images.length ? images : undefined);
 
   // Build the report for the preview (debounced; graphs at a lower resolution than the export)
   const [doc, setDoc] = useState<ReportDoc | null>(null);
@@ -259,13 +222,7 @@ export function ReportsTab() {
   const obligation = obl ? obligations.find((o) => o.id === obl.obligationId) : undefined;
   const submitted = obligation?.submissions.find((s) => s.periodEnd === period.end);
 
-  const savePrompt = (id: string, text: string | undefined) => {
-    const next = { ...prompts };
-    if (text === undefined) delete next[id];
-    else next[id] = text;
-    setPrompts(next);
-    if (draftKey) void saveReportWork(draftKey, next);
-  };
+  const savePrompt = (id: string, text: string | undefined) => drafts.setPart(id, text);
 
   if (!templates || !template || !stored)
     return (
@@ -397,7 +354,7 @@ export function ReportsTab() {
                           size="compact-sm"
                           variant="subtle"
                           leftSection={<IconCheck size={14} />}
-                          onClick={() => saveObligation({ ...obligation, submissions: [...obligation.submissions, { periodStart: period.start, periodEnd: period.end, submittedOn: todayStr() }] })}
+                          onClick={() => setSubmitted(obligation.id, { periodStart: period.start, periodEnd: period.end }, todayStr())}
                         >
                           Mark submitted
                         </Button>

@@ -5,8 +5,9 @@ import { notifications } from '@mantine/notifications';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconArchive, IconArrowDown, IconArrowUp, IconDeviceFloppy, IconPlus, IconTrash, IconListDetails, IconSparkles } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
+import { useEditable } from '../../hooks/useEditable';
 import { ProjectForm } from '../Projects';
-import { deleteProject, deleteSite, newSite, saveParameter, saveProject, saveSite } from '../../db/repo';
+import { deleteProject, deleteSite, newSite, saveProject, saveSite } from '../../db/repo';
 import type { NdHandling, Project, Site } from '../../db/types';
 import { SITE_ROLES, SITE_TYPES } from '../../db/types';
 import { COMMON_UNITS, unitLabel } from '../../lib/units';
@@ -15,8 +16,7 @@ import { MoreOptions } from '../../components/common';
 import { compareParams } from '../../data/parameters';
 
 function SiteRow({ site, index, count, onMove }: { site: Site; index: number; count: number; onMove: (dir: -1 | 1) => void }) {
-  const [s, setS] = useState(site);
-  const dirty = JSON.stringify(s) !== JSON.stringify(site);
+  const [s, setS, { dirty, reset }] = useEditable(site);
   const { results } = useProject();
   const n = results.filter((r) => r.siteId === site.id).length;
   return (
@@ -59,7 +59,7 @@ function SiteRow({ site, index, count, onMove }: { site: Site; index: number; co
       </Table.Td>
       <Table.Td>
         <Group gap={4} wrap="nowrap">
-          <ActionIcon variant={dirty ? 'filled' : 'subtle'} disabled={!dirty || !s.code.trim()} onClick={() => saveSite(s)} aria-label="Save site">
+          <ActionIcon variant={dirty ? 'filled' : 'subtle'} disabled={!dirty || !s.code.trim()} onClick={() => saveSite(s, site).then(reset)} aria-label="Save site">
             <IconDeviceFloppy size={16} />
           </ActionIcon>
           <ActionIcon
@@ -167,7 +167,7 @@ function ParametersCard() {
                     <Group gap={4} wrap="nowrap">
                       <Autocomplete size="xs" data={COMMON_UNITS} value={units[p.id] ?? unitLabel(p.unit)} onChange={(v) => setUnits({ ...units, [p.id]: v })} w={130} />
                       {units[p.id] !== undefined && units[p.id] !== unitLabel(p.unit) && (
-                        <ActionIcon size="sm" onClick={async () => { await saveParameter({ ...p, unit: units[p.id] }); notifications.show({ message: `${p.name} now shown in ${units[p.id]}` }); }} aria-label="Save unit">
+                        <ActionIcon size="sm" onClick={async () => { await db.parameters.update(p.id, { unit: units[p.id] }); notifications.show({ message: `${p.name} now shown in ${units[p.id]}` }); }} aria-label="Save unit">
                           <IconDeviceFloppy size={14} />
                         </ActionIcon>
                       )}
@@ -186,22 +186,15 @@ function ParametersCard() {
 
 export function SetupTab() {
   const { project, sites, rules } = useProject();
-  const [p, setP] = useState<Project>(project);
-  const [base, setBase] = useState<Project>(project);
+  // the details as saved, with your unsaved edits on top (a colleague's change to anything else shows straight away)
+  const [p, setP, { dirty, reset }] = useEditable<Project>(project);
   const [bulk, setBulk] = useState(false);
   const navigate = useNavigate();
-  const same = (a: Project, b: Project) => JSON.stringify({ ...a, updatedAt: '' }) === JSON.stringify({ ...b, updatedAt: '' });
-  if (project !== base) {
-    // the stored project changed (saved here or elsewhere): adopt it unless there are unsaved edits
-    if (same(p, base)) setP(project);
-    setBase(project);
-  }
-  const dirty = !same(p, project);
   const move = async (i: number, dir: -1 | 1) => {
     const list = [...sites];
     const j = i + dir;
     [list[i], list[j]] = [list[j], list[i]];
-    await db.sites.bulkPut(list.map((s, k) => ({ ...s, order: k + 1 })));
+    await db.sites.bulkUpdate(list.map((s, k) => ({ key: s.id, changes: { order: k + 1 } })));
   };
   return (
     <Stack gap="lg">
@@ -224,7 +217,7 @@ export function SetupTab() {
       <Card>
         <Group justify="space-between" mb="sm">
           <Title order={4}>Project details</Title>
-          <Button leftSection={<IconDeviceFloppy size={16} />} disabled={!dirty || !p.name.trim()} onClick={async () => { await saveProject(p); notifications.show({ message: 'Project saved', color: 'teal' }); }}>
+          <Button leftSection={<IconDeviceFloppy size={16} />} disabled={!dirty || !p.name.trim()} onClick={async () => { await saveProject(p, project); reset(); notifications.show({ message: 'Project saved', color: 'teal' }); }}>
             Save
           </Button>
         </Group>
@@ -331,7 +324,7 @@ export function SetupTab() {
           Archive or delete
         </Title>
         <Group>
-          <Button variant="default" leftSection={<IconArchive size={16} />} onClick={() => saveProject({ ...project, status: project.status === 'active' ? 'archived' : 'active' })}>
+          <Button variant="default" leftSection={<IconArchive size={16} />} onClick={() => db.projects.update(project.id, { status: project.status === 'active' ? 'archived' : 'active', updatedAt: new Date().toISOString() })}>
             {project.status === 'active' ? 'Archive project' : 'Restore project'}
           </Button>
           <Button

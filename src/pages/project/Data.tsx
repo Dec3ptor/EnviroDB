@@ -11,7 +11,7 @@ import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResu
 import { formatDate } from '../../lib/dates';
 import { unitLabel } from '../../lib/units';
 import { exportPivotCsv, exportPivotXlsx } from '../../reports/excel';
-import { deleteImport, deleteSamples } from '../../db/repo';
+import { deleteImport, deleteSamples, saveEdited } from '../../db/repo';
 import { db } from '../../db/db';
 import { compareParams } from '../../data/parameters';
 
@@ -68,14 +68,14 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
   });
   const save = async () => {
     await db.transaction('rw', db.samples, db.results, async () => {
-      await db.samples.put(s);
+      await saveEdited(db.samples, s, sample ?? undefined); // only what was changed here
       for (const r of results) {
-        const patch: Partial<Result> = { siteId: s.siteId, date: s.date };
+        const patch: Partial<Result> = s.siteId !== sample?.siteId || s.date !== sample?.date ? { siteId: s.siteId, date: s.date } : {};
         if (edits[r.id] !== undefined) {
           const pv = parseValue(edits[r.id]);
           Object.assign(patch, { value: pv.value, qualifier: pv.qualifier, text: pv.text, dl: pv.dl });
         }
-        await db.results.update(r.id, patch);
+        if (Object.keys(patch).length) await db.results.update(r.id, patch);
       }
     });
     notifications.show({ message: 'Sample saved', color: 'teal' });

@@ -13,6 +13,7 @@ import { formatDate } from '../../lib/dates';
 import { unitLabel } from '../../lib/units';
 import { fmtNum } from '../../lib/values';
 import { deleteRule, newRule, saveNote, saveRule } from '../../db/repo';
+import { db } from '../../db/db';
 import type { ExceedanceNote, ReportBlock, Rule } from '../../db/types';
 import type { Exceedance, RuleEvaluation } from '../../lib/compliance';
 import { RuleEditor } from './RuleEditor';
@@ -50,14 +51,23 @@ const PRESETS: Preset[] = [
 function NoteEditor({ ruleId, ex, note }: { ruleId: string; ex: Exceedance; note?: ExceedanceNote }) {
   const { project } = useProject();
   const [opened, setOpened] = useState(false);
+  // the note as it was when opened: saving changes only what was changed here
+  const [base, setBase] = useState(note);
   const [status, setStatus] = useState<ExceedanceNote['status']>(note?.status ?? 'open');
   const [text, setText] = useState(note?.text ?? '');
   const [notifiedOn, setNotifiedOn] = useState<string | undefined>(note?.notifiedOn);
+  const open = () => {
+    setBase(note);
+    setStatus(note?.status ?? 'open');
+    setText(note?.text ?? '');
+    setNotifiedOn(note?.notifiedOn);
+    setOpened(true);
+  };
   const color = note ? (note.status === 'closed' ? 'green' : note.status === 'notified' ? 'blue' : 'orange') : 'gray';
   return (
     <Popover opened={opened} onChange={setOpened} width={340} position="left" withArrow shadow="md">
       <Popover.Target>
-        <Badge color={color} variant={note ? 'light' : 'outline'} style={{ cursor: 'pointer' }} leftSection={<IconNotes size={12} />} onClick={() => setOpened((o) => !o)}>
+        <Badge color={color} variant={note ? 'light' : 'outline'} style={{ cursor: 'pointer' }} leftSection={<IconNotes size={12} />} onClick={() => (opened ? setOpened(false) : open())}>
           {note ? note.status : 'Add note'}
         </Badge>
       </Popover.Target>
@@ -81,7 +91,7 @@ function NoteEditor({ ruleId, ex, note }: { ruleId: string; ex: Exceedance; note
             <Button
               size="xs"
               onClick={async () => {
-                await saveNote({ projectId: project.id, ruleId, key: ex.key, status, text, notifiedOn });
+                await saveNote({ projectId: project.id, ruleId, key: ex.key, status, text, notifiedOn }, base);
                 setOpened(false);
               }}
             >
@@ -276,7 +286,7 @@ export function ComplianceTab() {
                       <Menu.Item leftSection={<IconCopy size={14} />} onClick={() => setEditing({ ...rule, id: uid('rule'), name: `${rule.name} (copy)`, order: Date.now() })}>
                         Duplicate
                       </Menu.Item>
-                      <Menu.Item leftSection={rule.active ? <IconPlayerPause size={14} /> : <IconPlayerPlay size={14} />} onClick={() => saveRule({ ...rule, active: !rule.active })}>
+                      <Menu.Item leftSection={rule.active ? <IconPlayerPause size={14} /> : <IconPlayerPlay size={14} />} onClick={() => db.rules.update(rule.id, { active: !rule.active })}>
                         {rule.active ? 'Deactivate' : 'Activate'}
                       </Menu.Item>
                       <Menu.Item

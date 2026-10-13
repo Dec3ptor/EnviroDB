@@ -78,18 +78,25 @@ export function TemplateEditorPage() {
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const settings = useSettings();
   const [t, setT] = useState<ReportTemplate | null>(null);
+  // the template as loaded (or last saved here): saving changes only what was changed since
+  const [base, setBase] = useState<ReportTemplate | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [previewProject, setPreviewProject] = useState<string | null>(null);
   const settingsCol = useRef<HTMLDivElement>(null);
   const previewCard = useRef<HTMLDivElement>(null);
   const pane = usePreviewPane(previewCard, 'xl');
-  if (stored && (!t || t.id !== stored.id)) setT(structuredClone(stored)); // load once per template
+  if (stored && (!t || t.id !== stored.id)) {
+    // load once per template
+    setT(structuredClone(stored));
+    setBase(stored);
+  }
   useEffect(() => {
     if (!previewProject && projects?.length) setPreviewProject([...projects].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0].id);
   }, [projects, previewProject]);
   if (!t) return <Loader />;
   const readOnly = !!t.builtIn;
-  const dirty = !!stored && JSON.stringify({ ...stored, updatedAt: '' }) !== JSON.stringify({ ...t, updatedAt: '' });
+  const dirty = !!base && JSON.stringify({ ...base, updatedAt: '' }) !== JSON.stringify({ ...t, updatedAt: '' });
+  const changedElsewhere = !!stored && !!base && stored.updatedAt !== base.updatedAt;
   const setBlocks = (blocks: ReportBlock[]) => setT({ ...t, blocks });
   const mixed = hasMixedPages(t.blocks, t.orientation);
 
@@ -111,9 +118,28 @@ export function TemplateEditorPage() {
               Duplicate to customise
             </Button>
           ) : (
-            <Button leftSection={<IconDeviceFloppy size={16} />} disabled={!dirty} onClick={async () => { await saveTemplate(t); notifications.show({ message: 'Template saved', color: 'teal' }); }}>
-              Save template
-            </Button>
+            <Group gap="xs">
+              {changedElsewhere && (
+                <Tooltip label="Someone saved this template after you opened it. Saving keeps their changes to the parts you haven’t changed.">
+                  <Badge color="yellow" variant="light">
+                    Changed by someone else
+                  </Badge>
+                </Tooltip>
+              )}
+              <Button
+                leftSection={<IconDeviceFloppy size={16} />}
+                disabled={!dirty}
+                onClick={async () => {
+                  // what was saved, colleagues' changes to other parts included
+                  const saved = await saveTemplate(t, base ?? undefined);
+                  setBase(saved);
+                  setT(structuredClone(saved));
+                  notifications.show({ message: 'Template saved', color: 'teal' });
+                }}
+              >
+                Save template
+              </Button>
+            </Group>
           )
         }
       />

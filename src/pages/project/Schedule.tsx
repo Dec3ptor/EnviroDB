@@ -8,7 +8,7 @@ import { useProject } from '../../hooks/useProjectData';
 import { DateField, EmptyState, paramOptions } from '../../components/common';
 import { addMonths, formatDate, relativeDays, todayStr } from '../../lib/dates';
 import { buildIcs, frequencyLabel, nextObligation, OBLIGATION_STATUS, obligationPeriod, obligationPeriods, scheduleStatus } from '../../lib/schedule';
-import { deleteObligation, deleteSchedule, newObligation, newSchedule, saveObligation, saveSchedule } from '../../db/repo';
+import { deleteObligation, deleteSchedule, newObligation, newSchedule, saveObligation, saveSchedule, setSubmitted } from '../../db/repo';
 import type { MonitoringSchedule, ReportObligation } from '../../db/types';
 import { db } from '../../db/db';
 import { downloadBlob, safeFileName } from '../../db/backup';
@@ -54,7 +54,7 @@ function ScheduleModal({ value, onClose }: { value: MonitoringSchedule; onClose:
           <Button
             disabled={!s.siteIds.length || !s.name.trim()}
             onClick={async () => {
-              await saveSchedule(s);
+              await saveSchedule(s, value);
               onClose();
             }}
           >
@@ -120,7 +120,7 @@ function ObligationModal({ value, onClose }: { value: ReportObligation; onClose:
           <Button
             disabled={!o.name.trim()}
             onClick={async () => {
-              await saveObligation(o);
+              await saveObligation(o, value);
               onClose();
             }}
           >
@@ -250,11 +250,11 @@ export function ScheduleTab() {
                                     Generate
                                   </Button>
                                   {p.submission ? (
-                                    <Button size="compact-xs" variant="subtle" color="gray" leftSection={<IconX size={14} />} onClick={() => saveObligation({ ...o, submissions: o.submissions.filter((s) => s.periodEnd !== p.periodEnd) })}>
+                                    <Button size="compact-xs" variant="subtle" color="gray" leftSection={<IconX size={14} />} onClick={() => setSubmitted(o.id, p, null)}>
                                       Undo
                                     </Button>
                                   ) : (
-                                    <Button size="compact-xs" variant="subtle" leftSection={<IconCheck size={14} />} onClick={() => saveObligation({ ...o, submissions: [...o.submissions, { periodStart: p.periodStart, periodEnd: p.periodEnd, submittedOn: today }] })}>
+                                    <Button size="compact-xs" variant="subtle" leftSection={<IconCheck size={14} />} onClick={() => setSubmitted(o.id, p, today)}>
                                       Mark submitted
                                     </Button>
                                   )}

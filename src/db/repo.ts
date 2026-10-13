@@ -1,4 +1,6 @@
+import type { Table } from 'dexie';
 import { db } from './db';
+import { same } from '../sync/model';
 import type {
   ExceedanceNote,
   GuidelineSet,
@@ -12,6 +14,29 @@ import type {
 } from './types';
 import { nowIso, slugify, uid } from '../lib/ids';
 import { todayStr } from '../lib/dates';
+
+// ------------------------------------------------------------ saving edits
+
+/**
+ * Saves a record edited on screen. Given `before` – the record as the screen had it – only the fields changed since
+ * are written, onto the record as it is now, so a colleague's change to anything else in the meantime is kept.
+ * (Without `before` the record is saved as it is: new records.) A record a colleague deleted meanwhile is put back.
+ */
+export async function saveEdited<T extends { id: string }>(table: Table<T, string>, next: T, before?: T): Promise<T> {
+  if (!before) {
+    await table.put(next);
+    return next;
+  }
+  const changes: Record<string, unknown> = {};
+  const a = before as Record<string, unknown>, b = next as Record<string, unknown>;
+  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) if (!same(a[k], b[k])) changes[k] = b[k];
+  return table.db.transaction('rw', table, async () => {
+    const cur = await table.get(next.id);
+    const saved = cur ? ({ ...cur, ...changes } as T) : next;
+    if (!cur || Object.keys(changes).length) await table.put(saved);
+    return saved;
+  });
+}
 
 // ------------------------------------------------------------ projects
 
@@ -32,8 +57,8 @@ export function newProject(patch: Partial<Project> = {}): Project {
   };
 }
 
-export async function saveProject(p: Project): Promise<void> {
-  await db.projects.put({ ...p, updatedAt: nowIso() });
+export async function saveProject(p: Project, before?: Project): Promise<void> {
+  await saveEdited(db.projects, { ...p, updatedAt: nowIso() }, before);
 }
 
 export async function touchProject(projectId: string): Promise<void> {
@@ -60,8 +85,8 @@ export function newSite(projectId: string, patch: Partial<Site> = {}): Site {
   return { id: uid('site'), projectId, code: '', type: 'Surface water', role: '', aliases: [], active: true, order: 0, ...patch };
 }
 
-export async function saveSite(s: Site): Promise<void> {
-  await db.sites.put(s);
+export async function saveSite(s: Site, before?: Site): Promise<void> {
+  await saveEdited(db.sites, s, before);
   await touchProject(s.projectId);
 }
 
@@ -86,8 +111,8 @@ export async function addSiteAlias(siteId: string, alias: string): Promise<void>
 
 // ------------------------------------------------------------ parameters
 
-export async function saveParameter(p: Parameter): Promise<void> {
-  await db.parameters.put(p);
+export async function saveParameter(p: Parameter, before?: Parameter): Promise<void> {
+  await saveEdited(db.parameters, p, before);
 }
 
 export async function createParameter(name: string, unit: string, group = 'Other'): Promise<Parameter> {
@@ -112,8 +137,8 @@ export async function addParameterAlias(paramId: string, alias: string): Promise
 export function newRule(projectId: string, patch: Partial<Rule> = {}): Rule {
   return { id: uid('rule'), projectId, name: '', level: 'Limit', kind: 'threshold', siteIds: [], operator: '>', active: true, order: Date.now(), ...patch };
 }
-export async function saveRule(r: Rule) {
-  await db.rules.put(r);
+export async function saveRule(r: Rule, before?: Rule) {
+  await saveEdited(db.rules, r, before);
   await touchProject(r.projectId);
 }
 export async function deleteRule(id: string) {
@@ -121,15 +146,15 @@ export async function deleteRule(id: string) {
   await db.notes.where('ruleId').equals(id).delete();
 }
 
-export async function saveNote(n: Omit<ExceedanceNote, 'id' | 'updatedAt'>) {
-  await db.notes.put({ ...n, id: `${n.ruleId}|${n.key}`, updatedAt: nowIso() });
+export async function saveNote(n: Omit<ExceedanceNote, 'id' | 'updatedAt'>, before?: ExceedanceNote) {
+  await saveEdited(db.notes, { ...n, id: `${n.ruleId}|${n.key}`, updatedAt: nowIso() }, before);
 }
 
 export function newSchedule(projectId: string, patch: Partial<MonitoringSchedule> = {}): MonitoringSchedule {
   return { id: uid('sch'), projectId, name: 'Monthly monitoring', siteIds: [], parameterIds: [], every: 1, unit: 'month', startDate: `${todayStr().slice(0, 7)}-01`, active: true, ...patch };
 }
-export async function saveSchedule(s: MonitoringSchedule) {
-  await db.schedules.put(s);
+export async function saveSchedule(s: MonitoringSchedule, before?: MonitoringSchedule) {
+  await saveEdited(db.schedules, s, before);
 }
 export async function deleteSchedule(id: string) {
   await db.schedules.delete(id);
@@ -152,8 +177,17 @@ export function newObligation(projectId: string, patch: Partial<ReportObligation
     ...patch,
   };
 }
-export async function saveObligation(o: ReportObligation) {
-  await db.obligations.put(o);
+export async function saveObligation(o: ReportObligation, before?: ReportObligation) {
+  await saveEdited(db.obligations, o, before);
+}
+/** Marks a reporting period submitted (or not), starting from the obligation as saved now. */
+export async function setSubmitted(obligationId: string, period: { periodStart: string; periodEnd: string }, submittedOn: string | null) {
+  await db.transaction('rw', db.obligations, async () => {
+    const o = await db.obligations.get(obligationId);
+    if (!o) return;
+    const others = o.submissions.filter((s) => s.periodEnd !== period.periodEnd);
+    await db.obligations.update(obligationId, { submissions: submittedOn ? [...others, { periodStart: period.periodStart, periodEnd: period.periodEnd, submittedOn }] : others });
+  });
 }
 export async function deleteObligation(id: string) {
   await db.obligations.delete(id);
@@ -161,8 +195,8 @@ export async function deleteObligation(id: string) {
 
 // ------------------------------------------------------------ guideline sets & templates
 
-export async function saveGuidelineSet(g: GuidelineSet) {
-  await db.guidelineSets.put({ ...g, updatedAt: nowIso() });
+export async function saveGuidelineSet(g: GuidelineSet, before?: GuidelineSet) {
+  await saveEdited(db.guidelineSets, { ...g, updatedAt: nowIso() }, before);
 }
 export async function duplicateGuidelineSet(g: GuidelineSet, name?: string): Promise<GuidelineSet> {
   const copy: GuidelineSet = { ...structuredClone(g), id: uid('gl'), name: name ?? `${g.name} (copy)`, shortName: `${g.shortName} (copy)`, builtIn: false, family: 'Custom', updatedAt: nowIso() };
@@ -173,8 +207,9 @@ export async function deleteGuidelineSet(id: string) {
   await db.guidelineSets.delete(id);
 }
 
-export async function saveTemplate(t: ReportTemplate) {
-  await db.templates.put({ ...t, updatedAt: nowIso() });
+/** Saves a template (see saveEdited) and returns it as saved. */
+export async function saveTemplate(t: ReportTemplate, before?: ReportTemplate): Promise<ReportTemplate> {
+  return saveEdited(db.templates, { ...t, updatedAt: nowIso() }, before);
 }
 export async function duplicateTemplate(t: ReportTemplate, name?: string): Promise<ReportTemplate> {
   const copy: ReportTemplate = {
