@@ -1,20 +1,20 @@
-import type { ChartBlock, GuidelineSet, Parameter, ReportBlock, ReportTemplate, Result, ResultsTableBlock, Rule, Sample, Settings, Site } from '../db/types';
+import type { ChartBlock, FigureImage, GuidelineSet, Letterhead, LetterheadItem, Parameter, ReportBlock, ReportTemplate, Result, ResultsTableBlock, Rule, Sample, Settings, Site } from '../db/types';
 import { RULE_LEVELS } from '../db/types';
 import type { ProjectBundle } from '../lib/analysis';
-import { displayValue, evaluateAll, flagResults, keyParameters, limitToSites, statsTable, type CellFlag } from '../lib/analysis';
+import { displayValue, evaluateAll, flagResults, isLimitLevel, keyParameters, limitToSites, statsTable, type CellFlag } from '../lib/analysis';
 import type { RuleEvaluation } from '../lib/compliance';
 import { STATUS_META } from '../lib/compliance';
-import { addDays, addMonths, formatDate, formatDateLong, todayStr, toUtcMs } from '../lib/dates';
+import { addDays, addMonths, formatDate, formatDateLong, MONTH_SHORT, todayStr, toUtcMs } from '../lib/dates';
 import { monthLabel, reportPeriodLabel, reviewCell, type ReviewCell } from '../lib/latest';
 import { guidelineFor } from '../lib/guidelines';
 import { scheduleStep, frequencyLabel } from '../lib/schedule';
 import { convert, unitLabel } from '../lib/units';
 import { statLabel } from '../lib/stats';
 import { fmtNum } from '../lib/values';
-import { logoSizeMm } from '../lib/image';
+import { imageSize, logoSizeMm } from '../lib/image';
 import { buildChartSpec, chartOption } from '../charts/timeSeries';
-import { FILLS, fillPlaceholders, inline, parseMarkup, type Cell, type DocNode, type ReportDoc } from './model';
-import { CELL_PAD_MM, longestWordMm, textWidthMm } from './measure';
+import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type ReportDoc, type ReportLook, type Run } from './model';
+import { CELL_PAD_MM, fontWidthFactor, longestWordMm as longestWord, textWidthMm as textWidth } from './measure';
 
 export interface BuildOptions {
   bundle: ProjectBundle;
@@ -26,6 +26,10 @@ export interface BuildOptions {
   renderChart?: (option: ReturnType<typeof chartOption>, widthCm: number, heightCm: number) => string;
   /** Only these monitoring sites (unset or empty: every site), e.g. a groundwater report without the discharge. */
   siteIds?: string[];
+  /** Images added for this report to its Figures sections, by section id. */
+  figures?: Record<string, FigureImage[]>;
+  /** A preview on screen: sections still waiting for something (images, who a letter is to) say so. */
+  preview?: boolean;
 }
 
 const PAGE_MM: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420] };
@@ -53,21 +57,46 @@ export function pageOrientations(blocks: ReportBlock[], base: Orientation): Orie
   });
 }
 
-/** Width inside the margins, in mm. */
-export function usableWidthMm(t: ReportTemplate, orientation: Orientation = t.orientation): number {
-  const [w, h] = PAGE_MM[t.pageSize] ?? PAGE_MM.A4;
-  return (orientation === 'landscape' ? h : w) - 2 * t.marginMm;
+/** Page size in mm (portrait). */
+export const pageSizeMm = (t: ReportTemplate): [number, number] => PAGE_MM[t.pageSize] ?? PAGE_MM.A4;
+
+/** The letterhead a template is printed on: the one in Settings, or for a letter without one, the template's own logo and footer. */
+export function letterheadFor(t: ReportTemplate, settings: Pick<Settings, 'letterhead'>): Letterhead | undefined {
+  if (t.letterhead && settings.letterhead) return settings.letterhead;
+  if (t.style !== 'letter') return undefined;
+  const m = t.marginMm;
+  const logo: LetterheadItem[] = t.logo ? [{ kind: 'image', align: 'left', dataUrl: t.logo, ...logoSizeMm(t.logo, t.logoHeightMm ?? DEFAULT_LOGO_MM, 80) }] : [];
+  const small = { color: '#777777', sizePt: Math.max(7, t.fontSize - 2) };
+  const footer: LetterheadItem[] = [
+    ...(t.footerText ? [{ kind: 'text' as const, align: 'left' as const, runs: [{ text: t.footerText, ...small }] }] : []),
+    { kind: 'text', align: 'right', runs: [{ text: '{page}', ...small }] },
+  ];
+  const header: LetterheadItem[] = t.headerText ? [{ kind: 'text', align: 'left', runs: [{ text: t.headerText, ...small }] }] : [];
+  return { marginsMm: { top: m, right: m, bottom: m, left: m, header: m / 2, footer: m / 2 }, first: { header: logo.length ? logo : header, footer }, other: { header, footer } };
+}
+
+/** Margins and header / footer distances (mm): the letterhead's, or the template's margin all round. */
+export function pageGeometry(t: ReportTemplate, letterhead?: Letterhead): PageGeometry {
+  if (letterhead) return { ...letterhead.marginsMm, indent: letterhead.indentMm ?? 0 };
+  const m = t.marginMm;
+  return { top: m, right: m, bottom: m, left: m, header: m / 2, footer: m / 2, indent: 0 };
+}
+
+/** Width inside the margins (less a letterhead's text indent), in mm. */
+export function usableWidthMm(t: ReportTemplate, orientation: Orientation = t.orientation, geo: PageGeometry = pageGeometry(t)): number {
+  const [w, h] = pageSizeMm(t);
+  return (orientation === 'landscape' ? h : w) - geo.left - geo.right - geo.indent;
 }
 
 /** Height inside the margins, less the header and footer, in mm. */
-export function usableHeightMm(t: ReportTemplate, orientation: Orientation = t.orientation): number {
-  const [w, h] = PAGE_MM[t.pageSize] ?? PAGE_MM.A4;
-  return (orientation === 'landscape' ? w : h) - 2 * t.marginMm - 4;
+export function usableHeightMm(t: ReportTemplate, orientation: Orientation = t.orientation, geo: PageGeometry = pageGeometry(t)): number {
+  const [w, h] = pageSizeMm(t);
+  return (orientation === 'landscape' ? w : h) - geo.top - geo.bottom - 4;
 }
 
 /** Graph size in cm for a chart block on a page of the given orientation. */
-export function chartSizeCm(blk: ChartBlock, t: ReportTemplate, orientation: Orientation): { widthCm: number; heightCm: number } {
-  const width = usableWidthMm(t, orientation);
+export function chartSizeCm(blk: ChartBlock, t: ReportTemplate, orientation: Orientation, geo: PageGeometry = pageGeometry(t)): { widthCm: number; heightCm: number } {
+  const width = usableWidthMm(t, orientation, geo);
   const size = blk.size ?? 'full';
   if (size === 'custom') {
     const w = Math.min(blk.widthCm * 10, width);
@@ -75,7 +104,7 @@ export function chartSizeCm(blk: ChartBlock, t: ReportTemplate, orientation: Ori
   }
   const aspect = blk.aspect ?? (blk.widthCm > 0 ? blk.heightCm / blk.widthCm : 0.5);
   const w = size === 'half' ? (width - CHART_GAP_MM) / 2 : width;
-  const h = Math.min(w * aspect, usableHeightMm(t, orientation) * 0.62); // leave room for a heading and caption
+  const h = Math.min(w * aspect, usableHeightMm(t, orientation, geo) * 0.62); // leave room for a heading and caption
   return { widthCm: w / 10, heightCm: h / 10 };
 }
 
@@ -119,6 +148,23 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   const b = subset ? limitToSites(opts.bundle, opts.siteIds!) : opts.bundle;
   const { start, end } = period;
   const project = b.project;
+  const letterhead = letterheadFor(t, settings);
+  const geo = pageGeometry(t, letterhead);
+  const letter = t.style === 'letter';
+  const look: ReportLook = {
+    style: letter ? 'letter' : 'report',
+    accent: t.accent,
+    headingColor: (t.letterhead && letterhead?.headingColor) || t.accent,
+    textColor: t.letterhead ? letterhead?.textColor : undefined,
+    font: t.letterhead ? letterhead?.font : undefined,
+    headingFont: t.letterhead ? letterhead?.headingFont : undefined,
+    tableHeader: t.tableHeader ?? (letter ? 'grey' : 'accent'),
+    highlight: t.highlightStyle ?? (letter ? 'text' : 'fill'),
+  };
+  // columns are sized for the widest of the PDF's font and the font the Word document names
+  const fontK = Math.max(1, fontWidthFactor(look.font));
+  const textWidthMm = (x: string, pt: number, bold = false) => textWidth(x, pt, bold) * fontK;
+  const longestWordMm = (x: string, pt: number, bold = false) => longestWord(x, pt, bold) * fontK;
   const evals = evaluateAll(b, start, end);
   const flagCache = new Map<string, Map<string, CellFlag>>();
   const flagsFor = (setIds: string[]) => {
@@ -142,6 +188,8 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     'project.regulator': project.regulator ?? '',
     'project.location': project.location ?? '',
     'project.description': project.description ?? '',
+    'project.recipient': project.recipient ?? '',
+    'project.salutation': project.salutation?.trim() || 'Dear Sir / Madam,',
     'period.start': formatDateLong(shownStart),
     'period.end': formatDateLong(shownEnd),
     'period.label': reportPeriodLabel(shownStart, shownEnd),
@@ -157,16 +205,41 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   };
   const fill = (s: string | undefined) => fillPlaceholders(s ?? '', ctx);
   const numbering = t.numbering !== false;
+  const numberHeadings = t.numberHeadings ?? numbering;
   const hNum = [0, 0, 0];
-  let tableNo = 0;
-  let figNo = 0;
   const nodes: DocNode[] = [];
+  const commentary: CommentaryField[] = [];
   let orientation: Orientation = t.orientation;
-  let width = usableWidthMm(t, orientation);
+  let width = usableWidthMm(t, orientation, geo);
   const big = Math.max(7, t.fontSize - 2.5); // font size for large data tables
+  let heading = ''; // the heading the current block comes under (labels the commentary boxes)
 
-  const tableCaption = (s: string) => (numbering ? `Table ${++tableNo}: ${s}` : s);
-  const figCaption = (s: string) => (numbering ? `Figure ${++figNo}: ${s}` : s);
+  // Numbers for tables and figures: each kind of figure (Figure, Photo, Plate …) is counted on its own. A section
+  // with a reference name records its first number, so text can say {{table:name}} or {{fig:name}} – resolved at
+  // the end, so text can refer to a table or figure further on.
+  const counters = new Map<string, number>();
+  const nextNumber = (label: string) => {
+    const k = label.toLowerCase();
+    counters.set(k, (counters.get(k) ?? 0) + 1);
+    return counters.get(k)!;
+  };
+  const refs = new Map<string, string>();
+  let current: ReportBlock | null = null;
+  const capSep = letter ? '. ' : ': ';
+  const numbered = (label: string, kind: 'table' | 'fig', s: string) => {
+    if (!numbering) return s;
+    const n = `${label} ${nextNumber(label)}`;
+    if (current?.ref && !refs.has(`${kind}:${current.ref}`)) refs.set(`${kind}:${current.ref}`, n);
+    return s ? `${n}${capSep}${s}` : n;
+  };
+  const tableCaption = (s: string) => numbered('Table', 'table', s);
+  const figCaption = (s: string) => numbered('Figure', 'fig', s);
+  /** How an exceedance stands out in a table cell: shading, or red text. */
+  const flagged = (f?: CellFlag): Partial<Cell> => {
+    if (!f) return {};
+    if (look.highlight === 'text') return { color: f.kind === 'check' ? TEXT_FLAGS.check : TEXT_FLAGS.exceed, bold: f.kind === 'limit' };
+    return { fill: flagFill(f), bold: f.kind !== 'check' };
+  };
   const paramList = (ids: string[], samples: Sample[]): Parameter[] => {
     if (ids.length) return ids.map((id) => b.paramMap.get(id)).filter((p): p is Parameter => !!p);
     const used = new Set<string>();
@@ -213,7 +286,9 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   const resultNotes = (sets: GuidelineSet[], highlight: boolean, consentBrackets = false) => {
     const n = ['“<” indicates a result below the laboratory detection limit.'];
     if (consentBrackets) n.push('Consent values in brackets are assessed on a statistic or consecutive results, or apply only at the sites named.');
-    if (highlight) n.push(`Shading: red = consent limit exceeded; amber = trigger level${sets.length ? ` or ${sets.map((s) => s.shortName).join(' / ')} guideline` : ''} exceeded; purple = detection limit above the limit.`);
+    if (highlight && look.highlight === 'text')
+      n.push(`Red = consent limit (bold) or trigger level${sets.length ? ` or ${sets.map((s) => s.shortName).join(' / ')} guideline` : ''} exceeded; purple = detection limit above the limit.`);
+    else if (highlight) n.push(`Shading: red = consent limit exceeded; amber = trigger level${sets.length ? ` or ${sets.map((s) => s.shortName).join(' / ')} guideline` : ''} exceeded; purple = detection limit above the limit.`);
     if (project.hardnessAdjust && sets.some((s) => s.values.some((v) => v.hardness))) n.push('* Hardness-dependent guideline value shown at 30 mg/L CaCO3; results were compared with hardness-modified values (ANZECC 2000) where hardness was measured.');
     return n;
   };
@@ -241,7 +316,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const lvl = blk.level;
       hNum[lvl - 1]++;
       for (let i = lvl; i < 3; i++) hNum[i] = 0;
-      const number = numbering && lvl <= 2 ? hNum.slice(0, lvl).join('.') : undefined;
+      const number = numberHeadings && lvl <= 2 ? hNum.slice(0, lvl).join('.') : undefined;
       nodes.push({ t: 'h', level: lvl, text: fill(blk.text), number });
     },
     text: (blk) => {
@@ -262,7 +337,9 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         { text: e.rule.level },
         { text: String(e.assessed), align: 'right' },
         { text: String(e.exceedances.length), align: 'right', bold: e.exceedances.length > 0 },
-        { text: STATUS_META[e.status].label, bold: true, fill: e.status === 'compliant' ? FILLS.ok : e.status === 'exceeded' ? FILLS.limit : e.status === 'inconclusive' ? FILLS.check : undefined },
+        look.highlight === 'text'
+          ? { text: STATUS_META[e.status].label, bold: e.status === 'exceeded', color: e.status === 'exceeded' ? TEXT_FLAGS.exceed : e.status === 'inconclusive' ? TEXT_FLAGS.check : undefined }
+          : { text: STATUS_META[e.status].label, bold: true, fill: e.status === 'compliant' ? FILLS.ok : e.status === 'exceeded' ? FILLS.limit : e.status === 'inconclusive' ? FILLS.check : undefined },
       ]);
       // size the short columns to their content so headers never break mid-word
       const fs = t.fontSize - 1;
@@ -351,8 +428,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const valueCell = (s: Sample, p: Parameter): Cell => {
         const r = resultOf(s, p.id);
         if (!r) return { text: '–', align: 'center', color: '#999999' };
-        const f = flags.get(r.id);
-        return { text: displayValue(r, p).text, align: 'right', fill: flagFill(f), bold: !!f && f.kind !== 'check' };
+        return { text: displayValue(r, p).text, align: 'right', ...flagged(flags.get(r.id)) };
       };
       const dateHead = (s: Sample) => formatDate(s.date, { format: 'D MMM YYYY' });
       for (const g of groups) {
@@ -508,7 +584,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           { text: first ? r.param.name : '', bold: first },
           { text: first ? unitLabel(r.param.unit) : '' },
           { text: r.site.code },
-          ...shown.map((c) => ({ text: c.get(r), align: 'right' as const, fill: c.key === 'exceed' && r.exceed > 0 ? FILLS.guideline : undefined })),
+          ...shown.map((c) => ({ text: c.get(r), align: 'right' as const, ...(c.key === 'exceed' && r.exceed > 0 ? (look.highlight === 'text' ? { color: TEXT_FLAGS.exceed } : { fill: FILLS.guideline }) : {}) })),
         ];
       });
       nodes.push({
@@ -531,7 +607,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const pids = blk.parameterIds.length ? blk.parameterIds : keyParameters(b, 6);
       const cStart = blk.range === 'all' ? undefined : blk.range === 'years' ? addDays(addMonths(end, -12 * (blk.years ?? 3)), 1) : start;
       const sets = blk.showGuidelines ? setsFor(blk.guidelineSetIds) : [];
-      const size = chartSizeCm(blk, t, orientation);
+      const size = chartSizeCm(blk, t, orientation, geo);
       const figures: Array<{ dataUrl: string; widthCm: number; heightCm: number; caption?: string }> = [];
       for (const pid of pids) {
         const p = b.paramMap.get(pid);
@@ -587,7 +663,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
             { text: unitLabel(p.unit) },
             ...levels.map((l) => ({ text: ruleText(rules, l, p, [site.id]), align: 'center' as const, fill: FILLS.guidelineRow })),
             ...sets.map((s) => ({ text: guidelineText(s, p), align: 'center' as const, fill: FILLS.guidelineRow })),
-            r ? { text: displayValue(r, p).text, align: 'right', fill: flagFill(f), bold: !!f && f.kind !== 'check' } : { text: '–', align: 'center', color: '#999999' },
+            r ? { text: displayValue(r, p).text, align: 'right', ...flagged(f) } : { text: '–', align: 'center', color: '#999999' },
           ];
           if (show.has('previous')) row.push({ text: c?.previous ? `${c.previous.text}\n${formatDate(c.previous.date, { format: 'D MMM YYYY' })}` : '–', align: 'right' });
           if (show.has('change')) {
@@ -655,7 +731,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           return [
             { text: s.code, bold: true },
             { text: String(ss.length), align: 'right' as const },
-            ...(required.size ? [{ text: req ? String(req.required) : '–', align: 'right' as const }, { text: req ? String(req.missed) : '–', align: 'right' as const, fill: req && req.missed ? FILLS.guideline : undefined }] : []),
+            ...(required.size ? [{ text: req ? String(req.required) : '–', align: 'right' as const }, { text: req ? String(req.missed) : '–', align: 'right' as const, ...(req && req.missed ? (look.highlight === 'text' ? { color: TEXT_FLAGS.exceed } : { fill: FILLS.guideline }) : {}) }] : []),
             { text: ss.map((x) => formatDate(x.date, { format: 'DD/MM/YYYY' })).join(', ') },
           ] as Cell[];
         })
@@ -665,6 +741,229 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         return;
       }
       nodes.push({ t: 'table', caption: tableCaption(`Samples collected, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths: required.size ? [width * 0.1, width * 0.1, width * 0.1, width * 0.1, '*'] : [width * 0.12, width * 0.12, '*'], fontSize: t.fontSize - 1 });
+    },
+    letter: (blk) => {
+      const lines = (x?: string) =>
+        fill(x)
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map(inline);
+      const date = lines(blk.date);
+      if (date.length) nodes.push({ t: 'lines', lines: date });
+      const to = lines(blk.to);
+      if (to.length) nodes.push({ t: 'lines', lines: to });
+      else if (opts.preview) nodes.push({ t: 'note', text: 'Who is this letter to? Add their name and address under “Letter” on the Reports tab.' });
+      const subject = fill(blk.subject).trim();
+      if (subject) nodes.push({ t: 'p', runs: inline(subject).map((r) => ({ ...r, bold: true })) });
+      const ref = lines(blk.reference);
+      if (ref.length) nodes.push({ t: 'lines', lines: ref });
+      const greeting = fill(blk.salutation).trim();
+      if (greeting) nodes.push({ t: 'p', runs: inline(greeting) });
+    },
+    roundTable: (blk) => {
+      const chosen = blk.siteIds.length ? b.sites.filter((s) => blk.siteIds.includes(s.id)) : b.sites.filter((s) => s.active);
+      const withData = (s: Sample) => (b.index.bySample.get(s.id)?.length ?? 0) > 0;
+      const plan = chosen
+        .map((site) => {
+          const sample = samplesInPeriod.filter((s) => s.siteId === site.id && withData(s)).reduce<Sample | undefined>((best, s) => (!best || s.date > best.date ? s : best), undefined);
+          const earlier = sample
+            ? b.samples
+                .filter((s) => s.siteId === site.id && s.date < sample.date && withData(s))
+                .sort((x, y) => (x.date < y.date ? 1 : -1))
+                .slice(0, Math.max(0, Math.min(3, blk.previous)))
+            : [];
+          return { site, sample, earlier };
+        })
+        .filter((x) => x.sample || b.samples.some((s) => s.siteId === x.site.id)); // a site never sampled is left out
+      if (!plan.some((x) => x.sample)) {
+        nodes.push({ t: 'p', runs: [{ text: 'No samples were collected in this period.', italic: true }] });
+        return;
+      }
+      // consent exceedances of this round's and the earlier rounds' results (the period's own evaluation covers only the period)
+      const from = plan.flatMap((x) => x.earlier.map((s) => s.date.slice(0, 10))).sort()[0] ?? start;
+      const wide = from < start ? evaluateAll(b, from, end) : evals;
+      const ruleFlags = flagResults(b, wide, [], from < start ? from : start, end);
+      const broken = new Map<string, Array<{ level: string; limit: string }>>();
+      const limitOf = (rule: Rule, limitText: string) =>
+        rule.kind === 'change' ? `${limitText} above ${b.siteMap.get(rule.referenceSiteId ?? '')?.code ?? 'the reference site'}`.trim() : rule.kind === 'consecutive' ? `${limitText}, ${rule.consecutive ?? 2} results in a row` : limitText;
+      for (const ev of wide) for (const ex of ev.exceedances) if (ex.resultId) broken.set(ex.resultId, [...(broken.get(ex.resultId) ?? []), { level: ev.rule.level, limit: limitOf(ev.rule, ex.limitText) }]);
+      const pt = big;
+      const PAD = CELL_PAD_MM;
+      const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+      const linesW = (x: string, bold = false) => Math.max(0, ...x.split('\n').map((line) => textWidthMm(line, pt, bold)));
+      const monthYear = (d: string) => `${MONTH_SHORT[+d.slice(5, 7) - 1]}-${d.slice(2, 4)}`;
+      const title = fill(blk.title);
+      const asHeading = blk.siteLabel === 'heading';
+      const group = heading || title || 'Results';
+      let lastTable: Extract<DocNode, { t: 'table' }> | undefined;
+      let anyFlag = false;
+      const summaryLine = (key: string, auto: string, label: string): DocNode | null => {
+        if (!blk.summaries) return null;
+        commentary.push({ key, label, group, auto });
+        const text = fill(opts.promptTexts?.[key] ?? auto).trim();
+        if (!text) return null;
+        return { t: 'p', runs: /^summary\b/i.test(text) ? inline(text) : [{ text: 'Summary: ', bold: true }, ...inline(text)] };
+      };
+      for (const { site, sample, earlier } of plan) {
+        const name = site.name ? `${site.code} – ${site.name}` : site.code;
+        const key = `${blk.id}:${site.id}`;
+        if (asHeading) nodes.push({ t: 'h', level: 3, text: name });
+        if (!sample) {
+          const auto = 'Not sampled in this round.';
+          if (blk.summaries) {
+            commentary.push({ key, label: `${site.code} – not sampled`, group, auto });
+            const text = fill(opts.promptTexts?.[key] ?? auto).trim();
+            if (text) nodes.push({ t: 'p', runs: asHeading ? inline(text) : [{ text: `${name}: `, bold: true }, ...inline(text)] });
+          } else nodes.push({ t: 'p', runs: asHeading ? [{ text: auto }] : [{ text: `${name}: `, bold: true }, { text: auto }] });
+          continue;
+        }
+        const params = paramList(blk.parameterIds, [sample]);
+        if (!params.length) continue;
+        const rules = blk.ruleColumns === 'none' ? [] : tableRules(blk.ruleColumns, params, [site.id]).filter((r) => !r.siteIds.length || r.siteIds.includes(site.id));
+        const levels = ruleLevels(rules).filter((l) => params.some((p) => ruleText(rules, l, p, [site.id])));
+        const siteRules = b.rules.filter((r) => r.active && RULE_COLUMN_KINDS.has(r.kind) && (!r.siteIds.length || r.siteIds.includes(site.id)));
+        const rounds = [sample, ...earlier];
+        let labels = rounds.map((s) => monthYear(s.date));
+        if (new Set(labels).size < labels.length) labels = rounds.map((s) => formatDate(s.date, { format: 'D MMM YYYY' }));
+        const head: Cell[] = [
+          { text: 'Parameter' },
+          { text: 'Unit' },
+          ...labels.map((text) => ({ text, align: 'center' as const })),
+          ...levels.map((text) => ({ text, align: 'center' as const })),
+          ...(blk.comment ? [{ text: 'Comment' }] : []),
+        ];
+        type Fact = { p: Parameter; trend: string; status: 'exceed' | 'ok' | 'check' | 'none'; value: string; broken: Array<{ level: string; limit: string }>; again: boolean; change?: number; record: boolean };
+        const facts: Fact[] = [];
+        const body: Cell[][] = params.map((p) => {
+          const cur = resultOf(sample, p.id);
+          const prev = earlier.map((s) => resultOf(s, p.id));
+          const row: Cell[] = [{ text: p.name }, { text: unitLabel(p.unit) }];
+          for (const r of [cur, ...prev]) {
+            const f = r ? ruleFlags.get(r.id) : undefined;
+            if (f) anyFlag = true;
+            row.push(r ? { text: displayValue(r, p).text, align: 'right', ...flagged(f) } : { text: '–', align: 'center', color: '#999999' });
+          }
+          for (const l of levels) row.push({ text: ruleText(rules, l, p, [site.id]), align: 'center', fill: FILLS.guidelineRow });
+          const f = cur ? ruleFlags.get(cur.id) : undefined;
+          const status: Fact['status'] = !cur ? 'none' : f?.kind === 'limit' || f?.kind === 'guideline' ? 'exceed' : f?.kind === 'check' ? 'check' : siteRules.some((r) => r.parameterId === p.id) ? 'ok' : 'none';
+          const trend = cur ? trendOf(cur, prev[0], p) : '';
+          const comment = [trend, status === 'exceed' ? 'Exceedance' : status === 'check' ? 'Detection limit above the trigger' : status === 'ok' ? 'Compliant' : ''].filter(Boolean).join(' – ');
+          if (blk.comment) row.push({ text: comment, ...(status === 'exceed' || status === 'check' ? flagged(f) : {}) });
+          if (cur) {
+            const c = reviewCell(b, sample, p);
+            facts.push({ p, trend, status, value: `${displayValue(cur, p).text} ${unitLabel(p.unit)}`.trim(), broken: broken.get(cur.id) ?? [], again: !!(prev[0] && ruleFlags.get(prev[0].id)?.kind !== undefined && ruleFlags.get(prev[0].id)?.kind !== 'check'), change: c?.change, record: c?.record === 'high' });
+          }
+          return row;
+        });
+        const widths: Array<number | '*'> = head.map((h, k) => {
+          if (blk.comment && k === head.length - 1) return '*';
+          const content = Math.max(...body.map((row) => linesW(row[k].text)));
+          const need = Math.max(Math.max(...h.text.split(' ').map((w) => textWidthMm(w, pt, true))), content) + PAD + 0.8;
+          return k === 0 ? clamp(need, 26, 46) : k === 1 ? clamp(need, 9, 20) : clamp(need, 11, 26);
+        });
+        const table: Extract<DocNode, { t: 'table' }> = {
+          t: 'table',
+          caption: asHeading ? undefined : tableCaption(`${title ? `${title} – ` : ''}${name}, ${formatDate(sample.date, { format: 'D MMM YYYY' })}`),
+          head: [head],
+          body,
+          widths,
+          fontSize: pt,
+        };
+        nodes.push(table);
+        lastTable = table;
+        const line = summaryLine(key, siteSummary(facts), `${site.code} – summary`);
+        if (line) nodes.push(line);
+      }
+      if (lastTable) {
+        const notes = ['“<” indicates a result below the laboratory detection limit.'];
+        if (anyFlag) notes.push(look.highlight === 'text' ? 'Red = a consent limit (bold) or trigger level exceeded.' : 'Shading: red = consent limit exceeded; amber = trigger level exceeded; purple = detection limit above the limit.');
+        if (blk.comment) notes.push("Comment: the change since the previous round, and whether the result complies with the site's consent limits and trigger levels.");
+        lastTable.notes = notes;
+      }
+    },
+    triggerTable: (blk) => {
+      const sites = blk.siteIds.length ? b.sites.filter((s) => blk.siteIds.includes(s.id)) : b.sites.filter((s) => s.active);
+      const ofLevel = (l: string) => blk.levels === 'all' || (blk.levels === 'limits' ? isLimitLevel(l) : !isLimitLevel(l));
+      const rules = b.rules.filter((r) => r.active && RULE_COLUMN_KINDS.has(r.kind) && !!r.parameterId && b.paramMap.has(r.parameterId) && ofLevel(r.level) && (!r.siteIds.length || r.siteIds.some((id) => sites.some((s) => s.id === id))));
+      const what = blk.levels === 'limits' ? 'Consent limits' : blk.levels === 'triggers' ? 'Trigger levels' : 'Consent limits and trigger levels';
+      if (!rules.length) {
+        nodes.push({ t: 'p', runs: [{ text: `No ${what.toLowerCase()} have been set up for this project.`, italic: true }] });
+        return;
+      }
+      const params = b.params.filter((p) => rules.some((r) => r.parameterId === p.id));
+      const levels = ruleLevels(rules);
+      const showLevel = levels.length > 1;
+      const perSite = rules.some((r) => r.siteIds.length);
+      const cols = perSite ? sites.filter((s) => rules.some((r) => !r.siteIds.length || r.siteIds.includes(s.id))) : [];
+      const at = (site: Site) => rules.filter((r) => !r.siteIds.length || r.siteIds.includes(site.id));
+      const pt = big;
+      const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+      const paramW = clamp(Math.max(...params.map((p) => textWidthMm(p.name, pt))) + CELL_PAD_MM, 26, 46);
+      const unitW = clamp(Math.max(...params.map((p) => textWidthMm(unitLabel(p.unit), pt))) + CELL_PAD_MM, 9, 20);
+      const levelW = showLevel ? clamp(Math.max(...levels.map((l) => textWidthMm(l, pt, true))) + CELL_PAD_MM, 12, 24) : 0;
+      // the sites go across; as many to a table as fit
+      const perTable = perSite ? Math.max(1, Math.floor((width - paramW - unitW - levelW) / 15)) : 1;
+      const parts = perSite ? chunk(cols, Math.ceil(cols.length / Math.ceil(cols.length / perTable))) : [[]];
+      parts.forEach((part, i) => {
+        const head: Cell[] = [{ text: 'Parameter' }, { text: 'Unit' }, ...(showLevel ? [{ text: 'Level' }] : []), ...(perSite ? part.map((s) => ({ text: s.code, align: 'center' as const })) : [{ text: levels[0], align: 'center' as const }])];
+        const body: Cell[][] = [];
+        for (const p of params)
+          for (const l of levels) {
+            const values = perSite ? part.map((s) => ruleText(at(s), l, p, [s.id])) : [ruleText(rules, l, p, [])];
+            if (values.every((v) => !v)) continue;
+            body.push([{ text: p.name }, { text: unitLabel(p.unit) }, ...(showLevel ? [{ text: l }] : []), ...values.map((v) => (v ? { text: v, align: 'center' as const } : { text: '–', align: 'center' as const, color: '#999999' }))]);
+          }
+        const rest = (width - paramW - unitW - levelW) / Math.max(1, head.length - (showLevel ? 3 : 2));
+        const bracketed = body.some((row) => row.some((c) => c.text.includes('(')));
+        nodes.push({
+          t: 'table',
+          caption: tableCaption(`${fill(blk.title) || what}${parts.length > 1 ? ` (${i + 1} of ${parts.length})` : ''}`),
+          head: [head],
+          body,
+          widths: [paramW, unitW, ...(showLevel ? [levelW] : []), ...head.slice(showLevel ? 3 : 2).map(() => Math.min(rest, 40))],
+          fontSize: pt,
+          notes: i === parts.length - 1 && bracketed ? ['Values in brackets are assessed on a statistic or consecutive results.'] : undefined,
+        });
+      });
+    },
+    figures: (blk) => {
+      const images = [...blk.images, ...(opts.figures?.[blk.id] ?? [])].filter((im) => im.src);
+      if (!images.length) {
+        if (opts.preview) nodes.push({ t: 'note', text: 'Figures: no images yet – add them on the Reports tab under “Figures for this report”.' });
+        return;
+      }
+      const perRow = Math.max(1, Math.min(4, Math.round(blk.perRow) || 1));
+      const gapMm = 5;
+      const colWidthMm = (width - gapMm * (perRow - 1)) / perRow;
+      const maxH = usableHeightMm(t, orientation, geo) * (perRow === 1 ? 0.7 : 0.45); // room for captions, and a row stays on one page
+      const label = blk.label.trim() || 'Figure';
+      const group = blk.numbering === 'group';
+      const groupNo = group && numbering ? `${label} ${nextNumber(label)}` : '';
+      const items = images.map((im, i) => {
+        const px = imageSize(im.src);
+        const aspect = px ? px.height / px.width : 0.75;
+        let w = colWidthMm;
+        let h = w * aspect;
+        if (blk.heightMm > 0 && blk.heightMm < h) [h, w] = [blk.heightMm, blk.heightMm / aspect];
+        if (h > maxH) [h, w] = [maxH, maxH / aspect];
+        const text = fill(im.caption).trim();
+        let caption: string | undefined;
+        if (group) {
+          const sub = `(${String.fromCharCode(97 + (i % 26))})`;
+          caption = text ? `${sub} ${text}` : sub;
+          if (im.ref) refs.set(`fig:${im.ref}`, groupNo ? `${groupNo}${sub}` : sub);
+        } else if (blk.numbering === 'each' && numbering) {
+          const n = `${label} ${nextNumber(label)}`;
+          caption = text ? `${n}${capSep}${text}` : n;
+          if (im.ref) refs.set(`fig:${im.ref}`, n);
+          if (blk.ref && !refs.has(`fig:${blk.ref}`)) refs.set(`fig:${blk.ref}`, n);
+        } else caption = text || undefined;
+        return { dataUrl: im.src, widthMm: w, heightMm: h, caption };
+      });
+      const groupText = fill(blk.caption).trim();
+      if (group && groupNo && blk.ref) refs.set(`fig:${blk.ref}`, groupNo);
+      nodes.push({ t: 'gallery', perRow, colWidthMm, gapMm, border: !!blk.border, items, caption: group ? [groupNo, groupText].filter(Boolean).join(groupNo && groupText ? capSep : '') || undefined : undefined });
     },
     signatures: (blk) => {
       const items = blk.signatories
@@ -679,12 +978,17 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           return { role: fill(s.role).trim(), name: (s.self ? settings.author : fill(s.name)).trim(), lines, date: date || undefined, image };
         })
         .filter((s) => s.name || s.lines.length || s.image); // nobody named yet
-      if (!items.length) return;
+      const closing = fill(blk.closing).trim();
+      if (!items.length) {
+        if (closing) nodes.push({ t: 'p', runs: inline(closing) });
+        return;
+      }
       const cols = Math.min(3, items.length);
       const colWidthMm = Math.min(80, (width - SIGN_GAP_MM * (cols - 1)) / cols);
       const imageHeightMm = Math.min(40, Math.max(8, blk.imageHeightMm ?? DEFAULT_SIGNATURE_MM)); // also while a size is being typed
       nodes.push({
         t: 'signatures',
+        closing: closing ? inline(closing) : undefined,
         cols,
         colWidthMm,
         imageHeightMm,
@@ -699,20 +1003,101 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     // a new page where the orientation changes (a page break block always starts one)
     if (blk.type === 'pageBreak' || pages[i] !== orientation) nodes.push({ t: 'pagebreak', orientation: pages[i] });
     orientation = pages[i];
-    width = usableWidthMm(t, orientation);
+    width = usableWidthMm(t, orientation, geo);
+    if (blk.type === 'heading') heading = fill(blk.text);
+    current = blk;
     const h = blockHandlers[blk.type] as (x: ReportBlock) => void;
     h(blk);
   });
+  resolveRefs(nodes, refs);
+  // placeholders in the letterhead's lines, e.g. {{company}} in a footer ({page} is left for the page number)
+  const shownLetterhead: Letterhead | undefined = letterhead && {
+    ...letterhead,
+    ...Object.fromEntries(
+      (['first', 'other'] as const).map((pg) => [
+        pg,
+        Object.fromEntries((['header', 'footer'] as const).map((part) => [part, letterhead[pg][part].map((it) => (it.kind === 'text' ? { ...it, runs: it.runs.map((r) => ({ ...r, text: fill(r.text) })) } : it))])),
+      ]),
+    ),
+  };
 
   return {
     template: t,
     nodes,
+    page: geo,
+    look,
+    letterhead: shownLetterhead,
+    commentary,
     header: fill(t.headerText),
     footer: fill(t.footerText),
     title: `${project.name} – ${t.name}`,
     author: settings.author || settings.company,
     fileName: `${project.name} - ${t.name} - ${wholeMonth(shownStart, shownEnd) ? monthLabel(shownStart, shownEnd) : `${formatDate(shownStart, { format: 'D MMM YYYY' })} to ${formatDate(shownEnd, { format: 'D MMM YYYY' })}`}`.replace(/[\\/:*?"<>|]+/g, '-'),
   };
+}
+
+/** How a result compares with the previous round's: Increase, Decrease, Stable (also when both are below detection) or First result. */
+export function trendOf(r: Result, prev: Result | undefined, p: Parameter): string {
+  if (!prev) return 'First result';
+  const [a, z] = [displayValue(r, p), displayValue(prev, p)];
+  if (a.text === z.text || (r.qualifier === '<' && prev.qualifier === '<')) return 'Stable';
+  if (a.value === null || z.value === null) return '';
+  return a.value > z.value ? 'Increase' : a.value < z.value ? 'Decrease' : 'Stable';
+}
+
+/** A first draft of the summary under a site's table, from its results this round. */
+export function siteSummary(facts: Array<{ p: Parameter; trend: string; status: 'exceed' | 'ok' | 'check' | 'none'; value: string; broken: Array<{ level: string; limit: string }>; again: boolean; change?: number; record: boolean }>): string {
+  const out: string[] = [];
+  const ex = facts.filter((f) => f.status === 'exceed');
+  for (const f of ex) {
+    const first = f.broken[0];
+    const what = first ? `the ${first.level.toLowerCase()}${first.limit ? ` (${first.limit})` : ''}` : 'its trigger';
+    out.push(`${f.p.name} (${f.value}) ${f.again ? 'continues to exceed' : 'exceeded'} ${what}.`);
+  }
+  const ruled = facts.filter((f) => f.status !== 'none');
+  if (ruled.length) out.push(ex.length ? (ruled.length > ex.length ? 'All other parameters remain compliant.' : '') : 'All parameters remain compliant.');
+  const up = facts.filter((f) => f.status !== 'exceed' && f.trend === 'Increase' && (f.change ?? 0) >= 25);
+  if (up.length) out.push(`${listText(up.slice(0, 4).map((f) => f.p.name))}${up.length > 4 ? ' and others' : ''} increased since the previous round${ruled.some((f) => up.includes(f)) ? ', but remain below their trigger levels' : ''}.`);
+  const highs = facts.filter((f) => f.record);
+  if (highs.length) out.push(`${listText(highs.slice(0, 3).map((f) => f.p.name))} ${highs.length === 1 ? 'was the highest result' : 'were the highest results'} on record at this site.`);
+  return out.filter(Boolean).join(' ');
+}
+
+/** "{{fig:site-plan}}" → "Figure 2" and "{{table:triggers}}" → "Table 1" everywhere in the report ("Figure ?" when no such name). */
+function resolveRefs(nodes: DocNode[], refs: Map<string, string>): void {
+  const re = /\{\{\s*(fig|table):([\w.-]+)\s*\}\}/g;
+  const fix = (text: string) => (text.includes('{{') ? text.replace(re, (_, kind: string, name: string) => refs.get(`${kind}:${name}`) ?? (kind === 'fig' ? 'Figure ?' : 'Table ?')) : text);
+  const fixRuns = (rs: Run[]) => rs.forEach((r) => (r.text = fix(r.text)));
+  for (const n of nodes) {
+    switch (n.t) {
+      case 'p':
+        fixRuns(n.runs);
+        break;
+      case 'ul':
+        n.items.forEach(fixRuns);
+        break;
+      case 'lines':
+        n.lines.forEach(fixRuns);
+        break;
+      case 'h':
+        n.text = fix(n.text);
+        break;
+      case 'note':
+        n.text = fix(n.text);
+        break;
+      case 'table':
+        if (n.caption) n.caption = fix(n.caption);
+        n.notes = n.notes?.map(fix);
+        break;
+      case 'image':
+        if (n.caption) n.caption = fix(n.caption);
+        break;
+      case 'gallery':
+        if (n.caption) n.caption = fix(n.caption);
+        n.items.forEach((it) => it.caption && (it.caption = fix(it.caption)));
+        break;
+    }
+  }
 }
 
 /** Scheduled sampling rounds per site that fall wholly inside the period. */

@@ -10,6 +10,7 @@ import { useSettings } from '../hooks/useSettings';
 import { PageHeader } from '../components/common';
 import type { Settings } from '../db/types';
 import { SignatureInput, myDetails } from '../components/report/Signatures';
+import { LetterheadCard } from '../components/report/Letterhead';
 
 function fmtBytes(n?: number) {
   if (!n) return '—';
@@ -101,6 +102,8 @@ export function SettingsPage() {
         </SimpleGrid>
       </Card>
 
+      <LetterheadCard />
+
       <Card>
         <Group gap="xs" mb={4}>
           <IconShieldLock size={20} />
@@ -151,7 +154,7 @@ export function SettingsPage() {
               Backup file
             </Text>
             <Text size="sm" c="dimmed" mb="sm">
-              Download everything as one file, or restore from a backup / autosave file. Last backup: {settings.lastBackupAt ? new Date(settings.lastBackupAt).toLocaleString('en-NZ') : 'never'}.
+              Download everything as one file – projects, data, templates, report commentary and figures, and these settings (your signature and letterhead included) – or restore from a backup / autosave file. Last backup: {settings.lastBackupAt ? new Date(settings.lastBackupAt).toLocaleString('en-NZ') : 'never'}.
             </Text>
             <Group gap="xs">
               <Button leftSection={<IconDatabaseExport size={16} />} onClick={() => downloadWorkspaceBackup()}>

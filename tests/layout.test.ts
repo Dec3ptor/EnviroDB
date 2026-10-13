@@ -3,7 +3,6 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import pdfMake from 'pdfmake/build/pdfmake';
 import vfs from 'pdfmake/build/vfs_fonts';
 import JSZip from 'jszip';
-import zlib from 'node:zlib';
 import { imageSize } from '../src/lib/image';
 import { DEFAULT_SETTINGS, ensureBuiltIns } from '../src/db/db';
 import { createDemoProject } from '../src/db/demo';
@@ -14,7 +13,7 @@ import { reportPeriodLabel } from '../src/lib/latest';
 import { toPdfDefinition } from '../src/reports/pdf';
 import { docxBlob } from '../src/reports/docx';
 import type { ReportDoc } from '../src/reports/model';
-import { loadBundle } from './helpers';
+import { loadBundle, png } from './helpers';
 import { hasMixedPages, moveSection, samePages, setPages, stepSection } from '../src/components/report/sections';
 
 const pm = pdfMake as unknown as { vfs: Record<string, string>; createPdf: (dd: unknown) => { getBuffer: (cb: (b: Uint8Array) => void) => void } };
@@ -185,26 +184,6 @@ describe('editing the layout', () => {
 });
 
 /** A real PNG of the given size (white). */
-function png(width: number, height: number): string {
-  const crc = (buf: Buffer) => zlib.crc32(buf);
-  const chunk = (type: string, data: Buffer) => {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length);
-    const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-    const c = Buffer.alloc(4);
-    c.writeUInt32BE(crc(td) >>> 0);
-    return Buffer.concat([len, td, c]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // RGB
-  const rows = Buffer.alloc((width * 3 + 1) * height, 0xff);
-  for (let y = 0; y < height; y++) rows[y * (width * 3 + 1)] = 0; // filter byte
-  const file = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
-  return `data:image/png;base64,${file.toString('base64')}`;
-}
 
 describe('title page logo', () => {
   it('reads PNG and JPEG sizes', () => {

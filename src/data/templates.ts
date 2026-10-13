@@ -113,6 +113,69 @@ const notification: ReportBlock[] = [
   signOff('n'),
 ];
 
+// ---------------------------------------------------------------- letters on the letterhead (fixed ids: commentary is saved against them)
+
+/** A letter's sign-off: a closing line and your signature from Settings. */
+const letterSign = (key: string, closing: string): ReportBlock => ({ id: `${key}-sign`, type: 'signatures', closing, signatories: [{ id: `${key}-sign-1`, role: '', self: true, name: '', details: '' }] });
+
+const letterAnnual: ReportBlock[] = [
+  { id: 'la-letter', type: 'letter', date: '{{today}}', to: '{{project.recipient}}', subject: '{{project.name}} – Annual Monitoring Report – Consent {{project.consents}}', reference: 'Ref: {{project.code}}', salutation: '{{project.salutation}}' },
+  {
+    id: 'la-intro',
+    type: 'text',
+    text: 'This annual report of environmental monitoring at {{project.name}} covers the period {{period.start}} to {{period.end}}, as required by resource consent {{project.consents}} issued by {{project.regulator}}. The results are summarised below; the complete results and laboratory reports are attached.',
+    prompt: true,
+  },
+  { id: 'la-h-consents', type: 'heading', text: 'Consents', level: 1 },
+  {
+    id: 'la-consents',
+    type: 'text',
+    text: '{{project.client}} holds resource consent {{project.consents}} for {{project.name}}. Describe each consent and the conditions that require this report here.\n\n> Quote the consent condition that requires this report here.',
+    prompt: true,
+  },
+  { id: 'la-h-sites', type: 'heading', text: 'Monitoring locations', level: 1 },
+  { id: 'la-sites', type: 'siteTable' },
+  { id: 'la-h-sampling', type: 'heading', text: 'Monitoring undertaken', level: 1 },
+  { id: 'la-summary', type: 'summary' },
+  { id: 'la-sampling', type: 'samplingTable' },
+  { id: 'la-h-triggers', type: 'heading', text: 'Trigger levels', level: 1 },
+  { id: 'la-triggers-text', type: 'text', text: 'The consent limits and trigger levels the results are assessed against are given in {{table:triggers}}.', prompt: true },
+  { id: 'la-triggers', type: 'triggerTable', title: '', siteIds: [], levels: 'all', ref: 'triggers' },
+  { id: 'la-h-results', type: 'heading', text: 'Results and discussion', level: 1 },
+  { id: 'la-compliance', type: 'complianceTable', ruleIds: [] },
+  { id: 'la-exceedances', type: 'exceedances', ruleIds: [], includeGuidelines: false, includeNotes: true },
+  { id: 'la-h-sitesresults', type: 'heading', text: 'Results by site', level: 2 },
+  { id: 'la-rounds', type: 'roundTable', title: 'Results', siteIds: [], parameterIds: [], previous: 3, ruleColumns: 'all', comment: true, summaries: true, siteLabel: 'caption' },
+  { id: 'la-h-trends', type: 'heading', text: 'Long-term trends', level: 2 },
+  { id: 'la-trends', type: 'chart', parameterIds: [], siteIds: [], range: 'all', showGuidelines: false, guidelineSetIds: null, showRules: true, logScale: false, size: 'full', aspect: 0.45, widthCm: 16, heightCm: 7.2, caption: '', markPeriod: true },
+  { id: 'la-figures', type: 'figures', images: [], perRow: 2, heightMm: 0, numbering: 'each', label: 'Figure', caption: '', border: false },
+  { id: 'la-h-summary', type: 'heading', text: 'Summary', level: 1 },
+  { id: 'la-summary-text', type: 'text', text: '- Monitoring was carried out as the consent requires.\n- Add the key findings for the year here.', prompt: true },
+  letterSign('la', 'Kind regards,'),
+  { id: 'la-attached', type: 'text', text: '**Attachments:**\n- Site plan\n- Laboratory results\n- Results spreadsheet', prompt: true },
+  { id: 'la-h-appendix', type: 'heading', text: 'Appendix – Monitoring results', level: 1, pages: 'landscape' },
+  { id: 'la-appendix', type: 'resultsTable', title: 'Monitoring results', siteIds: [], parameterIds: [], layout: 'parametersAsRows', guidelineSetIds: null, ruleColumns: 'all', highlight: true, splitBySite: true },
+];
+
+const letterEvent: ReportBlock[] = [
+  { id: 'le-letter', type: 'letter', date: '{{today}}', to: '{{project.recipient}}', subject: '{{project.name}}: consent {{project.consents}}: Compliance Monitoring – {{period.month}}', reference: 'Project ref: {{project.code}}', salutation: '{{project.salutation}}' },
+  {
+    id: 'le-intro',
+    type: 'text',
+    text: 'The routine monitoring round for {{project.name}} was carried out in {{period.month}} as required by consent {{project.consents}}. Each site’s results are compared below with the previous round and the consent trigger levels.',
+    prompt: true,
+  },
+  { id: 'le-rounds', type: 'roundTable', title: '', siteIds: [], parameterIds: [], previous: 1, ruleColumns: 'all', comment: true, summaries: true, siteLabel: 'heading' },
+  { id: 'le-figures', type: 'figures', images: [], perRow: 2, heightMm: 0, numbering: 'each', label: 'Figure', caption: '', border: false },
+  { id: 'le-h-summary', type: 'heading', text: 'Summary', level: 1 },
+  { id: 'le-summary-text', type: 'text', text: 'Add an overall summary of the round here – which sites remain compliant, any exceedances and their follow-up. The next monitoring round is scheduled for …', prompt: true },
+  letterSign('le', 'Kind regards,'),
+  { id: 'le-attached', type: 'text', text: '**Attachments:**\n- Laboratory results\n- Results spreadsheet\n\n**CC:** {{project.regulator}}', prompt: true },
+];
+
+/** Letters print on the letterhead in Settings: headings in its colour, grey table headers, exceedances in red. */
+const letter = { ...base, style: 'letter' as const, letterhead: true, tableHeader: 'grey' as const, highlightStyle: 'text' as const, numbering: true, numberHeadings: false, headerText: '', footerText: '{{company}}' };
+
 const appendix: ReportBlock[] = [
   { id: id('d'), type: 'heading', text: 'Appendix – Monitoring data', level: 1 },
   { id: id('d'), type: 'resultsTable', title: 'All results', siteIds: [], parameterIds: [], layout: 'parametersAsRows', guidelineSetIds: null, ruleColumns: 'all', highlight: true, splitBySite: true },
@@ -128,6 +191,21 @@ export const BUILT_IN_TEMPLATES: ReportTemplate[] = [
     name: 'Monitoring round summary',
     description: "One monitoring round, titled by its month, with each result compared with limits, guidelines and the site's earlier results.",
     blocks: round,
+    period: 'latestRound',
+  },
+  {
+    ...letter,
+    id: 'tpl-letter-annual',
+    name: 'Annual report (letter)',
+    description: 'An annual report as a letter on your letterhead: consents, monitoring locations and programme, trigger levels, results by site with comments, long-term graphs, figures, summary and sign-off.',
+    blocks: letterAnnual,
+  },
+  {
+    ...letter,
+    id: 'tpl-letter-event',
+    name: 'Monitoring event report (letter)',
+    description: "One monitoring round as a letter on your letterhead, titled by its month: each site's results beside the previous round and its triggers, with a comment and a summary per site, figures and sign-off.",
+    blocks: letterEvent,
     period: 'latestRound',
   },
   { ...base, id: 'tpl-notification', name: 'Exceedance notification', description: 'Brief notification to the regulator listing exceedances and actions taken.', blocks: notification },

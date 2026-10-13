@@ -1,6 +1,7 @@
 import Dexie from 'dexie';
-import { db, DATA_TABLES, ensureBuiltIns, saveSettings, type DataTable } from './db';
-import type { Project } from './types';
+import { db, DATA_TABLES, DEFAULT_SETTINGS, ensureBuiltIns, REPORT_WORK, saveSettings, type DataTable } from './db';
+import type { MetaRecord, Project, Settings } from './types';
+import { onSaveableChange } from './changes';
 import { uid } from '../lib/ids';
 import { todayStr } from '../lib/dates';
 
@@ -13,18 +14,46 @@ export interface WorkspaceBackup {
   version: number;
   exportedAt: string;
   data: Partial<Record<DataTable, unknown[]>>;
+  /** Workspace backups: report work (commentary, figures, layout changes, site choices) and the settings. */
+  meta?: MetaRecord[];
 }
 
 export async function exportWorkspace(): Promise<WorkspaceBackup> {
   const data: WorkspaceBackup['data'] = {};
-  await db.transaction('r', DATA_TABLES.map((t) => db.table(t)), async () => {
+  let meta: MetaRecord[] = [];
+  await db.transaction('r', [...DATA_TABLES.map((t) => db.table(t)), db.meta], async () => {
     for (const t of DATA_TABLES) {
       let rows = await db.table(t).toArray();
       if (t === 'guidelineSets' || t === 'templates') rows = rows.filter((r: { builtIn?: boolean }) => !r.builtIn);
       data[t] = rows;
     }
+    meta = (await db.meta.toArray()).filter((r) => r.key === 'settings' || REPORT_WORK.test(r.key));
   });
-  return { app: BACKUP_APP, kind: 'workspace', version: BACKUP_VERSION, exportedAt: new Date().toISOString(), data };
+  return { app: BACKUP_APP, kind: 'workspace', version: BACKUP_VERSION, exportedAt: new Date().toISOString(), data, meta };
+}
+
+/**
+ * Put back a backup's report work and settings. Replace: as they were saved. Merge: report work from the backup is
+ * added (and wins for the same report); your current settings stay, with any that are blank filled in.
+ */
+async function restoreMeta(meta: MetaRecord[] | undefined, mode: 'replace' | 'merge'): Promise<void> {
+  if (!Array.isArray(meta)) return;
+  const work = meta.filter((r) => r && typeof r.key === 'string' && REPORT_WORK.test(r.key));
+  const saved = meta.find((r) => r?.key === 'settings')?.value as Partial<Settings> | undefined;
+  await db.transaction('rw', db.meta, async () => {
+    if (mode === 'replace') {
+      const old = (await db.meta.toCollection().primaryKeys()).filter((k) => typeof k === 'string' && REPORT_WORK.test(k));
+      await db.meta.bulkDelete(old);
+    }
+    if (work.length) await db.meta.bulkPut(work);
+    if (saved && typeof saved === 'object') {
+      const cur = { ...DEFAULT_SETTINGS, ...((await db.meta.get('settings'))?.value as Partial<Settings> | undefined) };
+      const blank = (v: unknown) => v === undefined || v === null || v === '';
+      const next: Record<string, unknown> = mode === 'replace' ? { ...DEFAULT_SETTINGS, ...saved, lastBackupAt: cur.lastBackupAt } : { ...cur };
+      if (mode === 'merge') for (const [k, v] of Object.entries(saved)) if (blank((cur as Record<string, unknown>)[k]) && !blank(v)) next[k] = v;
+      await db.meta.put({ key: 'settings', value: next });
+    }
+  });
 }
 
 export function downloadBlob(blob: Blob, fileName: string) {
@@ -77,6 +106,7 @@ export async function restoreWorkspace(obj: unknown, mode: 'replace' | 'merge'):
       if (Array.isArray(rows) && rows.length) await db.table(t).bulkPut(rows);
     }
   });
+  await restoreMeta(obj.meta, mode);
   await ensureBuiltIns();
 }
 
@@ -272,10 +302,12 @@ export async function initAutosave(): Promise<void> {
   } catch {
     setState({ status: 'off' });
   }
-  // Save whenever any data table changes (ignore the meta table, which autosave itself writes).
+  // Save whenever any data table changes (ignore the meta table, which autosave itself writes), and when report
+  // work or settings are saved.
   Dexie.on('storagemutated', (parts) => {
     if (Object.keys(parts).some((k) => !k.includes('/meta/') && /\/(projects|sites|parameters|samples|results|guidelineSets|rules|notes|schedules|obligations|imports|templates)\//.test(k))) scheduleAutosave();
   });
+  onSaveableChange(() => scheduleAutosave());
 }
 
 export async function regrantAutosave(): Promise<void> {

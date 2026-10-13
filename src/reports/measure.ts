@@ -30,5 +30,17 @@ export function longestWordMm(text: string, pt: number, bold = false): number {
   return Math.max(0, ...text.split(/\s+/).map((w) => textWidthMm(w, pt, bold)));
 }
 
+/**
+ * How much wider than Roboto a font named in Word documents sets text, so columns sized for the PDF don't wrap in
+ * Word (Montserrat, for one, is much wider).
+ */
+export function fontWidthFactor(font?: string): number {
+  if (!font) return 1;
+  if (/montserrat|verdana|tahoma/i.test(font)) return 1.2;
+  if (/arial|helvetica|segoe|open sans|lato|source sans/i.test(font)) return 1.06;
+  if (/calibri|carlito|aptos|roboto/i.test(font)) return 1;
+  return 1.1;
+}
+
 /** Cell padding + borders used by the PDF and Word renderers (mm). */
 export const CELL_PAD_MM = 2.4;

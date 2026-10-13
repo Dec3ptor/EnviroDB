@@ -228,7 +228,7 @@ export function SetupTab() {
             Save
           </Button>
         </Group>
-        <ProjectForm value={p} onChange={setP} />
+        <ProjectForm value={p} onChange={setP} letters />
         <Textarea
           mt="sm"
           label="Other consent requirements"

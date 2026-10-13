@@ -1,6 +1,7 @@
 import type { Content, TDocumentDefinitions, TableCell } from 'pdfmake/interfaces';
+import type { LetterheadItem } from '../db/types';
 import type { Cell, DocNode, ReportDoc, Run } from './model';
-import { CHART_GAP_MM, SIGN_GAP_MM, type Orientation } from './build';
+import { CHART_GAP_MM, SIGN_GAP_MM, pageSizeMm, type Orientation } from './build';
 import { downloadBlob } from '../db/backup';
 
 const MM = 2.834645669; // points per mm
@@ -29,22 +30,34 @@ async function loadPdfMake(): Promise<PdfMake> {
 
 const runs = (rs: Run[]) => rs.map((r) => ({ text: r.text, bold: r.bold, italics: r.italic }));
 
-function cell(c: Cell, header: boolean, accent: string): TableCell {
+/** Table header rows: the accent colour with white text, light grey, or dark grey with white text. */
+function headerLook(doc: ReportDoc): { fill: string; color: string } {
+  switch (doc.look.tableHeader) {
+    case 'grey':
+      return { fill: '#EDEDED', color: '#1F1F1F' };
+    case 'dark':
+      return { fill: '#595959', color: '#FFFFFF' };
+    default:
+      return { fill: doc.look.accent, color: '#FFFFFF' };
+  }
+}
+
+function cell(c: Cell, header: boolean, look: { fill: string; color: string }): TableCell {
   return {
     text: c.text,
     bold: header || c.bold,
     italics: c.italic,
-    fillColor: header ? accent : c.fill,
-    color: header ? '#ffffff' : c.color,
+    fillColor: header ? look.fill : c.fill,
+    color: header ? look.color : c.color,
     alignment: c.align,
     colSpan: c.colSpan,
   } as TableCell;
 }
 
-function rowCells(row: Cell[], header: boolean, accent: string): TableCell[] {
+function rowCells(row: Cell[], header: boolean, look: { fill: string; color: string }): TableCell[] {
   const out: TableCell[] = [];
   for (let i = 0; i < row.length; i++) {
-    out.push(cell(row[i], header, accent));
+    out.push(cell(row[i], header, look));
     const span = row[i].colSpan ?? 1;
     for (let k = 1; k < span; k++) out.push({} as TableCell);
     i += span - 1;
@@ -69,6 +82,8 @@ function fitWidths(widths: Array<number | '*' | 'auto'>, contentWidthPt: number)
 
 function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Content[] {
   const t = doc.template;
+  const letter = doc.look.style === 'letter';
+  const gap = letter ? 8 : 6; // space after a paragraph
   switch (n.t) {
     case 'title': {
       const out: Content[] = [];
@@ -89,11 +104,13 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
     case 'h':
       return [{ text: `${n.number ? `${n.number}  ` : ''}${n.text}`, style: `h${n.level}`, headlineLevel: n.level } as Content];
     case 'p':
-      return [{ text: runs(n.runs), margin: [0, 0, 0, 6] }];
+      return n.quote ? [{ text: runs(n.runs), italics: true, margin: [5 * MM, 0, 0, gap] }] : [{ text: runs(n.runs), margin: [0, 0, 0, gap] }];
+    case 'lines':
+      return [{ stack: n.lines.map((l) => ({ text: runs(l) })), margin: [0, 0, 0, gap], unbreakable: true } as Content];
     case 'ul':
-      return [{ ul: n.items.map((it) => ({ text: runs(it) })), margin: [0, 0, 0, 6] }];
+      return [{ ul: n.items.map((it) => ({ text: runs(it) })), margin: [0, 0, 0, gap] }];
     case 'note':
-      return [{ text: n.text, style: 'note' }];
+      return [{ text: n.text, style: 'note', margin: [0, 0, 0, 6] }];
     case 'pagebreak':
       return []; // applied to the content that follows (see toPdfDefinition)
     case 'image': {
@@ -104,8 +121,8 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
       return [{ stack: out, unbreakable: true } as Content];
     }
     case 'figures': {
-      const gap = CHART_GAP_MM * MM;
-      const max = (contentWidthPt - gap * (n.items.length - 1)) / Math.max(1, n.items.length);
+      const gapPt = CHART_GAP_MM * MM;
+      const max = (contentWidthPt - gapPt * (n.items.length - 1)) / Math.max(1, n.items.length);
       return [
         {
           stack: [
@@ -117,10 +134,41 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
                 if (it.caption) stack.push({ text: it.caption, style: 'caption' });
                 return { width: w, stack };
               }),
-              columnGap: gap,
+              columnGap: gapPt,
             },
           ],
           unbreakable: true,
+        } as Content,
+      ];
+    }
+    case 'gallery': {
+      // a row of images stays on one page; the group caption goes with the last row
+      const colW = Math.min(n.colWidthMm * MM, (contentWidthPt - n.gapMm * MM * (n.perRow - 1)) / n.perRow);
+      const k = colW / (n.colWidthMm * MM);
+      const rows: Array<typeof n.items> = [];
+      for (let i = 0; i < n.items.length; i += n.perRow) rows.push(n.items.slice(i, i + n.perRow));
+      const picture = (it: (typeof n.items)[number]): Content => {
+        const [w, h] = [it.widthMm * MM * k, it.heightMm * MM * k];
+        const image = { image: it.dataUrl, width: w, height: h };
+        const framed = n.border ? { table: { widths: [w], body: [[{ ...image, margin: [0, 0, 0, 0] }]] }, layout: { hLineWidth: () => 0.5, vLineWidth: () => 0.5, hLineColor: () => '#8c8c8c', vLineColor: () => '#8c8c8c', paddingLeft: () => 0, paddingRight: () => 0, paddingTop: () => 0, paddingBottom: () => 0 } } : image;
+        return { columns: [{ width: '*', text: '' }, { width: 'auto', stack: [framed] }, { width: '*', text: '' }], columnGap: 0 } as Content;
+      };
+      return [
+        {
+          stack: rows.map((row, i) => {
+            const last = i === rows.length - 1;
+            return {
+              stack: [
+                {
+                  columns: row.map((it) => ({ width: colW, stack: [picture(it), ...(it.caption ? [{ text: it.caption, style: 'caption', alignment: n.perRow > 1 ? 'center' : 'left', margin: [0, 3, 0, 0] }] : [])] })),
+                  columnGap: n.gapMm * MM,
+                },
+                ...(last && n.caption ? [{ text: n.caption, style: 'caption', margin: [0, 4, 0, 0] }] : []),
+              ],
+              unbreakable: true,
+              margin: [0, i ? 8 : 4, 0, last ? 10 : 0],
+            };
+          }),
         } as Content,
       ];
     }
@@ -134,15 +182,23 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
         if (s.image) stack.push({ image: s.image.dataUrl, width: s.image.widthMm * MM, height: s.image.heightMm * MM, margin: [0, box - s.image.heightMm * MM + 2, 0, 3] });
         else stack.push({ canvas: [{ type: 'line', x1: 0, y1: box + 2, x2: Math.min(colW, 60 * MM), y2: box + 2, lineWidth: 0.5, lineColor: '#777777' }], margin: [0, 0, 0, 3] });
         if (s.name) stack.push({ text: s.name, bold: true });
-        for (const line of s.lines) stack.push({ text: runs(line), color: '#333333' });
+        for (const line of s.lines) stack.push({ text: runs(line), color: doc.look.textColor ?? '#333333' });
         if (s.date) stack.push({ text: `Date: ${s.date}`, fontSize: t.fontSize - 1, color: '#555555', margin: [0, 2, 0, 0] });
         return { width: colW, stack } as Content;
       };
       const rows = Array.from({ length: Math.ceil(n.items.length / n.cols) }, (_, i) => n.items.slice(i * n.cols, (i + 1) * n.cols));
-      return [{ stack: rows.map((row, i) => ({ columns: row.map(person), columnGap: SIGN_GAP_MM * MM, margin: [0, i ? 12 : 0, 0, 0] })), unbreakable: true, margin: [0, 12, 0, 10] } as Content];
+      return [
+        {
+          stack: [...(n.closing ? [{ text: runs(n.closing), margin: [0, 0, 0, 2] }] : []), ...rows.map((row, i) => ({ columns: row.map(person), columnGap: SIGN_GAP_MM * MM, margin: [0, i ? 12 : 0, 0, 0] }))],
+          unbreakable: true,
+          margin: [0, n.closing ? 4 : 12, 0, 10],
+        } as Content,
+      ];
     }
     case 'table': {
       const out: Content[] = [];
+      const head = headerLook(doc);
+      const rule = letter ? '#404040' : '#b9b9b9';
       if (n.caption) out.push({ text: n.caption, style: 'tableCaption', headlineLevel: 9 } as Content); // 9 = table caption (kept with its table)
       out.push({
         table: {
@@ -150,14 +206,14 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
           keepWithHeaderRows: n.keepRows ?? 1,
           dontBreakRows: true,
           widths: fitWidths(n.widths, contentWidthPt),
-          body: [...n.head.map((r) => rowCells(r, true, t.accent)), ...n.body.map((r) => rowCells(r, false, t.accent))],
+          body: [...n.head.map((r) => rowCells(r, true, head)), ...n.body.map((r) => rowCells(r, false, head))],
         },
         fontSize: n.fontSize ?? t.fontSize - 1,
         layout: {
           hLineWidth: () => RULE_PT,
           vLineWidth: () => RULE_PT,
-          hLineColor: () => '#b9b9b9',
-          vLineColor: () => '#b9b9b9',
+          hLineColor: () => rule,
+          vLineColor: () => rule,
           paddingLeft: () => CELL_PAD_PT,
           paddingRight: () => CELL_PAD_PT,
           paddingTop: () => 1.5,
@@ -172,8 +228,7 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
 }
 
 function pageWidthPt(doc: ReportDoc, o: Orientation): number {
-  const t = doc.template;
-  const [w, h] = t.pageSize === 'A3' ? [297, 420] : [210, 297];
+  const [w, h] = pageSizeMm(doc.template);
   return (o === 'landscape' ? h : w) * MM;
 }
 
@@ -181,9 +236,8 @@ function pageWidthPt(doc: ReportDoc, o: Orientation): number {
  * The document content. Page breaks (including a title page's) are put on the content that follows them, so
  * that several breaks in a row never leave a blank page and a change of orientation starts the new page.
  */
-function pdfContent(doc: ReportDoc): { content: Content[]; firstOrientation: Orientation } {
+function pdfContent(doc: ReportDoc, sidesPt: number): { content: Content[]; firstOrientation: Orientation } {
   const t = doc.template;
-  const margin = t.marginMm * MM;
   const out: Content[] = [];
   let orientation: Orientation = t.orientation;
   let firstOrientation: Orientation = t.orientation;
@@ -194,7 +248,7 @@ function pdfContent(doc: ReportDoc): { content: Content[]; firstOrientation: Ori
       continue;
     }
     const o = pending?.orientation ?? orientation;
-    const items = nodeContent(n, doc, pageWidthPt(doc, o) - 2 * margin);
+    const items = nodeContent(n, doc, pageWidthPt(doc, o) - sidesPt);
     if (pending && items.length) {
       // a break before any content just sets the orientation of the first page
       if (out.length) items[0] = { ...(items[0] as object), pageBreak: 'before', pageOrientation: o } as Content;
@@ -208,38 +262,97 @@ function pdfContent(doc: ReportDoc): { content: Content[]; firstOrientation: Ori
   return { content: out, firstOrientation };
 }
 
+// ------------------------------------------------------------ letterhead (logo, address and page numbers)
+
+const itemHeightPt = (it: LetterheadItem) => (it.kind === 'image' ? it.heightMm * MM : Math.max(6, ...it.runs.map((r) => r.sizePt ?? 8)) * 1.2);
+
+/** Height of a header or footer: its tallest column. */
+const partHeightPt = (items: LetterheadItem[]) => Math.max(0, ...(['left', 'center', 'right'] as const).map((a) => items.filter((it) => it.align === a).reduce((s, it) => s + itemHeightPt(it), 0)));
+
+function letterheadPart(items: LetterheadItem[], page: number, pages: number): Content {
+  const show = (it: LetterheadItem): Content => {
+    const dx = it.align === 'left' && it.dx ? it.dx * MM : 0;
+    return it.kind === 'image'
+      ? { image: it.dataUrl, width: it.widthMm * MM, height: it.heightMm * MM, margin: [dx, 0, 0, 0] }
+      : { text: it.runs.map((r) => ({ text: r.text.replace(/\{page\}/g, String(page)).replace(/\{pages\}/g, String(pages)), color: r.color, fontSize: r.sizePt ?? 8, bold: r.bold, italics: r.italic })), lineHeight: 1, margin: [dx, 0, 0, 0] };
+  };
+  const col = (align: 'left' | 'center' | 'right') => items.filter((it) => it.align === align).map(show);
+  const center = col('center');
+  return {
+    columns: [
+      { width: '*', stack: col('left') },
+      ...(center.length ? [{ width: '*', stack: center, alignment: 'center' }] : []),
+      { width: '*', stack: col('right'), alignment: 'right' },
+    ],
+  } as Content;
+}
+
 export function toPdfDefinition(doc: ReportDoc): TDocumentDefinitions {
   const t = doc.template;
-  const margin = t.marginMm * MM;
-  const titleOnOwnPage = doc.nodes[0]?.t === 'title' && doc.nodes[0].pageBreakAfter;
-  const { content, firstOrientation } = pdfContent(doc);
+  const letter = doc.look.style === 'letter';
+  const lh = doc.letterhead;
+  const geo = doc.page;
+  const heading = doc.look.headingColor;
+  const text = doc.look.textColor;
+  // Page margins. pdfmake has one set for every page, so a letterhead's tallest header and footer (often page 1's
+  // address) decide them; the Word document keeps the letterhead's own margins.
+  let margins: [number, number, number, number];
+  let header: TDocumentDefinitions['header'];
+  let footer: TDocumentDefinitions['footer'];
+  if (lh) {
+    const heads = [lh.first.header, lh.other.header].map(partHeightPt);
+    const feet = [lh.first.footer, lh.other.footer].map(partHeightPt);
+    const top = Math.max(geo.top * MM, geo.header * MM + Math.max(...heads) + 4 * MM);
+    const bottom = Math.max(geo.bottom * MM, geo.footer * MM + Math.max(...feet) + 4 * MM);
+    margins = [(geo.left + geo.indent) * MM, top, geo.right * MM, bottom];
+    header = (page: number, pages: number) => ({ ...(letterheadPart(page === 1 ? lh.first.header : lh.other.header, page, pages) as object), margin: [geo.left * MM, geo.header * MM, geo.right * MM, 0] }) as Content;
+    footer = (page: number, pages: number) => {
+      const items = page === 1 ? lh.first.footer : lh.other.footer;
+      return { ...(letterheadPart(items, page, pages) as object), margin: [geo.left * MM, Math.max(0, bottom - geo.footer * MM - partHeightPt(items)), geo.right * MM, 0] } as Content;
+    };
+  } else {
+    const margin = t.marginMm * MM;
+    const titleOnOwnPage = doc.nodes[0]?.t === 'title' && doc.nodes[0].pageBreakAfter;
+    margins = [margin, margin + 6, margin, margin + 4];
+    header = (page: number) =>
+      page === 1 && titleOnOwnPage ? null : ({ columns: [{ text: doc.header, alignment: 'left' }, { text: '', alignment: 'right' }], margin: [margin, margin / 2, margin, 0], fontSize: t.fontSize - 2, color: '#777777' } as Content);
+    footer = (page: number, pages: number) =>
+      ({ columns: [{ text: doc.footer, alignment: 'left' }, { text: `Page ${page} of ${pages}`, alignment: 'right' }], margin: [margin, 6, margin, 0], fontSize: t.fontSize - 2, color: '#777777' }) as Content;
+  }
+  const { content, firstOrientation } = pdfContent(doc, margins[0] + margins[2]);
   return {
     pageSize: t.pageSize,
     pageOrientation: firstOrientation,
-    pageMargins: [margin, margin + 6, margin, margin + 4],
+    pageMargins: margins,
     info: { title: doc.title, author: doc.author, creator: 'EnviroDB' },
-    header: (page: number) =>
-      page === 1 && titleOnOwnPage
-        ? null
-        : ({ columns: [{ text: doc.header, alignment: 'left' }, { text: '', alignment: 'right' }], margin: [margin, margin / 2, margin, 0], fontSize: t.fontSize - 2, color: '#777777' } as Content),
-    footer: (page: number, pages: number) =>
-      ({ columns: [{ text: doc.footer, alignment: 'left' }, { text: `Page ${page} of ${pages}`, alignment: 'right' }], margin: [margin, 6, margin, 0], fontSize: t.fontSize - 2, color: '#777777' }) as Content,
+    header,
+    footer,
     content,
-    defaultStyle: { font: 'Roboto', fontSize: t.fontSize, lineHeight: 1.2 },
-    styles: {
-      h1: { fontSize: t.fontSize + 5, bold: true, color: t.accent, margin: [0, 12, 0, 6] },
-      h2: { fontSize: t.fontSize + 2.5, bold: true, color: t.accent, margin: [0, 10, 0, 4] },
-      h3: { fontSize: t.fontSize + 1, bold: true, color: '#333333', margin: [0, 8, 0, 3] },
-      caption: { fontSize: t.fontSize - 1.5, color: '#444444', margin: [0, 2, 0, 10] },
-      tableCaption: { fontSize: t.fontSize - 1, bold: true, color: '#222222', margin: [0, 4, 0, 3] },
-      note: { fontSize: t.fontSize - 2.5, color: '#555555' },
-    },
+    defaultStyle: { font: 'Roboto', fontSize: t.fontSize, lineHeight: 1.2, color: text },
+    styles: letter
+      ? {
+          // a letter: headings in regular weight, captions in italics
+          h1: { fontSize: t.fontSize + 2, color: heading, margin: [0, 12, 0, 4] },
+          h2: { fontSize: t.fontSize + 0.5, italics: true, color: heading, margin: [0, 10, 0, 3] },
+          h3: { fontSize: t.fontSize, bold: true, color: text ?? '#222222', margin: [0, 8, 0, 3] },
+          caption: { fontSize: t.fontSize - 0.5, italics: true, color: text ?? '#333333', margin: [0, 2, 0, 10] },
+          tableCaption: { fontSize: t.fontSize - 0.5, italics: true, color: text ?? '#222222', margin: [0, 6, 0, 4] },
+          note: { fontSize: t.fontSize - 2.5, color: '#555555' },
+        }
+      : {
+          h1: { fontSize: t.fontSize + 5, bold: true, color: heading, margin: [0, 12, 0, 6] },
+          h2: { fontSize: t.fontSize + 2.5, bold: true, color: heading, margin: [0, 10, 0, 4] },
+          h3: { fontSize: t.fontSize + 1, bold: true, color: '#333333', margin: [0, 8, 0, 3] },
+          caption: { fontSize: t.fontSize - 1.5, color: '#444444', margin: [0, 2, 0, 10] },
+          tableCaption: { fontSize: t.fontSize - 1, bold: true, color: '#222222', margin: [0, 4, 0, 3] },
+          note: { fontSize: t.fontSize - 2.5, color: '#555555' },
+        },
     // Never leave a heading or table title alone at the bottom of a page: break before it when nothing but
     // other headings/titles (or a table that has moved to the next page) follows it on the same page.
     pageBreakBefore: (current, following) => {
       if (!current.headlineLevel) return false;
-      const content = following.filter((n) => !n.table && !n.headlineLevel && !n.stack);
-      return content.length === 0 || current.startPosition.verticalRatio > 0.92;
+      const rest = following.filter((n) => !n.table && !n.headlineLevel && !n.stack);
+      return rest.length === 0 || current.startPosition.verticalRatio > 0.92;
     },
   };
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActionIcon, Alert, Badge, Button, Card, ColorInput, FileButton, Grid, Group, Menu, NumberInput, Select, SimpleGrid, Stack, Switch, Text, TextInput, Title, Tooltip, Loader, Code, Image } from '@mantine/core';
+import { ActionIcon, Alert, Anchor, Badge, Button, Card, ColorInput, FileButton, Grid, Group, Menu, NumberInput, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text, TextInput, Title, Tooltip, Loader, Code, Image } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { IconCopy, IconDeviceFloppy, IconDots, IconPlus, IconTrash, IconPhoto, IconStar, IconTemplate, IconFileTypeDocx, IconFileTypePdf } from '@tabler/icons-react';
@@ -35,7 +35,7 @@ function Preview({ template, fill }: { template: ReportTemplate; fill?: boolean 
     setBusy(true);
     const h = setTimeout(() => {
       try {
-        setDoc(buildReport({ bundle: data, template, period, settings, renderChart: (o, w, hh) => renderChartPng(o, cmToPx(w), cmToPx(hh), 1.5) }));
+        setDoc(buildReport({ bundle: data, template, period, settings, preview: true, renderChart: (o, w, hh) => renderChartPng(o, cmToPx(w), cmToPx(hh), 1.5) }));
       } finally {
         setBusy(false);
       }
@@ -76,6 +76,7 @@ export function TemplateEditorPage() {
   const navigate = useNavigate();
   const stored = useLiveQuery(() => (templateId ? db.templates.get(templateId) : undefined), [templateId]);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
+  const settings = useSettings();
   const [t, setT] = useState<ReportTemplate | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [previewProject, setPreviewProject] = useState<string | null>(null);
@@ -127,6 +128,31 @@ export function TemplateEditorPage() {
                 <Stack gap="xs">
                   <TextInput label="Template name" value={t.name} onChange={(e) => setT({ ...t, name: e.currentTarget.value })} />
                   <TextInput label="Description" value={t.description ?? ''} onChange={(e) => setT({ ...t, description: e.currentTarget.value })} />
+                  <Group align="flex-end" gap="md" wrap="wrap">
+                    <div>
+                      <Text size="sm" fw={500} mb={4}>
+                        Written as
+                      </Text>
+                      <SegmentedControl
+                        size="xs"
+                        value={t.style ?? 'report'}
+                        onChange={(v) => setT({ ...t, style: v as 'report' | 'letter' })}
+                        data={[
+                          { value: 'report', label: 'A report' },
+                          { value: 'letter', label: 'A letter' },
+                        ]}
+                      />
+                    </div>
+                    <Switch label="Print on the letterhead in Settings" checked={!!t.letterhead} onChange={(e) => setT({ ...t, letterhead: e.currentTarget.checked })} mb={6} />
+                  </Group>
+                  {t.letterhead && (
+                    <Text size="xs" c={settings.letterhead ? 'dimmed' : 'orange.8'}>
+                      {settings.letterhead ? 'Margins, logo, footers and fonts come from the letterhead. ' : 'There is no letterhead yet. '}
+                      <Anchor component={Link} to="/settings" size="xs">
+                        {settings.letterhead ? 'Change it in Settings' : 'Add it in Settings – upload your company’s Word letter template'}
+                      </Anchor>
+                    </Text>
+                  )}
                   <SimpleGrid cols={{ base: 2, sm: 4 }}>
                     <Select label="Page" data={['A4', 'A3']} value={t.pageSize} onChange={(v) => v && setT({ ...t, pageSize: v as 'A4' | 'A3' })} allowDeselect={false} />
                     <Select
@@ -136,16 +162,52 @@ export function TemplateEditorPage() {
                       onChange={(v) => v && v !== 'mixed' && setT({ ...t, orientation: v as 'portrait' | 'landscape', blocks: samePages(t.blocks) })}
                       allowDeselect={false}
                     />
-                    <NumberInput label="Margins (mm)" min={8} max={40} value={t.marginMm} onChange={(v) => setT({ ...t, marginMm: Number(v) || 20 })} />
+                    <NumberInput label="Margins (mm)" min={8} max={40} value={t.marginMm} onChange={(v) => setT({ ...t, marginMm: Number(v) || 20 })} disabled={!!(t.letterhead && settings.letterhead)} />
                     <NumberInput label="Font size (pt)" min={7} max={14} step={0.5} value={t.fontSize} onChange={(v) => setT({ ...t, fontSize: Number(v) || 10 })} />
                   </SimpleGrid>
-                  <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                    <TextInput label="Header text" value={t.headerText ?? ''} onChange={(e) => setT({ ...t, headerText: e.currentTarget.value })} />
-                    <TextInput label="Footer text" value={t.footerText ?? ''} onChange={(e) => setT({ ...t, footerText: e.currentTarget.value })} description="Page numbers are added automatically" />
-                  </SimpleGrid>
-                  <Group align="flex-end">
+                  {!(t.letterhead && settings.letterhead) && (
+                    <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                      <TextInput label="Header text" value={t.headerText ?? ''} onChange={(e) => setT({ ...t, headerText: e.currentTarget.value })} />
+                      <TextInput label="Footer text" value={t.footerText ?? ''} onChange={(e) => setT({ ...t, footerText: e.currentTarget.value })} description="Page numbers are added automatically" />
+                    </SimpleGrid>
+                  )}
+                  <Group align="flex-end" gap="md" wrap="wrap">
                     <ColorInput label="Accent colour" value={t.accent} onChange={(v) => setT({ ...t, accent: v })} w={160} swatches={['#0f766e', '#1d4ed8', '#b91c1c', '#7c3aed', '#334155', '#047857', '#c2410c']} />
-                    <Switch label="Number headings, tables and figures" checked={t.numbering !== false} onChange={(e) => setT({ ...t, numbering: e.currentTarget.checked })} mb={8} />
+                    <Stack gap={6} mb={4}>
+                      <Switch size="sm" label="Number headings (1, 1.1 …)" checked={t.numberHeadings ?? t.numbering !== false} onChange={(e) => setT({ ...t, numberHeadings: e.currentTarget.checked })} />
+                      <Switch size="sm" label="Number tables and figures" checked={t.numbering !== false} onChange={(e) => setT({ ...t, numbering: e.currentTarget.checked, numberHeadings: t.numberHeadings ?? t.numbering !== false })} />
+                    </Stack>
+                  </Group>
+                  <Group align="flex-end" gap="md" wrap="wrap">
+                    <div>
+                      <Text size="sm" fw={500} mb={4}>
+                        Table headers
+                      </Text>
+                      <SegmentedControl
+                        size="xs"
+                        value={t.tableHeader ?? (t.style === 'letter' ? 'grey' : 'accent')}
+                        onChange={(v) => setT({ ...t, tableHeader: v as NonNullable<ReportTemplate['tableHeader']> })}
+                        data={[
+                          { value: 'accent', label: 'Accent colour' },
+                          { value: 'grey', label: 'Light grey' },
+                          { value: 'dark', label: 'Dark grey' },
+                        ]}
+                      />
+                    </div>
+                    <div>
+                      <Text size="sm" fw={500} mb={4}>
+                        Exceedances in tables
+                      </Text>
+                      <SegmentedControl
+                        size="xs"
+                        value={t.highlightStyle ?? (t.style === 'letter' ? 'text' : 'fill')}
+                        onChange={(v) => setT({ ...t, highlightStyle: v as NonNullable<ReportTemplate['highlightStyle']> })}
+                        data={[
+                          { value: 'fill', label: 'Shaded cells' },
+                          { value: 'text', label: 'Red text' },
+                        ]}
+                      />
+                    </div>
                   </Group>
                   <Group align="center">
                     {t.logo && <Image src={t.logo} h={36} w="auto" fit="contain" alt="Logo" />}

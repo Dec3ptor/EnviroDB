@@ -279,6 +279,15 @@ export function SignaturesForm({ block, onChange }: { block: SignaturesBlock; on
   const set = (signatories: Signatory[]) => onChange({ ...block, signatories });
   return (
     <Stack gap="xs">
+      <Autocomplete
+        size="xs"
+        label="Closing line (letters)"
+        placeholder="e.g. Kind regards,"
+        value={block.closing ?? ''}
+        onChange={(v) => onChange({ ...block, closing: v || undefined })}
+        data={['Kind regards,', 'Yours faithfully,', 'Yours sincerely,', 'Regards,', 'Ngā mihi,']}
+        maw={260}
+      />
       <Text size="xs" c="dimmed">
         Paste a signature copied from an email or a Word document into a person’s box: the image, name and the lines under it are filled in, and a sign-off table with several people adds them all. You can also drop or upload an image. People without a name are left out.
       </Text>

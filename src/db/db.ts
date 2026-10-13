@@ -1,3 +1,4 @@
+import { saveableChanged } from './changes';
 import Dexie, { type Table } from 'dexie';
 import type {
   ExceedanceNote,
@@ -104,6 +105,17 @@ export async function getSettings(database: EnviroDatabase = db): Promise<Settin
 export async function saveSettings(patch: Partial<Settings>, database: EnviroDatabase = db): Promise<void> {
   const cur = await getSettings(database);
   await database.meta.put({ key: 'settings', value: { ...cur, ...patch } });
+  saveableChanged();
+}
+
+/** Report work kept with the settings rather than in the data tables: commentary, figures, layout changes and site choices. */
+export const REPORT_WORK = /^(draft|figs|layout|sites):/;
+
+/** Save a piece of report work (or remove it with undefined), and let the autosave file know. */
+export async function saveReportWork(key: string, value: unknown): Promise<void> {
+  if (value === undefined) await db.meta.delete(key);
+  else await db.meta.put({ key, value });
+  saveableChanged();
 }
 
 /** Ask the browser not to evict our data under storage pressure. */

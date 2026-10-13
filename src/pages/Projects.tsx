@@ -13,7 +13,7 @@ import { importProjectPackage, readJsonFile } from '../db/backup';
 import { MONTH_LONG, formatDate } from '../lib/dates';
 import { useParamsAndSets } from '../hooks/useProjectData';
 
-export function ProjectForm({ value, onChange }: { value: Project; onChange: (p: Project) => void }) {
+export function ProjectForm({ value, onChange, letters }: { value: Project; onChange: (p: Project) => void; letters?: boolean }) {
   const { sets } = useParamsAndSets();
   const set = <K extends keyof Project>(k: K, v: Project[K]) => onChange({ ...value, [k]: v });
   return (
@@ -27,6 +27,12 @@ export function ProjectForm({ value, onChange }: { value: Project; onChange: (p:
       </SimpleGrid>
       <TextInput label="Location" value={value.location ?? ''} onChange={(e) => set('location', e.currentTarget.value)} />
       <Textarea label="Description" autosize minRows={2} value={value.description ?? ''} onChange={(e) => set('description', e.currentTarget.value)} />
+      {letters && (
+        <SimpleGrid cols={{ base: 1, sm: 2 }}>
+          <Textarea label="Letters go to" description="Name, position, organisation and address – a line each" placeholder={'Name\nPosition\nOrganisation\nAddress'} autosize minRows={2} maxRows={6} value={value.recipient ?? ''} onChange={(e) => set('recipient', e.currentTarget.value || undefined)} />
+          <TextInput label="Letter greeting" placeholder="Dear Sir / Madam," value={value.salutation ?? ''} onChange={(e) => set('salutation', e.currentTarget.value || undefined)} />
+        </SimpleGrid>
+      )}
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
         <Select
           label="Reporting year starts"

@@ -59,6 +59,33 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   also drop or upload an image; blank paper around a signature is trimmed off. Set your own signature
   once in Settings and every report you sign as *Me* uses it. Without an image, a line is left to sign
   by hand. The built-in templates end with a sign-off (people without a name are left out).
+- **Write letter reports on your letterhead.** The *Annual report (letter)* and *Monitoring event
+  report (letter)* templates are written as letters: date, who it's to, a bold subject, your reference
+  and greeting (who a project's letters go to is saved with the project), then site-by-site tables of
+  this round's results beside the previous rounds and the site's limits and triggers, with a comment on
+  each result ("Increase – Compliant", "Decrease – Exceedance") and exceedances in red. Under each site's
+  table is a summary drafted from its results ("Nitrate-N (1.92 g/m³) continues to exceed the trigger…")
+  that you edit with the rest of the report's commentary. There's also a trigger levels table
+  (a parameter per row, a column per site), consent conditions quoted with "> " lines, a closing line
+  ("Kind regards,") above your signature, and an attachments / CC list.
+- **Use your company's letterhead.** In *Settings → Letterhead*, upload your company's Word letter
+  template – or any letter or report written on it (.docx or .dotx). EnviroDB reads its logo, the
+  address in the first page's footer, the page numbers, margins, fonts and heading colour. Word
+  downloads are built on the file's own header and footers, exactly as they are in Word; PDFs and the
+  preview draw them. Only the letterhead is kept – none of the document's text – and only in this
+  browser. You can also set a letterhead up by hand (logo and footer lines), and any template can be
+  switched to print on it.
+- **Add figures.** A *Figures* section takes your own pictures – site photos, plans, graphs from
+  Excel. Drop them on the box, choose them or paste them; caption them and drag them into order.
+  Choose 1–4 to a row and their size, and whether each is numbered (Figure 1, Figure 2 …), the group
+  shares one number with (a), (b) … under the pictures, or none – and call them Figures, Photos,
+  Plates or anything else (each counts on its own). Give a picture a name and write `{{fig:name}}` in
+  your text for its number, e.g. "see Figure 3(b)"; tables work the same with `{{table:name}}`, and the
+  numbers stay right when sections move. Pictures for one report go under *Figures for this report* on
+  the Reports tab; a site plan used every time goes in the section's own settings.
+- **Choose the look.** Templates are written as a report or a letter, with table headers in the accent
+  colour or grey, exceedances shaded or in red text, and headings numbered or not, separately from
+  tables and figures.
 - **Change a report's layout on the spot.** On the Reports tab, *Edit layout* lets you drag
   sections exactly where you want them (a heading takes its whole section with it, so you can put a
   heading straight above a table), add, duplicate or
@@ -92,7 +119,7 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   *Download project file*) are under ⋯.
 - **Library** – reference data shared by every project: *Guidelines*, *Report templates* and
   *Parameters* (the analyte dictionary: names, units and the aliases used in lab files).
-- **Settings & backup** – your name, company and signature, autosave and backups.
+- **Settings & backup** – your name, company, signature and letterhead, autosave and backups.
 
 Everyday controls are on show. Settings most people leave alone are folded away with a summary of
 what they're set to (▸ *Assessment settings* and ▸ *Display units* in Setup, ▸ *Placeholders* in the
@@ -119,6 +146,10 @@ Because the data lives in one browser on one computer, keep a copy:
 2. **Download a backup** at any time, and restore or merge it later.
 3. **Share a single project** with a colleague using the project menu → *Download project file*.
    They open it from the Projects page.
+
+Backups and the autosave file hold everything: projects and data, your templates, the commentary,
+figures and layout changes of your reports, and your settings – name, signature and letterhead. A
+project file shared with a colleague holds just the project and its data.
 
 If you later want a shared multi-user database, the storage layer can be connected to a
 hosted database (e.g. Supabase, Firebase or an Azure service). Client data would then be

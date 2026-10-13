@@ -4,10 +4,10 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { IconCheck, IconDeviceFloppy, IconFileTypeDocx, IconFileTypePdf, IconLayoutList, IconSettings, IconTemplate } from '@tabler/icons-react';
-import { db } from '../../db/db';
+import { db, saveReportWork } from '../../db/db';
 import { useProject } from '../../hooks/useProjectData';
 import { useSettings } from '../../hooks/useSettings';
-import { PeriodPicker, defaultPeriod, type PeriodValue } from '../../components/common';
+import { MoreOptions, PeriodPicker, defaultPeriod, type PeriodValue } from '../../components/common';
 import { nextDueReport, obligationPeriod, obligationPresets } from '../../lib/schedule';
 import { roundPeriods } from '../../lib/latest';
 import { formatDate, todayStr } from '../../lib/dates';
@@ -18,11 +18,15 @@ import type { ReportDoc } from '../../reports/model';
 import { cmToPx, renderChartPng } from '../../charts/render';
 import { exportReport } from '../../reports/export';
 import { saveObligation, saveTemplate } from '../../db/repo';
-import type { ReportTemplate, TextBlock } from '../../db/types';
+import type { FigureImage, FiguresBlock, LetterBlock, Project, ReportTemplate, TextBlock } from '../../db/types';
+import { FigureImages, FiguresLayout } from '../../components/report/Figures';
 import { SectionsEditor } from '../../components/report/SectionsEditor';
 import { PagesControl } from '../../components/report/PagesControl';
 import { JumpToPreview, usePreviewPane } from '../../components/report/JumpToPreview';
 import { ReportSites } from '../../components/report/ReportSites';
+
+/** No images added yet (one object, so the preview isn't rebuilt for nothing). */
+const NO_FIGURES: Record<string, FigureImage[]> = {};
 
 const same = (a: ReportTemplate, b: ReportTemplate) => JSON.stringify({ ...a, updatedAt: '' }) === JSON.stringify({ ...b, updatedAt: '' });
 
@@ -46,6 +50,31 @@ function SaveAsModal({ opened, onClose, initialName, onSave }: { opened: boolean
         </Group>
       </Stack>
     </Modal>
+  );
+}
+
+/** Who the project's letters go to and how they open – saved with the project – and this letter's subject. */
+function LetterCard({ project, block, onBlock }: { project: Project; block: LetterBlock; onBlock: (b: LetterBlock) => void }) {
+  const [to, setTo] = useState(project.recipient ?? '');
+  const [hi, setHi] = useState(project.salutation ?? '');
+  // each box takes the saved value when that value changes – saving one never clears what is being typed in the other
+  useEffect(() => setTo(project.recipient ?? ''), [project.id, project.recipient]);
+  useEffect(() => setHi(project.salutation ?? ''), [project.id, project.salutation]);
+  const save = (patch: Partial<Project>) => void db.projects.update(project.id, { ...patch, updatedAt: new Date().toISOString() });
+  return (
+    <Card padding="md">
+      <Title order={5} mb={4}>
+        Letter
+      </Title>
+      <Text size="xs" c="dimmed" mb="sm">
+        Who this project’s letters go to is saved with the project, for all its letters.
+      </Text>
+      <Stack gap="sm">
+        <Textarea label="To" placeholder={'Name\nPosition\nOrganisation\nAddress'} autosize minRows={3} maxRows={7} value={to} onChange={(e) => setTo(e.currentTarget.value)} onBlur={() => to !== (project.recipient ?? '') && save({ recipient: to.trim() || undefined })} />
+        <TextInput label="Greeting" placeholder="Dear Sir / Madam," value={hi} onChange={(e) => setHi(e.currentTarget.value)} onBlur={() => hi !== (project.salutation ?? '') && save({ salutation: hi.trim() || undefined })} />
+        <TextInput label="Subject" description="For this template – {{period.month}} and the like are filled in" value={block.subject} onChange={(e) => onBlock({ ...block, subject: e.currentTarget.value })} />
+      </Stack>
+    </Card>
   );
 }
 
@@ -111,15 +140,15 @@ export function ReportsTab() {
     if (!editKey) return;
     if (stored && same(t, stored)) {
       setEdits(null);
-      void db.meta.delete(editKey);
+      void saveReportWork(editKey, undefined);
       return;
     }
     setEdits({ key: editKey, t });
-    void db.meta.put({ key: editKey, value: t });
+    void saveReportWork(editKey, t);
   };
   const discard = () => {
     setEdits(null);
-    if (editKey) void db.meta.delete(editKey);
+    if (editKey) void saveReportWork(editKey, undefined);
   };
   const [saveAs, setSaveAs] = useState(false);
   const saveAsNew = async (name: string) => {
@@ -158,7 +187,7 @@ export function ReportsTab() {
     if (!sitesKey) return;
     const all = !ids.length || ids.length >= data.sites.length;
     setSiteSel(all ? null : { key: sitesKey, ids });
-    void (all ? db.meta.delete(sitesKey) : db.meta.put({ key: sitesKey, value: ids }));
+    void saveReportWork(sitesKey, all ? undefined : ids);
   };
 
   const [tab, setTab] = useState<string | null>('report');
@@ -179,6 +208,24 @@ export function ReportsTab() {
   }, [draftKey]);
   const promptBlocks = (template?.blocks.filter((b) => b.type === 'text' && b.prompt) ?? []) as TextBlock[];
 
+  // Images added to this report's Figures sections, saved with the project and period like the commentary
+  const figKey = template ? `figs:${project.id}:${template.id}:${period.start}:${period.end}` : '';
+  const [figs, setFigs] = useState<{ key: string; images: Record<string, FigureImage[]> }>({ key: '', images: {} });
+  useEffect(() => {
+    let alive = true;
+    if (figKey) void db.meta.get(figKey).then((r) => alive && setFigs({ key: figKey, images: (r?.value as Record<string, FigureImage[]>) ?? {} }));
+    return () => {
+      alive = false;
+    };
+  }, [figKey]);
+  const reportFigures = figs.key === figKey ? figs.images : NO_FIGURES;
+  const saveFigures = (blockId: string, images: FigureImage[]) => {
+    const next = { ...reportFigures, [blockId]: images };
+    if (!images.length) delete next[blockId];
+    setFigs({ key: figKey, images: next });
+    if (figKey) void saveReportWork(figKey, Object.keys(next).length ? next : undefined);
+  };
+
   // Build the report for the preview (debounced; graphs at a lower resolution than the export)
   const [doc, setDoc] = useState<ReportDoc | null>(null);
   const [building, setBuilding] = useState(false);
@@ -187,20 +234,20 @@ export function ReportsTab() {
     setBuilding(true);
     const h = setTimeout(() => {
       try {
-        setDoc(buildReport({ bundle: data, template, period, settings, promptTexts: prompts, siteIds: chosenSites ?? undefined, renderChart: (opt, w, hh) => renderChartPng(opt, cmToPx(w), cmToPx(hh), 1.5) }));
+        setDoc(buildReport({ bundle: data, template, period, settings, promptTexts: prompts, figures: reportFigures, preview: true, siteIds: chosenSites ?? undefined, renderChart: (opt, w, hh) => renderChartPng(opt, cmToPx(w), cmToPx(hh), 1.5) }));
       } finally {
         setBuilding(false);
       }
     }, 600);
     return () => clearTimeout(h);
-  }, [data, template, period, settings, prompts, chosenSites]);
+  }, [data, template, period, settings, prompts, chosenSites, reportFigures]);
 
   const [busy, setBusy] = useState<'pdf' | 'docx' | null>(null);
   const exportDoc = async (kind: 'pdf' | 'docx') => {
     if (!template) return;
     setBusy(kind);
     try {
-      await exportReport(kind, { bundle: data, template, period, settings, promptTexts: prompts, siteIds: chosenSites ?? undefined });
+      await exportReport(kind, { bundle: data, template, period, settings, promptTexts: prompts, figures: reportFigures, siteIds: chosenSites ?? undefined });
     } catch (e) {
       notifications.show({ title: 'Export failed', message: (e as Error).message, color: 'red' });
     } finally {
@@ -212,10 +259,12 @@ export function ReportsTab() {
   const obligation = obl ? obligations.find((o) => o.id === obl.obligationId) : undefined;
   const submitted = obligation?.submissions.find((s) => s.periodEnd === period.end);
 
-  const savePrompt = (id: string, text: string) => {
-    const next = { ...prompts, [id]: text };
+  const savePrompt = (id: string, text: string | undefined) => {
+    const next = { ...prompts };
+    if (text === undefined) delete next[id];
+    else next[id] = text;
     setPrompts(next);
-    if (draftKey) void db.meta.put({ key: draftKey, value: next });
+    if (draftKey) void saveReportWork(draftKey, next);
   };
 
   if (!templates || !template || !stored)
@@ -226,6 +275,24 @@ export function ReportsTab() {
     );
 
   const orientationControl = <PagesControl orientation={template.orientation} blocks={template.blocks} onChange={(orientation, blocks) => changeTemplate({ ...template, orientation, blocks })} />;
+
+  // the heading a section comes under
+  const headingOf = (id: string) => {
+    const idx = template.blocks.findIndex((x) => x.id === id);
+    return ([...template.blocks.slice(0, idx)].reverse().find((x) => x.type === 'heading') as { text: string } | undefined)?.text;
+  };
+  const letterBlock = template.blocks.find((b): b is LetterBlock => b.type === 'letter');
+  const figureBlocks = template.blocks.filter((b): b is FiguresBlock => b.type === 'figures');
+  // the text sections filled in per report, and the summaries drafted for each site, in the report's order
+  const commentaryBoxes = template.blocks.flatMap((b): Array<{ key: string; label: string; group?: string; text: string; auto: boolean }> => {
+    if (b.type === 'text' && b.prompt) {
+      // named by its own bold label ("**Attachments:**"), else the heading it is under
+      const own = b.text.match(/^\s*\*\*([^*]{2,40}?):?\*\*/)?.[1];
+      return [{ key: b.id, label: own ?? headingOf(b.id) ?? (b === promptBlocks[0] ? 'Opening' : 'Text'), text: b.text, auto: false }];
+    }
+    if (b.type === 'roundTable' && b.summaries) return (doc?.commentary ?? []).filter((c) => c.key.startsWith(`${b.id}:`)).map((c) => ({ key: c.key, label: c.label, group: c.group, text: c.auto, auto: true }));
+    return [];
+  });
 
   const editedBanner = edited && (
     <Alert color="orange" variant="light" p="sm" title="Layout changed for this report">
@@ -294,6 +361,17 @@ export function ReportsTab() {
                   />
                   <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} extra={[...oblPresets, ...rounds]} width="100%" />
                   <ReportSites sites={data.sites} chosen={chosenSites} onChange={chooseSites} rememberedFor={obligation ? `“${obligation.name}”` : 'this template'} />
+                  {template.letterhead && !settings.letterhead && (
+                    <Alert color="blue" variant="light" p="xs">
+                      <Text size="xs">
+                        This letter prints on your letterhead – add it in{' '}
+                        <Anchor component={Link} to="/settings" size="xs">
+                          Settings
+                        </Anchor>{' '}
+                        by uploading your company’s Word letter template.
+                      </Text>
+                    </Alert>
+                  )}
                   {editedBanner}
                   <Stack gap={6}>
                     <Button fullWidth leftSection={<IconFileTypeDocx size={18} />} loading={busy === 'docx'} onClick={() => exportDoc('docx')}>
@@ -347,23 +425,56 @@ export function ReportsTab() {
               </Tabs.Panel>
             </Tabs>
           </Card>
-          {promptBlocks.length > 0 && (
+          {letterBlock && <LetterCard project={project} block={letterBlock} onBlock={(lb) => changeTemplate({ ...template, blocks: template.blocks.map((x) => (x.id === lb.id ? lb : x)) })} />}
+          {commentaryBoxes.length > 0 && (
             <Card padding="md">
               <Title order={5} mb={4}>
                 Commentary for this report
               </Title>
               <Text size="xs" c="dimmed" mb="sm">
-                Saved automatically with this project and period. Use **bold**, *italic* and “- ” for bullets.
+                Saved automatically with this project and period. Use **bold**, *italic*, “- ” for bullets and “&gt; ” for a quotation.
               </Text>
               <Stack gap="sm">
-                {promptBlocks.map((b) => {
-                  const idx = template.blocks.findIndex((x) => x.id === b.id);
-                  const heading = [...template.blocks.slice(0, idx)].reverse().find((x) => x.type === 'heading') as { text: string } | undefined;
-                  return <Textarea key={b.id} label={heading?.text ?? 'Text'} autosize minRows={4} maxRows={14} value={prompts[b.id] ?? b.text} onChange={(e) => savePrompt(b.id, e.currentTarget.value)} />;
-                })}
+                {commentaryBoxes.map((c) => (
+                  <div key={c.key}>
+                    <Textarea
+                      label={c.label}
+                      description={c.group}
+                      autosize
+                      minRows={c.auto ? 2 : 4}
+                      maxRows={14}
+                      value={prompts[c.key] ?? c.text}
+                      onChange={(e) => savePrompt(c.key, e.currentTarget.value)}
+                    />
+                    {c.auto && prompts[c.key] !== undefined && prompts[c.key] !== c.text && (
+                      <Anchor component="button" type="button" size="xs" onClick={() => savePrompt(c.key, undefined)}>
+                        Back to the summary drafted from the results
+                      </Anchor>
+                    )}
+                  </div>
+                ))}
               </Stack>
             </Card>
           )}
+          {figureBlocks.map((fb) => (
+            <Card padding="md" key={fb.id}>
+              <Title order={5} mb={4}>
+                Figures for this report{figureBlocks.length > 1 ? ` – ${headingOf(fb.id) ?? 'Figures'}` : ''}
+              </Title>
+              <Text size="xs" c="dimmed" mb="sm">
+                Photos, plans and graphs for this report – saved with this project and period.{fb.images.length ? ` ${fb.images.length} more from the template ${fb.images.length === 1 ? 'is' : 'are'} in every report.` : ''}
+              </Text>
+              <Stack gap="sm">
+                <FigureImages images={reportFigures[fb.id] ?? []} numbering={fb.numbering} onChange={(images) => saveFigures(fb.id, images)} />
+                <MoreOptions label="Layout" summary={`${fb.perRow} per row · ${fb.numbering === 'group' ? 'one number, (a) (b) …' : fb.numbering === 'each' ? `${fb.label || 'Figure'} numbers` : 'no numbers'}`} defaultOpen={(reportFigures[fb.id]?.length ?? 0) > 1}>
+                  <FiguresLayout block={fb} onChange={(nb) => changeTemplate({ ...template, blocks: template.blocks.map((x) => (x.id === nb.id ? nb : x)) })} />
+                  <Text size="xs" c="dimmed" mt={6}>
+                    The layout is kept for this project and template, like other layout changes.
+                  </Text>
+                </MoreOptions>
+              </Stack>
+            </Card>
+          ))}
           {!data.samples.length && (
             <Alert color="orange" variant="light">
               This project has no data yet – the report will be mostly empty.

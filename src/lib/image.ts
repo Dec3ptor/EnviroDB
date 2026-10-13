@@ -131,3 +131,50 @@ export async function fetchedImage(url: string): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Read an image for a report figure: PNG or JPEG (as reports need), at most `maxPx` on its longer side. Photos
+ * stay JPEG; anything else is redrawn as PNG.
+ */
+export function readFigureFile(file: File, maxPx = 1800): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const src = String(reader.result);
+      const img = new Image();
+      img.onerror = () => reject(new Error(/heic|heif/i.test(file.type + file.name) ? 'iPhone HEIC photos can’t be read by the browser – save them as JPEG first.' : `“${file.name}” could not be read as an image.`));
+      img.onload = () => {
+        const scale = Math.min(1, maxPx / Math.max(img.naturalWidth, img.naturalHeight));
+        const jpeg = /^data:image\/jpe?g/i.test(src);
+        if (scale === 1 && (jpeg || /^data:image\/png/i.test(src))) return resolve(src);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        const ctx = canvas.getContext('2d')!;
+        if (jpeg || /^data:image\/(webp|bmp)/i.test(src)) {
+          ctx.fillStyle = '#ffffff'; // JPEG has no transparency
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(jpeg || /^data:image\/(webp|bmp)/i.test(src) ? canvas.toDataURL('image/jpeg', 0.88) : canvas.toDataURL('image/png'));
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+const CAMERA_WORDS = /^(img|dsc|dscn|dcim|pxl|photo|image|screenshot|scan|mvimg|wp|whatsapp|copy|edited|final)$/i;
+
+/** A caption from an image's file name ("site_plan.png" → "Site plan"), or nothing for a camera's name like IMG_2041. */
+export function captionFromFileName(name: string): string {
+  const words = name
+    .replace(/\.[a-z0-9]{2,5}$/i, '')
+    .replace(/(\D)-|-(\D)/g, '$1 $2') // hyphens between words, not in dates
+    .split(/[\s_]+/)
+    .filter(Boolean);
+  if (!words.some((w) => /[a-z]{3,}/i.test(w) && !CAMERA_WORDS.test(w))) return '';
+  const s = words.join(' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}

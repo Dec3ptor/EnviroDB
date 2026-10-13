@@ -1,3 +1,4 @@
+import zlib from 'node:zlib';
 import { db } from '../src/db/db';
 import { buildIndex } from '../src/lib/dataIndex';
 import type { ProjectBundle } from '../src/lib/analysis';
@@ -26,4 +27,26 @@ export async function loadBundle(projectId: string): Promise<ProjectBundle> {
     obligations: await db.obligations.where('projectId').equals(projectId).toArray(),
     index: buildIndex(samples, results, sites, params),
   };
+}
+
+/** A plain white PNG of this size, as a data URL. */
+export function png(width: number, height: number): string {
+  const crc = (buf: Buffer) => zlib.crc32(buf);
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const c = Buffer.alloc(4);
+    c.writeUInt32BE(crc(td) >>> 0);
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  const rows = Buffer.alloc((width * 3 + 1) * height, 0xff);
+  for (let y = 0; y < height; y++) rows[y * (width * 3 + 1)] = 0; // filter byte
+  const file = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
+  return `data:image/png;base64,${file.toString('base64')}`;
 }

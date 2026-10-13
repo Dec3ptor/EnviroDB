@@ -5,24 +5,44 @@ import type { ReportBlock, ReportBlockType } from '../../db/types';
 import { GuidelinePicker, ParamPicker } from '../common';
 import { uid } from '../../lib/ids';
 import { SignaturesForm } from './Signatures';
+import { FigureImages, FiguresLayout, refName } from './Figures';
 
 // Report template blocks ("sections"): labels, defaults, one-line summaries and settings forms.
 
 export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string }> = {
   title: { label: 'Title page', help: 'Report title, subtitle and project details' },
+  letter: { label: 'Letter opening', help: 'Date, who the letter is to, subject, reference and greeting' },
   heading: { label: 'Heading', help: 'Section heading (numbered automatically)' },
   text: { label: 'Text', help: 'Your own text with {{placeholders}}; can be filled in per report' },
   summary: { label: 'Automatic summary', help: 'Sentences summarising sampling, compliance and guideline exceedances' },
   complianceTable: { label: 'Compliance table', help: 'Each consent rule with its outcome for the period' },
+  triggerTable: { label: 'Trigger levels table', help: 'The consent limits and trigger levels: a parameter per row, a column per site' },
   exceedances: { label: 'Exceedance table', help: 'Every exceedance in the period, with your follow-up notes' },
   resultsTable: { label: 'Results table', help: 'Results with guideline values and highlighted exceedances' },
+  roundTable: { label: 'Results vs previous rounds', help: "Each site's results this round beside its previous rounds and triggers, with a comment (Increase – Compliant …) and a summary you can edit" },
+  roundReview: { label: 'Results vs earlier monitoring', help: "Each site's latest sample in the period beside its previous result, the change, the earlier median and usual range" },
   statsTable: { label: 'Statistics table', help: 'n, min, median, mean, 95th percentile, max per site' },
   chart: { label: 'Graphs', help: 'One graph per parameter with guideline / limit lines' },
+  figures: { label: 'Figures', help: 'Your own images – photos, site plans, graphs – in a grid with captions and numbers' },
   siteTable: { label: 'Site table', help: 'Monitoring locations with coordinates' },
   samplingTable: { label: 'Sampling table', help: 'Samples collected per site vs the required programme' },
-  roundReview: { label: 'Results vs earlier monitoring', help: "Each site's latest sample in the period beside its previous result, the change, the earlier median and usual range" },
   signatures: { label: 'Signatures', help: 'Sign-off with names and signatures – paste a signature from an email or Word, or upload one' },
   pageBreak: { label: 'New page', help: 'Start a new page, and optionally switch to portrait or landscape from here' },
+};
+
+/** Sections that make tables (refer to them with {{table:name}}) or figures ({{fig:name}}). */
+const REF_KIND: Partial<Record<ReportBlockType, 'table' | 'fig'>> = {
+  complianceTable: 'table',
+  triggerTable: 'table',
+  exceedances: 'table',
+  resultsTable: 'table',
+  roundTable: 'table',
+  roundReview: 'table',
+  statsTable: 'table',
+  siteTable: 'table',
+  samplingTable: 'table',
+  chart: 'fig',
+  figures: 'fig',
 };
 
 export function newBlock(type: ReportBlockType): ReportBlock {
@@ -50,6 +70,14 @@ export function newBlock(type: ReportBlockType): ReportBlock {
       return { id, type, signatories: [{ id: uid('sg'), role: 'Prepared by', self: true, name: '', details: '' }, { id: uid('sg'), role: 'Reviewed by', name: '', details: '' }] };
     case 'roundReview':
       return { id, type, title: 'Results compared with earlier monitoring', siteIds: [], parameterIds: [], compare: ['previous', 'change', 'median', 'range', 'note'], historyYears: 0, guidelineSetIds: null, ruleColumns: 'all', highlight: true };
+    case 'roundTable':
+      return { id, type, title: '', siteIds: [], parameterIds: [], previous: 1, ruleColumns: 'all', comment: true, summaries: true, siteLabel: 'heading' };
+    case 'triggerTable':
+      return { id, type, title: '', siteIds: [], levels: 'all' };
+    case 'letter':
+      return { id, type, date: '{{today}}', to: '{{project.recipient}}', subject: '{{project.name}} – consent {{project.consents}}', reference: 'Ref: {{project.code}}', salutation: '{{project.salutation}}' };
+    case 'figures':
+      return { id, type, images: [], perRow: 2, heightMm: 0, numbering: 'each', label: 'Figure', caption: '', border: false };
     default:
       return { id, type } as ReportBlock;
   }
@@ -69,6 +97,14 @@ export function blockSummary(b: ReportBlock): string {
       return `${b.parameterIds.length ? `${b.parameterIds.length} parameters` : 'Key parameters (those with consent rules)'} · ${b.range === 'years' ? `last ${b.years} years` : b.range === 'all' ? 'all data' : 'report period'} · ${(b.size ?? 'full') === 'full' ? 'full width' : b.size === 'half' ? 'two per row' : `${b.widthCm} × ${b.heightCm} cm`}`;
     case 'roundReview':
       return `${b.title ?? ''} · ${b.historyYears ? `last ${b.historyYears} years` : 'all earlier results'}`;
+    case 'roundTable':
+      return [b.previous ? `this round and ${b.previous} before` : 'this round', b.comment && 'comments', b.summaries && 'a summary per site'].filter(Boolean).join(' · ');
+    case 'triggerTable':
+      return b.levels === 'limits' ? 'Consent limits' : b.levels === 'triggers' ? 'Trigger levels' : 'Consent limits and trigger levels';
+    case 'letter':
+      return `${b.subject}`;
+    case 'figures':
+      return [`${b.perRow} per row`, b.numbering === 'group' ? `one ${b.label || 'figure'} number, (a) (b) …` : b.numbering === 'each' ? `${b.label || 'Figure'} numbers` : 'no numbers', b.images.length ? `${b.images.length} image${b.images.length === 1 ? '' : 's'} in every report` : 'images added per report'].join(' · ');
     case 'signatures':
       return b.signatories.map((s) => `${s.role || 'Signed'}: ${s.self ? 'you' : s.name || '(no name yet)'}`).join(' · ') || 'Nobody yet';
     case 'pageBreak':
@@ -78,7 +114,28 @@ export function blockSummary(b: ReportBlock): string {
   }
 }
 
+/** A section's settings, and the name to refer to its table or figure in text. */
 export function BlockForm({ block, onChange }: { block: ReportBlock; onChange: (b: ReportBlock) => void }) {
+  const kind = REF_KIND[block.type];
+  return (
+    <Stack gap="xs">
+      <BlockSettings block={block} onChange={onChange} />
+      {kind && (
+        <TextInput
+          size="xs"
+          label="Name to refer to it in text (optional)"
+          placeholder={kind === 'fig' ? 'e.g. site-plan' : 'e.g. triggers'}
+          description={block.ref ? `Write {{${kind}:${block.ref}}} in text for its number, e.g. “see ${kind === 'fig' ? 'Figure' : 'Table'} 2”.` : `Then {{${kind}:name}} in text gives its number, and stays right when sections move.`}
+          value={block.ref ?? ''}
+          onChange={(e) => onChange({ ...block, ref: refName(e.currentTarget.value) || undefined })}
+          maw={360}
+        />
+      )}
+    </Stack>
+  );
+}
+
+function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: ReportBlock) => void }) {
   const params = useLiveQuery(() => db.parameters.toArray(), []) ?? [];
   const sets = useLiveQuery(() => db.guidelineSets.toArray(), []) ?? [];
   const set = (patch: Partial<ReportBlock>) => onChange({ ...block, ...patch } as ReportBlock);
@@ -289,6 +346,101 @@ export function BlockForm({ block, onChange }: { block: ReportBlock; onChange: (
           <Switch label="Use the project's default guideline sets" checked={block.guidelineSetIds === null} onChange={(e) => set({ guidelineSetIds: e.currentTarget.checked ? null : [] })} />
           {block.guidelineSetIds !== null && <GuidelinePicker sets={sets} value={block.guidelineSetIds} onChange={(v) => set({ guidelineSetIds: v })} label="Guideline columns" />}
           <Switch label="Highlight exceedances" checked={block.highlight} onChange={(e) => set({ highlight: e.currentTarget.checked })} />
+        </Stack>
+      );
+    case 'roundTable':
+      return (
+        <Stack gap="xs">
+          <TextInput label="Table title (optional)" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} description="One table per site, for its latest sample in the report period" />
+          <Group align="flex-end" gap="md">
+            <div>
+              <Text size="sm" fw={500} mb={4}>
+                Earlier rounds beside it
+              </Text>
+              <SegmentedControl size="xs" value={String(block.previous)} onChange={(v) => set({ previous: Number(v) })} data={['0', '1', '2', '3']} />
+            </div>
+            <div>
+              <Text size="sm" fw={500} mb={4}>
+                Each site's table under
+              </Text>
+              <SegmentedControl
+                size="xs"
+                value={block.siteLabel ?? 'caption'}
+                onChange={(v) => set({ siteLabel: v as 'caption' | 'heading' })}
+                data={[
+                  { value: 'heading', label: 'A heading' },
+                  { value: 'caption', label: 'A numbered caption' },
+                ]}
+              />
+            </div>
+          </Group>
+          <div>
+            <Text size="sm" fw={500} mb={4}>
+              Consent values to compare with
+            </Text>
+            <SegmentedControl
+              size="xs"
+              value={block.ruleColumns}
+              onChange={(v) => set({ ruleColumns: v as typeof block.ruleColumns })}
+              data={[
+                { value: 'none', label: 'None' },
+                { value: 'limits', label: 'Limits' },
+                { value: 'all', label: 'Limits & triggers' },
+              ]}
+            />
+          </div>
+          <Switch label="A comment on each result: the change since last round and whether it complies (e.g. “Increase – Compliant”)" checked={block.comment} onChange={(e) => set({ comment: e.currentTarget.checked })} />
+          <Switch label="A summary under each site's table – drafted from the results, yours to edit in the report's commentary" checked={block.summaries} onChange={(e) => set({ summaries: e.currentTarget.checked })} />
+          <ParamPicker params={params} value={block.parameterIds} onChange={(v) => set({ parameterIds: v })} label="Parameters (empty = all measured)" />
+        </Stack>
+      );
+    case 'triggerTable':
+      return (
+        <Stack gap="xs">
+          <TextInput label="Table title (optional)" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} placeholder="Consent limits and trigger levels" />
+          <div>
+            <Text size="sm" fw={500} mb={4}>
+              Show
+            </Text>
+            <SegmentedControl
+              size="xs"
+              value={block.levels}
+              onChange={(v) => set({ levels: v as typeof block.levels })}
+              data={[
+                { value: 'all', label: 'Limits & triggers' },
+                { value: 'limits', label: 'Limits' },
+                { value: 'triggers', label: 'Triggers' },
+              ]}
+            />
+          </div>
+          <Text size="xs" c="dimmed">
+            From the project's consent rules (Setup). A rule for some sites only fills in those sites' columns.
+          </Text>
+        </Stack>
+      );
+    case 'letter':
+      return (
+        <Stack gap="xs">
+          <TextInput label="Date" value={block.date} onChange={(e) => set({ date: e.currentTarget.value })} description="{{today}} = the day it is made" />
+          <Textarea label="To" autosize minRows={2} maxRows={6} value={block.to} onChange={(e) => set({ to: e.currentTarget.value })} description="{{project.recipient}} = who this project's letters go to – set it on the Reports tab, under “Letter”" />
+          <TextInput label="Subject (in bold)" value={block.subject} onChange={(e) => set({ subject: e.currentTarget.value })} />
+          <Textarea label="Reference" autosize minRows={1} maxRows={3} value={block.reference ?? ''} onChange={(e) => set({ reference: e.currentTarget.value })} />
+          <TextInput label="Greeting" value={block.salutation} onChange={(e) => set({ salutation: e.currentTarget.value })} description="{{project.salutation}} = the project's greeting, e.g. Dear David, (Dear Sir / Madam, until set)" />
+        </Stack>
+      );
+    case 'figures':
+      return (
+        <Stack gap="xs">
+          <FiguresLayout block={block} onChange={(b) => onChange(b)} />
+          <div>
+            <Text size="sm" fw={500}>
+              Images in every report
+            </Text>
+            <Text size="xs" c="dimmed" mb={4}>
+              e.g. a site plan. Photos for one report are added on the Reports tab, under “Figures for this report”.
+            </Text>
+            <FigureImages images={block.images} numbering={block.numbering} onChange={(images) => set({ images })} />
+          </div>
         </Stack>
       );
     case 'signatures':

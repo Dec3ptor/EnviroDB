@@ -28,6 +28,10 @@ export interface Project {
   percentileMethod: 'excel' | 'hazen';
   /** Consent requirements EnviroDB can't check automatically (narrative conditions, notification duties …). */
   consentNotes?: string;
+  /** Who letter reports go to: name, position, organisation and address, a line each ({{project.recipient}}). */
+  recipient?: string;
+  /** The greeting in letters, e.g. "Dear David," ({{project.salutation}}). */
+  salutation?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -258,12 +262,18 @@ export type ReportBlockType =
   | 'siteTable'
   | 'samplingTable'
   | 'roundReview'
+  | 'roundTable'
+  | 'triggerTable'
+  | 'letter'
+  | 'figures'
   | 'signatures'
   | 'pageBreak';
 
 export interface ReportBlockBase {
   id: string;
   type: ReportBlockType;
+  /** A name to refer to this section's first table or figure in text: {{table:name}} or {{fig:name}} gives "Table 2". */
+  ref?: string;
   /**
    * Put this block – for a heading, its whole section – on pages of this orientation. The pages after it go back
    * to the orientation before it, so the setting moves with the section.
@@ -366,6 +376,71 @@ export interface RoundReviewBlock extends ReportBlockBase {
 export interface SamplingTableBlock extends ReportBlockBase {
   type: 'samplingTable';
 }
+/**
+ * A monitoring event, site by site: each site's latest results in the period beside its previous rounds and its
+ * consent triggers, with a comment such as "Increase – Compliant" and a summary line under each table.
+ */
+export interface RoundTableBlock extends ReportBlockBase {
+  type: 'roundTable';
+  title?: string;
+  siteIds: ID[]; // [] = all
+  parameterIds: ID[]; // [] = all measured
+  /** Earlier rounds beside this one (0–3). */
+  previous: number;
+  /** Consent values to compare with: limits only, or limits and triggers. */
+  ruleColumns: 'none' | 'limits' | 'all';
+  /** A comment per result: the change since the previous round and whether it complies. */
+  comment: boolean;
+  /** A summary under each site's table – drafted from the results, and yours to edit with the report's commentary. */
+  summaries: boolean;
+  /** Name each site's table with a numbered caption (default) or a heading. */
+  siteLabel?: 'caption' | 'heading';
+}
+/** Consent limits and trigger levels: a parameter per row and a column per site. */
+export interface TriggerTableBlock extends ReportBlockBase {
+  type: 'triggerTable';
+  title?: string;
+  siteIds: ID[]; // [] = all
+  levels: 'limits' | 'triggers' | 'all';
+}
+/** The opening of a letter: date, who it is to, subject, reference and greeting. */
+export interface LetterBlock extends ReportBlockBase {
+  type: 'letter';
+  date: string;
+  /** A line each: name, position, organisation, address. */
+  to: string;
+  /** In bold. */
+  subject: string;
+  /** e.g. "Ref: {{project.code}}" – a line each. */
+  reference?: string;
+  salutation: string;
+}
+/** An image in a Figures section. */
+export interface FigureImage {
+  id: string;
+  /** PNG or JPEG data URL, scaled down when added. */
+  src: string;
+  caption: string;
+  /** A name to refer to it in text: {{fig:name}} gives "Figure 3" (or "Figure 3(b)" in a group). */
+  ref?: string;
+}
+/** Images – site plans, photos, graphs from elsewhere – in a grid with captions and numbers. */
+export interface FiguresBlock extends ReportBlockBase {
+  type: 'figures';
+  /** Images in every report from this template; the images for one report are added on the Reports tab. */
+  images: FigureImage[];
+  perRow: 1 | 2 | 3 | 4;
+  /** Height of the images (mm); 0 = as wide as the column, keeping their shape. */
+  heightMm: number;
+  /** 'each' = Figure 1, Figure 2 …; 'group' = one number for them all, with (a), (b) … under the images; 'none' = captions only. */
+  numbering: 'each' | 'group' | 'none';
+  /** What they are called: Figure, Photo, Plate, Map … (each has its own numbers). */
+  label: string;
+  /** The caption for the group ('group' numbering). */
+  caption?: string;
+  /** A thin line around each image. */
+  border?: boolean;
+}
 /** One person signing off a report. */
 export interface Signatory {
   id: string;
@@ -384,6 +459,8 @@ export interface Signatory {
 }
 export interface SignaturesBlock extends ReportBlockBase {
   type: 'signatures';
+  /** e.g. "Kind regards," above the signatures of a letter. */
+  closing?: string;
   signatories: Signatory[];
   /** Height of the signatures on the page (mm). */
   imageHeightMm?: number;
@@ -407,6 +484,10 @@ export type ReportBlock =
   | SiteTableBlock
   | SamplingTableBlock
   | RoundReviewBlock
+  | RoundTableBlock
+  | TriggerTableBlock
+  | LetterBlock
+  | FiguresBlock
   | SignaturesBlock
   | PageBreakBlock;
 
@@ -424,8 +505,18 @@ export interface ReportTemplate {
   logo?: string; // data URL
   /** Height of the logo on the title page (mm); its width follows the image's proportions. */
   logoHeightMm?: number;
-  /** Number headings (1, 1.1 …) and captions (Table 1, Figure 1 …). */
+  /** Number captions (Table 1, Figure 1 …) – and headings (1, 1.1 …) unless `numberHeadings` says otherwise. */
   numbering?: boolean;
+  /** Number headings (unset: as `numbering`). */
+  numberHeadings?: boolean;
+  /** 'letter': written as a letter – headings in regular weight, "Table 1." captions in italics, a letter opening rather than a title page. */
+  style?: 'report' | 'letter';
+  /** Use the letterhead in Settings: its logo, footers, margins and fonts (and for Word, the Word file it came from). */
+  letterhead?: boolean;
+  /** Table header rows: in the accent colour (default), light grey or dark grey. */
+  tableHeader?: 'accent' | 'grey' | 'dark';
+  /** How exceedances stand out in tables: shaded cells (default) or red text. */
+  highlightStyle?: 'fill' | 'text';
   /** The period this template is usually for: 'latestRound' = the month of the latest monitoring round. */
   period?: 'latestRound';
   blocks: ReportBlock[];
@@ -450,4 +541,46 @@ export interface Settings {
   signatureImage?: string;
   /** Lines under your name in sign-offs, e.g. job title and company (unset = the company). */
   signatureDetails?: string;
+  /** Your company letterhead for letter reports. */
+  letterhead?: Letterhead;
+}
+
+/** Something in a letterhead's header or footer: a line of text ({page} = page number) or a picture. */
+export type LetterheadItem = (
+  | { kind: 'text'; runs: Array<{ text: string; color?: string; sizePt?: number; bold?: boolean; italic?: boolean }> }
+  | { kind: 'image'; dataUrl: string; widthMm: number; heightMm: number }
+) & {
+  align: 'left' | 'center' | 'right';
+  /** Shift from the left margin (mm) of a left-aligned item, e.g. a logo that sits out in the margin. */
+  dx?: number;
+};
+
+export interface LetterheadPage {
+  header: LetterheadItem[];
+  footer: LetterheadItem[];
+}
+
+/**
+ * A company letterhead for letter reports – logo, footers, margins and fonts – read from a Word file or set up by
+ * hand. Kept in this browser only.
+ */
+export interface Letterhead {
+  /** The Word file it was read from (blank when set up by hand). */
+  fileName?: string;
+  /** The letterhead part of the Word file (data URL, none of its text): Word downloads keep its header and footers exactly. */
+  docx?: string;
+  /** Word downloads use the Word file's own header and footers (default); off = drawn from the parts below, as in PDFs. */
+  useWordFile?: boolean;
+  marginsMm: { top: number; right: number; bottom: number; left: number; header: number; footer: number };
+  /** How far body text is indented from the left margin (mm), as in the Word file's Normal style. */
+  indentMm?: number;
+  font?: string;
+  headingFont?: string;
+  fontSize?: number;
+  textColor?: string;
+  headingColor?: string;
+  /** The first page – a letter's first page often has the address in its footer. */
+  first: LetterheadPage;
+  /** The pages after the first. */
+  other: LetterheadPage;
 }

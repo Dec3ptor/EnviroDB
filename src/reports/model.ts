@@ -1,4 +1,4 @@
-import type { ReportTemplate } from '../db/types';
+import type { Letterhead, ReportTemplate } from '../db/types';
 
 export interface Run {
   text: string;
@@ -19,17 +19,61 @@ export interface Cell {
 export type DocNode =
   | { t: 'title'; title: string; subtitle?: string; details: Array<[string, string]>; logo?: { dataUrl: string; widthMm: number; heightMm: number }; pageBreakAfter: boolean }
   | { t: 'h'; level: 1 | 2 | 3; text: string; number?: string }
-  | { t: 'p'; runs: Run[] }
+  /** A paragraph; `quote` = an indented quotation in italics, e.g. a consent condition. */
+  | { t: 'p'; runs: Run[]; quote?: boolean }
+  /** Lines kept together without space between them, e.g. an address. */
+  | { t: 'lines'; lines: Run[][] }
   | { t: 'ul'; items: Run[][] }
   | { t: 'table'; caption?: string; head: Cell[][]; body: Cell[][]; widths: Array<number | '*' | 'auto'>; fontSize?: number; notes?: string[]; keepRows?: number }
   | { t: 'image'; dataUrl: string; widthCm: number; heightCm: number; caption?: string }
   /** Graphs side by side (two per row). */
   | { t: 'figures'; items: Array<{ dataUrl: string; widthCm: number; heightCm: number; caption?: string }> }
+  /**
+   * Images in rows of `perRow` columns, each fitted in its cell (sizes worked out by the builder), a caption under
+   * each and optionally one for the group.
+   */
+  | { t: 'gallery'; perRow: number; colWidthMm: number; gapMm: number; border: boolean; items: Array<{ dataUrl: string; widthMm: number; heightMm: number; caption?: string }>; caption?: string }
   | { t: 'note'; text: string }
   /** Sign-off: signatories side by side, `cols` to a row; without an image a line is left to sign by hand. */
-  | { t: 'signatures'; cols: number; colWidthMm: number; imageHeightMm: number; items: Array<{ role: string; name: string; lines: Run[][]; date?: string; image?: { dataUrl: string; widthMm: number; heightMm: number } }> }
+  | { t: 'signatures'; closing?: Run[]; cols: number; colWidthMm: number; imageHeightMm: number; items: Array<{ role: string; name: string; lines: Run[][]; date?: string; image?: { dataUrl: string; widthMm: number; heightMm: number } }> }
   /** New page; `orientation` changes the orientation of the pages that follow. */
   | { t: 'pagebreak'; orientation?: 'portrait' | 'landscape' };
+
+/** Margins and the header / footer distances from the page edge, in mm. */
+export interface PageGeometry {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+  header: number;
+  footer: number;
+  /** Body text indent from the left margin (a letterhead's Normal style). */
+  indent: number;
+}
+
+/** How the report looks, worked out from the template (and the letterhead it uses). */
+export interface ReportLook {
+  style: 'report' | 'letter';
+  accent: string;
+  /** Headings (the letterhead's heading colour, or the accent). */
+  headingColor: string;
+  textColor?: string;
+  /** Fonts named in Word documents (PDFs use their own font). */
+  font?: string;
+  headingFont?: string;
+  tableHeader: 'accent' | 'grey' | 'dark';
+  highlight: 'fill' | 'text';
+}
+
+/** A commentary box the report asks for, beside the template's text sections – e.g. the summary under a site's table. */
+export interface CommentaryField {
+  key: string;
+  label: string;
+  /** The heading it comes under. */
+  group: string;
+  /** The text drafted from the results, used until it is edited. */
+  auto: string;
+}
 
 export interface ReportDoc {
   template: ReportTemplate;
@@ -39,7 +83,15 @@ export interface ReportDoc {
   title: string;
   author: string;
   fileName: string;
+  page: PageGeometry;
+  look: ReportLook;
+  /** The letterhead from Settings, for templates that use it. */
+  letterhead?: Letterhead;
+  commentary: CommentaryField[];
 }
+
+/** Red for exceedances shown as text, and purple for a detection limit above the limit. */
+export const TEXT_FLAGS = { exceed: '#E00000', check: '#7A3DB8' };
 
 export const FILLS = {
   limit: '#F9D0D0',
@@ -50,7 +102,7 @@ export const FILLS = {
   guidelineRow: '#F3F3F1',
 };
 
-/** Parse simple markup: blank lines separate paragraphs, "- " lines are bullets, **bold**, *italic*. */
+/** Parse simple markup: blank lines separate paragraphs, "- " lines are bullets, "> " lines a quotation, **bold**, *italic*. */
 export function parseMarkup(text: string): DocNode[] {
   const out: DocNode[] = [];
   const blocks = text.replace(/\r/g, '').split(/\n\s*\n/);
@@ -58,10 +110,15 @@ export function parseMarkup(text: string): DocNode[] {
     const lines = block.split('\n').filter((l) => l.trim() !== '');
     if (!lines.length) continue;
     let para: string[] = [];
+    let quote: string[] = [];
     let bullets: Run[][] = [];
     const flushPara = () => {
       if (para.length) out.push({ t: 'p', runs: inline(para.join(' ')) });
       para = [];
+    };
+    const flushQuote = () => {
+      if (quote.length) out.push({ t: 'p', runs: inline(quote.join(' ')), quote: true });
+      quote = [];
     };
     const flushBullets = () => {
       if (bullets.length) out.push({ t: 'ul', items: bullets });
@@ -69,15 +126,23 @@ export function parseMarkup(text: string): DocNode[] {
     };
     for (const line of lines) {
       const m = line.match(/^\s*(?:[-•*]|\d+[.)])\s+(.*)$/);
-      if (m && !/^\s*\*\*/.test(line)) {
+      const q = line.match(/^\s*>\s?(.*)$/);
+      if (q) {
         flushPara();
+        flushBullets();
+        quote.push(q[1].trim());
+      } else if (m && !/^\s*\*\*/.test(line)) {
+        flushPara();
+        flushQuote();
         bullets.push(inline(m[1]));
       } else {
         flushBullets();
+        flushQuote();
         para.push(line.trim());
       }
     }
     flushPara();
+    flushQuote();
     flushBullets();
   }
   return out;
@@ -100,6 +165,7 @@ export function inline(text: string): Run[] {
 }
 
 export function fillPlaceholders(text: string, ctx: Record<string, string>): string {
+  // {{fig:name}} and {{table:name}} are left for the report builder, which knows the numbers once it is done
   const filled = text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k: string) => ctx[k] ?? '');
   // tidy separators left dangling by empty placeholders, e.g. " · DEMO-001" or "Client –  · x"
   return filled
@@ -120,6 +186,8 @@ export const PLACEHOLDERS: Array<[string, string]> = [
   ['project.consents', 'Consent number(s)'],
   ['project.regulator', 'Regulator'],
   ['project.location', 'Location'],
+  ['project.recipient', 'Who letters go to (name, position, address)'],
+  ['project.salutation', 'Letter greeting, e.g. Dear David,'],
   ['period.start', 'Period start (long date)'],
   ['period.end', 'Period end (long date)'],
   ['period.label', 'The period, e.g. July 2025 to June 2026'],
@@ -132,4 +200,6 @@ export const PLACEHOLDERS: Array<[string, string]> = [
   ['count.exceedances', 'Number of exceedances'],
   ['count.rules', 'Number of rules assessed'],
   ['count.rulesExceeded', 'Number of rules exceeded'],
+  ['fig:name', 'Figure number of an image or graph named “name”'],
+  ['table:name', 'Table number of a table section named “name”'],
 ];
