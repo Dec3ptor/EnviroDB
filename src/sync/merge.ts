@@ -74,6 +74,9 @@ function push<T>(map: Map<string, T[]>, key: string, item: T): void {
   else map.set(key, [item]);
 }
 
+/** Fields kept up to date by the app itself rather than by anyone: never worth a notice. */
+const BOOKKEEPING = new Set(['updatedAt', 'createdAt']);
+
 /** How recent this person's change must be for a colleague's later change to it to be pointed out. */
 export const CONFLICT_WINDOW_MS = 15 * 60000;
 
@@ -118,6 +121,7 @@ export async function applyChanges(database: Dexie, incoming: Change[], me: stri
       const recChanged = alive ? !localRec || !same(nextRec, localRec) : !!localRec;
       // this person's recent change deleted, or replaced by a colleague who hadn't seen it (their change replaced an older one)
       const replaced = Object.keys(local.f).filter((n) => {
+        if (BOOKKEEPING.has(n)) return false;
         const mine = local.f[n];
         if (stampClient(mine) !== me || now - stampMs(mine) >= CONFLICT_WINDOW_MS || merged.f[n] === mine || same(local.v[n], merged.v[n])) return false;
         return !alive || (merged.b?.[n] ?? '') < mine;

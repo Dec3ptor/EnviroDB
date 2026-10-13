@@ -163,7 +163,7 @@ export function LetterheadCard() {
       </Group>
       <Text size="sm" c="dimmed" mb="sm">
         Letter reports – the annual and monitoring event letters, and any template set to use it – print on your company letterhead: its logo, address, page numbers, margins and fonts. Upload your company’s Word letter template, or any letter or report written on it. Only the letterhead is kept (none of the
-        document’s text), and only in this browser.
+        document’s text), and it is shared with everyone in the workspace.
       </Text>
       <Group gap="xs" mb={lh ? 'md' : 0}>
         <FileButton accept=".docx,.dotx,.docm,.dotm,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.wordprocessingml.template" onChange={(f) => void upload(f)}>

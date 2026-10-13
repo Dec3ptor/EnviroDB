@@ -562,7 +562,7 @@ export interface LetterheadPage {
 
 /**
  * A company letterhead for letter reports – logo, footers, margins and fonts – read from a Word file or set up by
- * hand. Kept in this browser only.
+ * hand. Shared with the workspace (one letterhead for the team).
  */
 export interface Letterhead {
   /** The Word file it was read from (blank when set up by hand). */

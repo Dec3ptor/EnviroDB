@@ -262,10 +262,10 @@ function sharedRecords(table: string, recs: Array<Record<string, unknown>>) {
   return recs.filter((r) => !(BUILT_IN_TABLES.has(table) && r.builtIn) && isSharedRecord(table, r[primaryKeyName(table)]));
 }
 
-/** What this browser holds of its own (built-in reference data aside). */
+/** What this browser holds of its own: projects, and other work such as templates (built-in data and the team settings aside). */
 export async function localData(db: Dexie): Promise<{ projects: number; records: number }> {
   let records = 0;
-  for (const t of SHARED_TABLES) records += sharedRecords(t, await db.table(t).toArray()).length;
+  for (const t of SHARED_TABLES) records += sharedRecords(t, await db.table(t).toArray()).filter((r) => !(t === 'meta' && r.key === 'settings')).length;
   return { projects: await db.table('projects').count(), records };
 }
 

@@ -33,7 +33,7 @@ function ago(iso: string | number | undefined): string {
 
 function Screen({ children }: { children: ReactNode }) {
   return (
-    <Center mih="100vh" p="md" bg="var(--mantine-color-gray-0)">
+    <Center mih="100vh" p="md" bg="light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8))">
       <Card w="100%" maw={600} padding="xl" withBorder shadow="sm">
         <Group gap={8} mb="lg">
           <Box style={{ background: 'var(--mantine-color-teal-8)', borderRadius: 8, width: 30, height: 30, display: 'grid', placeItems: 'center' }}>
@@ -179,8 +179,8 @@ function ChooseScreen({ s }: { s: WorkspaceState }) {
   const projects = `${c.projects} project${c.projects === 1 ? '' : 's'}`;
   const confirmRemove = () =>
     modals.openConfirmModal({
-      title: 'Remove them from this browser?',
-      children: <Text size="sm">The {projects} in this browser will be deleted from it. Download a backup first if you might need them.</Text>,
+      title: 'Remove it from this browser?',
+      children: <Text size="sm">{c.projects ? `The ${projects}` : 'Your work'} in this browser will be deleted from it. Download a backup first if you might need it.</Text>,
       labels: { confirm: 'Remove them', cancel: 'Cancel' },
       confirmProps: { color: 'red' },
       onConfirm: () => resolveChoice('remove'),
@@ -190,12 +190,14 @@ function ChooseScreen({ s }: { s: WorkspaceState }) {
       {c.kind === 'adopt' ? (
         <Stack>
           <Title order={3}>
-            This browser has {projects} that {c.projects === 1 ? 'isn’t' : 'aren’t'} in “{to}”
+            {c.projects ? `This browser has ${projects} that ${c.projects === 1 ? 'isn’t' : 'aren’t'} in “${to}”` : `This browser has work of yours that isn’t in “${to}”`}
           </Title>
-          <Text size="sm">Add {c.projects === 1 ? 'it' : 'them'} to the workspace so the team can see and work on {c.projects === 1 ? 'it' : 'them'}, or remove {c.projects === 1 ? 'it' : 'them'} from this browser.</Text>
+          <Text size="sm">
+            {c.projects ? `Add ${c.projects === 1 ? 'it' : 'them'} to the workspace so the team can see and work on ${c.projects === 1 ? 'it' : 'them'} – with your report templates, guideline sets and other work – or remove ${c.projects === 1 ? 'it' : 'them'} from this browser.` : 'Your own report templates, guideline sets or other work. Add it to the workspace so the team can use it, or remove it from this browser.'}
+          </Text>
           <Group>
             <Button size="md" leftSection={<IconCloudUpload size={18} />} onClick={() => resolveChoice('add')}>
-              Add {c.projects === 1 ? 'it' : 'them'} to the workspace
+              Add {c.projects === 1 || !c.projects ? 'it' : 'them'} to the workspace
             </Button>
             <Button variant="default" leftSection={<IconDatabaseExport size={16} />} onClick={() => downloadWorkspaceBackup()}>
               Download a backup
@@ -403,8 +405,6 @@ export function WorkspaceBadge() {
 
 export function WorkspaceCard() {
   const s = useWorkspace();
-  const [name, setName] = useState(s.myName);
-  useEffect(() => setName(s.myName), [s.myName]);
   const leave = () =>
     modals.openConfirmModal({
       title: 'Leave the workspace?',
@@ -434,7 +434,9 @@ export function WorkspaceCard() {
       </Text>
       <Group align="flex-start" gap="xl" wrap="wrap">
         <Stack gap="xs" w={280}>
-          <TextInput label="Your name" description="Shown to colleagues next to your changes" value={name} onChange={(e) => setName(e.currentTarget.value)} onBlur={() => name.trim() && name.trim() !== s.myName && setMyName(name)} />
+          <Text size="sm">
+            Colleagues see you as <b>{s.myName || 'Someone'}</b> (your name, above).
+          </Text>
           <Group gap="xs">
             <Button size="xs" variant="default" leftSection={<IconFolderOpen size={14} />} onClick={() => useAnotherFolder()}>
               Use a different folder

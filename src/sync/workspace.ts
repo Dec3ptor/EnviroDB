@@ -135,7 +135,7 @@ export async function startWorkspace(): Promise<void> {
   set({ myId, myName: (await local<string>('name')) ?? '' });
   if (!workspaceSupported()) return set({ phase: 'unsupported' });
   const saved = await local<DirectoryHandle>('handle');
-  if (!saved) return set({ phase: 'setup' });
+  if (!saved || typeof saved.getDirectoryHandle !== 'function') return set({ phase: 'setup' });
   handle = saved;
   const folder = handleFolder(saved);
   const perm = await folder.permission(false).catch(() => 'prompt' as PermissionState);
@@ -209,13 +209,13 @@ export async function createWorkspace(name: string): Promise<void> {
   const { folder } = candidate;
   set({ phase: 'connecting', detail: 'Creating the workspace…', error: undefined });
   try {
-    await decide(folder, await createWorkspaceFile(folder, name, state.myName));
+    await decide(folder, await createWorkspaceFile(folder, name, state.myName), true);
   } catch (e) {
     failed(e, folder);
   }
 }
 
-async function decide(folder: WorkspaceFolder, ws: WorkspaceFile): Promise<void> {
+async function decide(folder: WorkspaceFolder, ws: WorkspaceFile, created = false): Promise<void> {
   const linked = await local<{ id: string; name: string }>('workspace');
   if (linked?.id === ws.id) return connect(folder, ws);
   const data = await localData(db);
@@ -224,6 +224,8 @@ async function decide(folder: WorkspaceFolder, ws: WorkspaceFile): Promise<void>
     const choice: WorkspaceChoice = linked ? { kind: 'switch', ...data, from: linked, unsaved: await pendingSegments(db) } : { kind: 'adopt', ...data, unsaved: 0 };
     return set({ phase: 'choose', workspace: ws, choice });
   }
+  // whoever starts a workspace brings the team settings they have (company, letterhead)
+  if (created) await adoptLocalData(db);
   return connect(folder, ws);
 }
 

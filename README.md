@@ -3,12 +3,14 @@
 **Environmental monitoring, consent compliance and reporting – in your browser.**
 
 EnviroDB is a free, open-source web app for routine consent compliance monitoring.
-It runs entirely in the browser and is hosted on GitHub Pages.
+It runs entirely in the browser and is hosted on GitHub Pages. A team works together through a
+**shared workspace folder** (SharePoint, OneDrive or a network drive): everyone's changes are saved
+there as they work and show up for the others within seconds.
 
 - **Import** Hill Labs Excel results, your existing monitoring master spreadsheets
   (dates down the rows, analytes across the columns, one sheet per site, units rows,
-  guideline rows…) or long tables. Sites and analytes are matched automatically, and
-  the matches are remembered for next time.
+  guideline rows…), monitoring-database exports or long tables. Sites and analytes are matched
+  automatically, and the matches are remembered for next time.
 - **Set up projects** with monitoring sites, consent limits and trigger levels, sampling
   frequencies and reporting due dates.
 - **Check compliance** right after import. The supported rule types are:
@@ -72,9 +74,9 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   template – or any letter or report written on it (.docx or .dotx). EnviroDB reads its logo, the
   address in the first page's footer, the page numbers, margins, fonts and heading colour. Word
   downloads are built on the file's own header and footers, exactly as they are in Word; PDFs and the
-  preview draw them. Only the letterhead is kept – none of the document's text – and only in this
-  browser. You can also set a letterhead up by hand (logo and footer lines), and any template can be
-  switched to print on it.
+  preview draw them. Only the letterhead is kept – none of the document's text – and it is shared
+  with everyone in the workspace. You can also set a letterhead up by hand (logo and footer lines),
+  and any template can be switched to print on it.
 - **Add figures.** A *Figures* section takes your own pictures – site photos, plans, graphs from
   Excel. Drop them on the box, choose them or paste them; caption them and drag them into order.
   Choose 1–4 to a row and their size, and whether each is numbered (Figure 1, Figure 2 …), the group
@@ -119,45 +121,85 @@ It runs entirely in the browser and is hosted on GitHub Pages.
   *Download project file*) are under ⋯.
 - **Library** – reference data shared by every project: *Guidelines*, *Report templates* and
   *Parameters* (the analyte dictionary: names, units and the aliases used in lab files).
-- **Settings & backup** – your name, company, signature and letterhead, autosave and backups.
+- **Settings & backup** – your name, company, signature and letterhead, the workspace (who's connected)
+  and backups. The **Saved** badge top right shows when your changes are in the folder and who else is
+  connected.
 
 Everyday controls are on show. Settings most people leave alone are folded away with a summary of
 what they're set to (▸ *Assessment settings* and ▸ *Display units* in Setup, ▸ *Placeholders* in the
 template editor), and rarely used actions sit in ⋯ menus. Filters stay on one line: a picker shows
 "US1, DP1" or "5 parameters" and opens to a searchable checklist.
 
-## Where is the data stored? (the "database")
+## The shared workspace (where the data is stored)
 
-GitHub Pages only serves static files, so it can't run a server database.
-EnviroDB keeps its database **inside your browser** (IndexedDB), which has some
-advantages:
+GitHub Pages only serves static files, so it can't run a server database. Instead, EnviroDB keeps
+everything in a **workspace folder** that the whole team can reach – a SharePoint or OneDrive folder
+synced to each person's computer, or a shared network drive – with a working copy in each browser
+(IndexedDB) so it's fast. Client data goes nowhere else: the folder is only as shared as you make it.
 
-- **Private.** Client data never leaves your computer. Nothing is uploaded, and files
-  are read locally.
-- **Fast and offline.** There's no server to wait for.
-- **Free.** There's no hosting, accounts or subscriptions.
+**EnviroDB doesn't open until it's connected to the workspace folder**, so nobody works on a copy
+nobody else can see. It needs **Microsoft Edge or Google Chrome on a computer** – phones, tablets,
+Firefox and Safari can't work with folders from a web page.
 
-Because the data lives in one browser on one computer, keep a copy:
+### Setting it up
 
-1. **Autosave to a file** (Settings & backup → *Choose autosave file…*). Every change is
-   written to a `.json` file you pick. Put it in a OneDrive / SharePoint / Teams folder and
-   it's backed up and available on another computer (open it with *Restore…*). This needs
-   Microsoft Edge or Google Chrome.
-2. **Download a backup** at any time, and restore or merge it later.
-3. **Share a single project** with a colleague using the project menu → *Download project file*.
-   They open it from the Projects page.
+1. One person makes an empty folder for it, e.g. *EnviroDB workspace* in the team's SharePoint, and
+   shares it with the team.
+2. Everyone syncs it to their computer (in SharePoint: *Sync* or *Add shortcut to My files*). In
+   OneDrive, right-click the folder → **Always keep on this device**, so the latest files are always
+   there.
+3. Each person opens EnviroDB, enters their name and chooses the folder. The first person is asked to
+   start a workspace in it; everyone after that joins it. Anything already in a browser can be added to
+   the workspace (or left out) when it first connects.
+4. Next time, EnviroDB reconnects by itself – or after one click if the browser asks for permission
+   again (choose *Allow on every visit* to skip that).
 
-Backups and the autosave file hold everything: projects and data, your templates, the commentary,
-figures and layout changes of your reports, and your settings – name, signature and letterhead. A
-project file shared with a colleague holds just the project and its data.
+If the folder can't be reached (the drive is disconnected, the folder was moved), EnviroDB shows a
+notice and waits; changes already made are kept and saved as soon as the folder is back.
 
-If you later want a shared multi-user database, the storage layer can be connected to a
-hosted database (e.g. Supabase, Firebase or an Azure service). Client data would then be
-stored by that provider, so check with your IT / data-governance team first.
+### Working at the same time
+
+- **Changes appear by themselves.** EnviroDB checks the folder every few seconds (and as soon as you
+  come back to the window); colleagues' changes show up on every screen without reloading, with a
+  short notice saying who changed what.
+- **Different changes to the same thing are both kept.** If you edit a project's consent number
+  while a colleague edits its client, both changes stay. Forms save only the fields you changed onto
+  the record as it is now, so a colleague's change made while your form was open is never undone.
+  Report commentary is kept section by section, so two people can write the same report at once.
+- **The same thing changed by two people at once:** the later change is kept everywhere, and the
+  person whose change was replaced is told ("Bo Jones also changed project … – their later change is
+  the one kept"). A deletion wins over changes made to the record at the same time, and you're told
+  if something you had just changed was deleted.
+- **The same lab file imported by two people** gives one set of samples and results, not two.
+
+### How the folder is organised
+
+```
+envirodb-workspace.json          which workspace this is
+clients/<person>/client.json     who that is and when they were last connected
+clients/<person>/*.json          the changes that person made (projects, sites, results by year …)
+backups/EnviroDB backup <date>.json   a copy of everything, made each day (the last ten are kept)
+```
+
+Each browser writes only its own files, so OneDrive, SharePoint and network drives never see two
+people saving the same file (no "conflicted copy" files) – files can arrive in any order and every
+browser still ends up with the same data. Don't edit or delete files in the folder by hand.
+
+### Backups and sharing outside the team
+
+- **Daily copies** are kept in the folder's *backups* folder. **Download a backup** (Settings & backup)
+  at any time; *Restore…* opens either kind. Restoring changes the workspace for everyone.
+- **Share a single project** with someone outside the team using the project menu → *Download project
+  file*. They open it from the Projects page.
+
+Backups hold everything: projects and data, templates, report commentary, figures and layout changes,
+and the settings. The team shares the company name and letterhead; your name, signature, date format
+and other preferences are your own and stay in your browser.
 
 ## Getting started
 
-1. Open the site. Choose **Load demo project** to explore with synthetic data, or **New project**.
+1. Open the site in Edge or Chrome and connect to your team's workspace folder (see above). Choose
+   **Load demo project** to explore with synthetic data, or **New project**.
 2. In the project's **Setup** tab, add your monitoring sites (paste a list with *Add several*).
 3. **Import results**: drag in a Hill Labs Excel file or your master spreadsheet. Try the
    example files on the import page first.
@@ -174,6 +216,7 @@ stored by that provider, so check with your IT / data-governance team first.
 | --- | --- | --- |
 | Lab certificate (samples across, analytes down) | Hill Labs Excel results and CSV exports (`…-SSFC-1.csv`) | Detects the `Sample Name` / `Lab Number` rows, the analyte and units columns and section headings (e.g. *Heavy metals, dissolved*). Sampling dates come from a *Date Sampled* row, or from the sample name (`SW1 12-Mar-2024 10:30 am`, `W1 28-Sept-2026 9:40 am`). The lab's numbered comments (`< 2 #1`) are saved with the sample. |
 | Monitoring spreadsheet (one row per sample) | Master sheets | Header row, optional units row, date (and time) columns, and the site from a column, the sheet name or a fixed value. Guideline / statistics rows without a valid date are skipped automatically. Dates-across-columns sheets are supported too. |
+| Monitoring-database export | `Sample:` and `Unit:` rows above a `Date, Status, Lab Reference, …` header | The site and units come from the rows above the header, lined up with their analytes even when they're written a column to the left. *Lab Reference* becomes the lab number. Rows marked *Missed*, *Due* or *Waiting* are left out (and counted); samples still *At Lab* are imported with a provisional note that goes when the final results are imported. `No Result` / `Completed` cells, processing dates and the ion balance check are ignored, and 00:00 / 01:00 clock times on dates are dropped. |
 | Long table (one row per result) | LIMS / database exports | Columns such as Site, Date, Analyte, Result, Units, Detection limit. |
 
 Results such as `< 0.0010`, `>2420`, `ND`, `NS`, `1,200` and `0.5*` are understood. Units are converted
@@ -199,13 +242,15 @@ npm run build      # type-check and production build into dist/
 npm run samples    # regenerate the synthetic example import files in public/samples/
 ```
 
-Tech: React 18, TypeScript, Vite, Mantine UI, Dexie (IndexedDB), SheetJS (Excel import), ECharts,
-pdfmake (PDF), docx (Word) and ExcelJS (styled Excel export).
+Tech: React 18, TypeScript, Vite, Mantine UI, Dexie (IndexedDB), the File System Access API (the
+workspace folder), SheetJS (Excel import), ECharts, pdfmake (PDF), docx (Word) and ExcelJS (styled
+Excel export).
 
 ```
 src/
   data/        built-in parameters (analyte dictionary), guideline sets, report templates
-  db/          IndexedDB schema, CRUD, backup/restore/autosave, demo project
+  db/          IndexedDB schema, CRUD, backup/restore, demo project
+  sync/        the workspace folder: change capture (Dexie middleware), clock stamps, merge, files, connection
   lib/         units, values, dates, statistics, matching, guidelines, compliance engine, schedules
   importers/   workbook reading, lab-certificate / master-sheet / long-table parsers, import commit
   charts/      ECharts time-series builder and PNG rendering

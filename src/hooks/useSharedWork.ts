@@ -3,6 +3,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, updateReportWork } from '../db/db';
 import { same } from '../sync/model';
 
+const NONE = {};
+
 interface Pending<T> {
   value: T | undefined;
   /** Saved: from now on the saved value shows (this person's, or a colleague's later one). */
@@ -19,7 +21,7 @@ export function useSharedWork<T>(key: string) {
   const saved = useLiveQuery(async () => (key ? (((await db.meta.get(key))?.value as Record<string, T> | undefined) ?? {}) : {}), [key]);
   const [pending, setPending] = useState<{ key: string; parts: Record<string, Pending<T>> }>({ key, parts: {} });
   const seq = useRef(0);
-  const parts = pending.key === key ? pending.parts : {};
+  const parts = pending.key === key ? pending.parts : (NONE as Record<string, Pending<T>>);
 
   // once a part is saved, the saved value shows again
   useEffect(() => {

@@ -23,9 +23,15 @@ function load(): void {
   }
 }
 
+let savedAt = 0;
+
+/** Remembers the clock (at most once a second: a big import makes thousands of stamps). */
 function save(): void {
+  const now = Date.now();
+  if (now - savedAt < 1000) return;
+  savedAt = now;
   try {
-    globalThis.localStorage?.setItem(STORE_KEY, String(lastMs));
+    globalThis.localStorage?.setItem(STORE_KEY, String(lastMs + 1000));
   } catch {
     /* ignore */
   }

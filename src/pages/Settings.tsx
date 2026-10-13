@@ -7,6 +7,7 @@ import { IconCloudUpload, IconDatabaseExport, IconDatabaseImport, IconShieldLock
 import { db, ensureBuiltIns, saveSettings } from '../db/db';
 import { downloadWorkspaceBackup, readJsonFile, restoreWorkspace } from '../db/backup';
 import { WorkspaceCard } from '../components/workspace/Workspace';
+import { setMyName } from '../sync/workspace';
 import { useSettings } from '../hooks/useSettings';
 import { PageHeader } from '../components/common';
 import type { Settings } from '../db/types';
@@ -57,8 +58,17 @@ export function SettingsPage() {
           Your details
         </Title>
         <SimpleGrid cols={{ base: 1, sm: 3 }}>
-          <TextInput label="Your name" description="Used for “Prepared by” in reports ({{author}})" value={author} onChange={(e) => setAuthor(e.currentTarget.value)} onBlur={() => saveSettings({ author })} />
-          <TextInput label="Company" description="Used in report footers ({{company}})" value={company} onChange={(e) => setCompany(e.currentTarget.value)} onBlur={() => saveSettings({ company })} />
+          <TextInput
+            label="Your name"
+            description="“Prepared by” in reports ({{author}}), and how colleagues see you"
+            value={author}
+            onChange={(e) => setAuthor(e.currentTarget.value)}
+            onBlur={() => {
+              void saveSettings({ author });
+              if (author.trim()) void setMyName(author);
+            }}
+          />
+          <TextInput label="Company" description="The team’s – used in report footers ({{company}})" value={company} onChange={(e) => setCompany(e.currentTarget.value)} onBlur={() => saveSettings({ company })} />
           <Select
             label="Date format"
             data={[
@@ -75,7 +85,7 @@ export function SettingsPage() {
           Your signature
         </Text>
         <Text size="xs" c="dimmed" mb={6}>
-          For report sign-offs where you are the signatory (“Me”). Paste your signature into the box – an image, or a whole signature copied from an email or a Word document – or upload one. It stays on this computer with the rest of your data.
+          For report sign-offs where you are the signatory (“Me”). Paste your signature into the box – an image, or a whole signature copied from an email or a Word document – or upload one. It stays in this browser – colleagues use their own.
         </Text>
         <SimpleGrid cols={{ base: 1, sm: 2 }}>
           <SignatureInput
