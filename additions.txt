@@ -1,0 +1,45 @@
+FOR APP.
+
+Remove the multi user working in reporting for now. Users can just individually generate their own.
+
+Need to be able to delete parameters from the parameter library, and from inside the actual project settings, just warn users what it will impact if they do choose to do it.
+
+When new user connects to shared database, it shows that user edited files etc on already connected users screen as they are joining?
+
+Adapt the app for different types of reports, like management plans etc. Full report structure from dropped in file?
+
+In report gen, in table where its comparing results, I don’t like the “first result” text if there was no data the previous round, cant we just state if the latest is compliant or not?
+
+A way for it to auto generate a summary?
+
+In graphs, when toggling off a site, need to reupdate the graph x/y bounds etc.
+
+Sort the compliance tab by most important at top, so exceeding, etc.
+
+In schedule tab, move the “Sampling Schedules” section above the Reporting obligations.
+
+When scrolling down data in the data tab, the parameter row dissapears / gets covered. Need it and the unit rows to be locked.
+
+Not too keen on the main dashboard fo rthe app. I’d like to customize it IN APP. To have things as widgets I can place / move / adjust etc. To let users create the perfect dashboard for them. Some things im imagining are having the monitoring schedule then actions to take, reporting due etx as widgets.
+
+Monitoring schedule tab like as shown in excel doc page 1. Easy to understand and follow, and edit etc.
+
+Im wondering if itd be possible to incoorporate some GIS utility in the app, but in a non clunky, easy to understand and manage way. Possibly some export to QGIS format, and enable users to select from different QGIS templates they already have (Attach the big python script for QGIS).
+
+Linked on with the GIS capability, field capability in app. 
+
+Think about the usecase and other improvements / features that could help this program be more widely used and incoorporated, for different sectors (such as contaminated land, ecology, transport, etc).
+
+More simple way of creating report templates, like super easy to use drag and drop, adding spaces where I need to , calculations where I need to, etc.
+
+Some way to incoorporate AI in app, like in WSP we use copilot, if there was a way to incoorporate it via some company log in on site? 
+
+Allow the app to be used for other work in company: For ecology, could be anything from freshwater, terrestrial, saltwater, wetlands, e-dna, all in an "Ecology" section.
+
+Let me remove the “built in templates”. Maybe a auto template builder based of imported document, itll build a template around it?
+
+A way to just import data, and have it compare with guideline values. Allows me to be able to quick import any data (even if theres no project for it) and compare with values etc
+
+Highlight updated sections that NEED user to click a little save icon, so they see properly 
+
+When multiple guidelines are selected, colour each highlight different?
