@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type {
   CalendarMark,
+  CalendarRow,
   ExceedanceNote,
   GuidelineSet,
   ImportBatch,
@@ -42,6 +43,7 @@ export class EnviroDatabase extends Dexie {
   obligations!: Table<ReportObligation, string>;
   imports!: Table<ImportBatch, string>;
   templates!: Table<ReportTemplate, string>;
+  calendarRows!: Table<CalendarRow, string>;
   calendarMarks!: Table<CalendarMark, string>;
   meta!: Table<MetaRecord, string>;
   // the shared workspace: what changed when (syncState), what is still to be written to the folder (syncDirty),
@@ -78,13 +80,16 @@ export class EnviroDatabase extends Dexie {
     this.version(3).stores({
       calendarMarks: 'id, projectId, item',
     });
+    this.version(4).stores({
+      calendarRows: 'id, projectId, order',
+    });
   }
 }
 
 export const db = new EnviroDatabase();
 
 export const DATA_TABLES = [
-  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarMarks',
+  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks',
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 

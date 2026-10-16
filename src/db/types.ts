@@ -36,7 +36,7 @@ export interface Project {
   purchaseOrder?: string;
   /** The project's folder: a link or a path to copy (e.g. a SharePoint link or G:\\CLIENTS\\…). */
   folder?: string;
-  /** Notes for the monitoring calendar, e.g. who results go to. */
+  /** Notes for the monitoring calendar (kept here by its first version; a calendar row made for the project starts with them). */
   calendarNotes?: string;
   createdAt: string;
   updatedAt: string;
@@ -221,26 +221,64 @@ export interface MonitoringSchedule {
   window?: number;
 }
 
-/** Where a sampling round, report or extra job stands in a month of the monitoring calendar. */
+/** Where a job stands in a month of the monitoring calendar: done (results sent or reported), doing, cancelled. */
 export type CalendarStatus = 'done' | 'doing' | 'cancelled';
 
+/** A month of the calendar's rows: m01 (January) … m12 (December). */
+export type MonthField = 'm01' | 'm02' | 'm03' | 'm04' | 'm05' | 'm06' | 'm07' | 'm08' | 'm09' | 'm10' | 'm11' | 'm12';
+
+/** The other columns of a calendar row. */
+export type CalendarTextField = 'job' | 'jobCode' | 'purchaseOrder' | 'details' | 'notes' | 'reportDue' | 'managementPlan' | 'other' | 'consents' | 'folder';
+
 /**
- * A month of the monitoring calendar: the status of a sampling round or report due then (marked by the person
- * doing it), or an extra job for that month (e.g. "# metals suite", "% survey").
+ * A row of the monitoring calendar – a job, like a line of a team's monitoring-schedule spreadsheet: what's planned
+ * each month (marks such as ●, ▲, R, #, or a sampling window "(" … ")"), the key to the marks and notes. The plan is
+ * the same every year; how each month went is kept for each year (CalendarMark). A row for a project shows the
+ * project's job number, purchase order, consents and folder (changing them changes the project's).
+ */
+export type CalendarRow = {
+  id: ID;
+  projectId?: ID;
+  /** Results from these of the project's sites count for the row (all its sites when none). */
+  siteIds?: ID[];
+  order: number;
+  /** The job, e.g. "Closed landfill – stormwater"; blank: the project's name. */
+  job: string;
+  /** For a row without a project. */
+  jobCode?: string;
+  purchaseOrder?: string;
+  consents?: string;
+  folder?: string;
+  /** Monitoring schedule details: the key to the marks, e.g. "● = GW2  ▲ = all bores". */
+  details?: string;
+  notes?: string;
+  reportDue?: string;
+  managementPlan?: string;
+  other?: string;
+  /** Columns highlighted (yellow) to stand out, whatever the year. */
+  highlight?: CalendarTextField[];
+  /** The whole job is on hold or cancelled (the row is shaded pink). */
+  onHold?: boolean;
+  updatedAt: string;
+} & Partial<Record<MonthField, string>>;
+
+/**
+ * How a month of a calendar row went in a year – done (green), doing (yellow) or cancelled / on hold (pink) – with a
+ * note; or the colour of one of the row's other columns that year (e.g. the report due, green once it's sent).
  */
 export interface CalendarMark {
-  /** `${item}|${month}` */
+  /** `${row id}|${YYYY-MM}`, or `${row id}|${YYYY}|${field}` for another column. */
   id: string;
-  projectId: ID;
-  /** The schedule or reporting obligation it's for, or `x-…` for an extra job. */
+  /** The calendar row. */
   item: string;
-  /** YYYY-MM */
+  /** YYYY-MM, or YYYY for another column. */
   month: string;
+  /** The column, when it isn't a month. */
+  field?: CalendarTextField;
   status?: CalendarStatus;
   note?: string;
-  /** Extra jobs: their mark and what they are. */
-  symbol?: string;
-  label?: string;
+  /** Kept by the first version of the calendar. */
+  projectId?: ID;
   updatedAt: string;
 }
 

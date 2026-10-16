@@ -1,82 +1,177 @@
 import { describe, expect, it } from 'vitest';
-import { calendarMonths, cellState, cellText, legend, projectCalendar, scheduleSymbols } from '../src/lib/calendar';
-import { newObligation, newProject, newSchedule } from '../src/db/repo';
-import type { CalendarMark } from '../src/db/types';
+import {
+  buildSheet, cellValue, monthText, planFromProject, plannedIn, reportsDueIn, resultsByMonth, rowMonths, scheduleSymbols, setWindow, statusFromFill, toggleSymbol, windowRange, windowsOf,
+} from '../src/lib/calendar';
+import { cellEdit, fromTsv, noteEdit, statusEdits, symbolEdits, toTsv, windowEdits } from '../src/lib/calendarEdits';
+import { newCalendarRow, newObligation, newProject, newSchedule } from '../src/db/repo';
+import type { CalendarMark, CalendarRow } from '../src/db/types';
 
-const project = newProject({ id: 'p1', name: 'Closed landfill' });
-const monthly = newSchedule('p1', { id: 'monthly', name: 'GW2', siteIds: ['gw2'], every: 1, unit: 'month', startDate: '2025-01-01' });
-const quarterly = newSchedule('p1', { id: 'quarterly', name: 'All bores', siteIds: ['gw1', 'gw2'], every: 3, unit: 'month', startDate: '2025-03-01' });
-const sixMonthly = newSchedule('p1', { id: 'six', name: 'River', siteIds: ['us'], every: 6, unit: 'month', startDate: '2026-01-01', window: 3, symbol: '◆' });
-const weekly = newSchedule('p1', { id: 'weekly', name: 'Discharge', siteIds: ['dp'], every: 1, unit: 'week', startDate: '2026-01-05' });
-const report = newObligation('p1', { id: 'annual', name: 'Annual report', every: 1, unit: 'year', firstPeriodStart: '2025-07-01', firstPeriodEnd: '2026-06-30', firstDueDate: '2026-09-30', submissions: [] });
-const mark = (item: string, month: string, patch: Partial<CalendarMark> = {}): CalendarMark => ({ id: `${item}|${month}`, projectId: 'p1', item, month, updatedAt: '', ...patch });
+const months = (...texts: string[]) => [...texts, ...Array(12 - texts.length).fill('')];
+const row = (patch: Partial<CalendarRow> = {}) => newCalendarRow({ id: 'r1', ...patch });
 
-const months = calendarMonths(2026);
-const at = (entries: ReturnType<typeof projectCalendar>['entries'], item: string, month: string) => entries.filter((e) => e.item.key === item && e.month === month);
-
-describe('the monitoring calendar', () => {
-  it('shows a calendar year, or a reporting year', () => {
-    expect(months).toEqual(['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12']);
-    expect(calendarMonths(2026, 7)).toEqual(['2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04', '2027-05', '2027-06']);
+describe('the monitoring calendar: sampling windows', () => {
+  it('finds windows from "(" to ")", one over the new year too', () => {
+    const w = windowsOf(months('(', '', ')', '●', '(●▲)'));
+    expect(w.slice(0, 5).map((x) => [x.inWindow, x.start, x.end, x.span])).toEqual([
+      [true, true, false, 3],
+      [true, false, false, 0],
+      [true, false, true, 0],
+      [false, false, false, 0],
+      [true, true, true, 1],
+    ]);
+    // December to February
+    const wrap = windowsOf(['', ')', '', '', '', '', '', '', '', '', '', '(#']);
+    expect(wrap.map((x) => x.inWindow)).toEqual([true, true, false, false, false, false, false, false, false, false, false, true]);
+    expect([wrap[1].end, wrap[0].start, wrap[11].start, wrap[11].span]).toEqual([true, false, true, 1]);
+    expect(windowRange(windowsOf(months('(', '', ')')), 1)).toEqual([0, 2]);
+    expect(windowRange(windowsOf(months('●')), 0)).toEqual([0, 0]);
   });
 
+  it('shows a month without the brackets and underscores, and knows what is planned', () => {
+    expect(monthText('(GW1 to GW8 X')).toBe('GW1 to GW8 X');
+    expect(monthText('(__#__')).toBe('#');
+    expect(monthText(')')).toBe('');
+    const r = row({ m01: '(', m03: ')', m05: '●' });
+    expect([0, 1, 2, 3, 4].map((i) => plannedIn(r, i))).toEqual([true, true, true, false, true]);
+  });
+
+  it('adds and takes out marks, keeping the window brackets', () => {
+    expect(toggleSymbol('●', '▲', true)).toBe('●▲');
+    expect(toggleSymbol('●)', '#', true)).toBe('●#)');
+    expect(toggleSymbol('(●', '#', true)).toBe('(●#');
+    expect(toggleSymbol('●▲', '●', false)).toBe('▲');
+    expect(toggleSymbol('(●', '●', false)).toBe('(');
+  });
+
+  it('makes months a window, and takes one away', () => {
+    expect(setWindow(months('', '●', '', ''), 1, 3, true).slice(0, 4)).toEqual(['', '(●', '', ')']);
+    expect(setWindow(months('', '(●', '', ')'), 2, 2, false).slice(0, 4)).toEqual(['', '●', '', '']);
+    // a new window over part of an old one replaces it
+    expect(setWindow(months('(', '', ')', ''), 1, 3, true).slice(0, 4)).toEqual(['', '(', '', ')']);
+  });
+});
+
+describe('the monitoring calendar: filled in from a project', () => {
+  const monthly = newSchedule('p1', { id: 'monthly', name: 'GW2', siteIds: ['gw2'], every: 1, unit: 'month', startDate: '2025-01-01' });
+  const quarterly = newSchedule('p1', { id: 'quarterly', name: 'All bores', siteIds: ['gw1', 'gw2'], every: 3, unit: 'month', startDate: '2025-03-01' });
+  const six = newSchedule('p1', { id: 'six', name: 'River', siteIds: ['us'], every: 6, unit: 'month', startDate: '2026-01-01', window: 3, symbol: '◆' });
+  const weekly = newSchedule('p1', { id: 'weekly', name: 'Discharge', siteIds: ['dp'], every: 1, unit: 'week', startDate: '2026-01-05' });
+  const annual = newObligation('p1', { id: 'annual', name: 'Annual report', every: 1, unit: 'year', firstPeriodStart: '2025-07-01', firstPeriodEnd: '2026-06-30', firstDueDate: '2026-09-30', submissions: [] });
+  const codes = new Map([['gw1', 'GW1'], ['gw2', 'GW2'], ['us', 'US'], ['dp', 'DP']]);
+
   it('gives each schedule its own mark, keeping the ones chosen', () => {
-    const s = scheduleSymbols([monthly, quarterly, sixMonthly]);
+    const s = scheduleSymbols([monthly, quarterly, six]);
     expect([s.get('monthly'), s.get('quarterly'), s.get('six')]).toEqual(['●', '▲', '◆']);
   });
 
-  it('puts every round and report in its month, with where it stands', () => {
+  it('puts each schedule’s mark in the months its rounds start, windows over the months to sample in, R where reports are due', () => {
+    const plan = planFromProject([monthly, quarterly, six, weekly], [annual], 2026, codes);
+    expect(Object.values(plan.months)).toHaveLength(12);
+    expect(plan.months).toMatchObject({ m01: '(●◆■', m02: '●■', m03: '●▲■)', m06: '●▲■', m07: '(●◆■', m09: '●▲■R)', m12: '●▲■' });
+    expect(plan.details).toBe('● = GW2 (monthly: GW2); ▲ = All bores (quarterly: GW1, GW2); ◆ = River (six-monthly: US); ■ = Discharge (weekly: DP); R = report due');
+    expect(plan.reportDue).toBe('Annual report – 30 September');
+    // schedules that are off are left out
+    expect(planFromProject([{ ...monthly, active: false }], [], 2026).months).toEqual({});
+  });
+
+  it('knows the months results came in at a row’s sites, and the reports due', () => {
     const samples = [
-      { siteId: 'gw2', date: '2026-01-14T10:00' },
-      { siteId: 'gw2', date: '2026-02-11' },
-      { siteId: 'gw1', date: '2026-03-20' }, // one of the two bores so far
-      { siteId: 'dp', date: '2026-01-06' },
-      { siteId: 'dp', date: '2026-01-13' },
+      { siteId: 'gw1', date: '2026-03-02T10:00' },
+      { siteId: 'gw2', date: '2026-03-02' },
+      { siteId: 'gw2', date: '2026-03-20' },
+      { siteId: 'us', date: '2026-04-01' },
     ];
-    const marks = [mark('monthly', '2026-01', { status: 'done' }), mark('x-1', '2026-08', { symbol: '#', label: 'Metals suite' }), mark('annual', '2026-09', { status: 'doing', note: 'Draft with Sam' })];
-    const cal = projectCalendar({ project, schedules: [monthly, quarterly, sixMonthly, weekly], obligations: [report], samples, marks }, months, '2026-04-15');
-    const e = cal.entries;
+    const all = resultsByMonth(samples);
+    expect(all.get('2026-03')).toEqual({ days: ['2026-03-02', '2026-03-20'], sites: ['gw1', 'gw2'] });
+    expect(resultsByMonth(samples, ['us']).has('2026-03')).toBe(false);
+    expect(reportsDueIn([annual], 2026)).toEqual([{ obligationId: 'annual', name: 'Annual report', index: 0, due: '2026-09-30', submitted: undefined }]);
+    expect(reportsDueIn([annual], 2027).map((r) => r.due)).toEqual(['2027-09-30']);
+  });
+});
 
-    // monthly: marked done; results in (still to send); nothing in for a month that's over; to come
-    expect(at(e, 'monthly', '2026-01')[0].state).toBe('done');
-    expect(at(e, 'monthly', '2026-02')[0]).toMatchObject({ state: 'doing', auto: 'sampled' });
-    expect(at(e, 'monthly', '2026-03')[0].state).toBe('overdue');
-    expect(at(e, 'monthly', '2026-04')[0].state).toBe('todo');
-    // quarterly from March: one bore of two so far
-    expect(e.filter((x) => x.item.key === 'quarterly').map((x) => x.month)).toEqual(['2026-03', '2026-06', '2026-09', '2026-12']);
-    expect(at(e, 'quarterly', '2026-03')[0]).toMatchObject({ auto: 'partly', state: 'todo' });
-    // six-monthly with a three-month window: the mark in the first month, a band over the other two
-    expect(e.filter((x) => x.item.key === 'six').map((x) => `${x.month}${x.window ? ' band' : ''}`)).toEqual(['2026-01', '2026-02 band', '2026-03 band', '2026-07', '2026-08 band', '2026-09 band']);
-    expect(at(e, 'six', '2026-01')[0]).toMatchObject({ state: 'overdue', due: '2026-03-31' });
-    // weekly: one entry a month, with its rounds counted
-    expect(at(e, 'weekly', '2026-01')[0]).toMatchObject({ count: 4, auto: 'partly' });
-    // the report in the month it's due, as marked; the extra job
-    expect(at(e, 'annual', '2026-09')[0]).toMatchObject({ state: 'doing', due: '2026-09-30' });
-    expect(at(e, 'x-1', '2026-08')[0].item).toMatchObject({ kind: 'extra', symbol: '#', label: 'Metals suite' });
-    expect(cal.reportsDue).toEqual([{ label: 'Annual report', due: '2026-09-30', state: 'doing' }]);
+describe('the monitoring calendar: cells', () => {
+  const project = newProject({ id: 'p1', name: 'Closed landfill', code: 'J-100', consents: 'RC 1' });
 
-    // a project's months: the marks together, coloured by the item needing most attention
-    const month = (m: string) => e.filter((x) => x.month === m);
-    expect(at(e, 'weekly', '2026-01')[0].item.symbol).toBe('■');
-    expect(cellText(month('2026-09'))).toBe('●▲■×4R'); // the river window's band has no mark
-    expect(cellText(month('2026-01'))).toBe('●■×4◆');
-    expect(cellState(month('2026-02'))).toBe('overdue'); // the weekly rounds in February have nothing in
-    expect(cellState(at(e, 'monthly', '2026-01'))).toBe('done');
-    expect(legend(cal.items)).toContain('● = GW2 (Monthly)');
-    expect(legend(cal.items)).toContain('R = Annual report');
+  it('shows a project’s details on its rows, and changes the project’s when they change', () => {
+    const r = row({ projectId: 'p1', jobCode: 'old code' });
+    expect(cellValue(r, 'job', project)).toBe('Closed landfill');
+    expect(cellValue(r, 'jobCode', project)).toBe('J-100');
+    expect(cellValue(r, 'jobCode')).toBe('old code');
+    expect(cellEdit(r, 'jobCode', ' J-101 ', project)).toEqual({ t: 'project', id: 'p1', set: { code: 'J-101' } });
+    expect(cellEdit(r, 'job', 'Closed landfill', project)).toEqual({ t: 'row', id: 'r1', set: { job: '' } });
+    expect(cellEdit(r, 'job', 'Closed landfill – gas', project)).toEqual({ t: 'row', id: 'r1', set: { job: 'Closed landfill – gas' } });
+    expect(cellEdit(r, 'm03', '  ')).toEqual({ t: 'row', id: 'r1', set: { m03: undefined } });
+    expect(cellEdit(r, 'notes', 'Line one\r\nline two')).toEqual({ t: 'row', id: 'r1', set: { notes: 'Line one\nline two' } });
   });
 
-  it("counts a round as done once the report its results went into is submitted", () => {
-    const submitted = { ...report, submissions: [{ periodStart: '2025-07-01', periodEnd: '2026-06-30', submittedOn: '2026-09-20' }] };
-    const cal = projectCalendar({ project, schedules: [monthly], obligations: [submitted], samples: [{ siteId: 'gw2', date: '2026-02-11' }, { siteId: 'gw2', date: '2026-08-03' }], marks: [] }, months, '2026-10-01');
-    expect(at(cal.entries, 'monthly', '2026-02')[0]).toMatchObject({ state: 'done', auto: 'reported', reportedIn: 'Annual report' });
-    // after the reporting period: results in, not reported yet
-    expect(at(cal.entries, 'monthly', '2026-08')[0]).toMatchObject({ state: 'doing', auto: 'sampled' });
+  it('colours cells for the year – a window all together – and clears them when they have the colour already', () => {
+    const r = row({ m01: '(', m03: ')', m05: '●' });
+    const marks = new Map<string, CalendarMark>();
+    const edits = statusEdits([{ row: r, key: 'm02' }, { row: r, key: 'reportDue' }], 'done', 2026, marks);
+    expect(edits.map((e) => e.id)).toEqual(['r1|2026-01', 'r1|2026-02', 'r1|2026-03', 'r1|2026|reportDue']);
+    expect(edits[3]).toMatchObject({ t: 'mark', mark: { item: 'r1', month: '2026', field: 'reportDue', status: 'done' } });
+    for (const e of edits) if (e.t === 'mark' && e.mark) marks.set(e.id, e.mark);
+    // again: off (a month with a note keeps it)
+    marks.set('r1|2026-01', { ...marks.get('r1|2026-01')!, note: 'Sent 3 Feb' });
+    const off = statusEdits([{ row: r, key: 'm01' }], 'done', 2026, marks);
+    expect(off.map((e) => (e.t === 'mark' ? e.mark && { status: e.mark.status, note: e.mark.note } : null))).toEqual([{ status: undefined, note: 'Sent 3 Feb' }, null, null]);
+    // a different colour replaces it
+    expect(statusEdits([{ row: r, key: 'm05' }], 'doing', 2026, marks).map((e) => e.t === 'mark' && e.mark?.status)).toEqual(['doing']);
+    expect(noteEdit(r, '2026-05', '', marks)).toEqual({ t: 'mark', id: 'r1|2026-05', mark: null });
   });
 
-  it('counts a submitted report as done, and leaves out schedules that are off', () => {
-    const submitted = { ...report, submissions: [{ periodStart: '2025-07-01', periodEnd: '2026-06-30', submittedOn: '2026-09-20' }] };
-    const cal = projectCalendar({ project, schedules: [{ ...monthly, active: false }], obligations: [submitted], samples: [], marks: [] }, months, '2026-10-01');
-    expect(cal.entries.map((x) => [x.item.key, x.month, x.state, x.auto])).toEqual([['annual', '2026-09', 'done', 'submitted']]);
+  it('adds a mark to the months selected, or takes it out of all of them', () => {
+    const r = row({ m01: '●', m02: '' });
+    expect(symbolEdits([{ row: r, key: 'm01' }, { row: r, key: 'm02' }], '●')).toEqual([
+      { t: 'row', id: 'r1', set: { m01: '●' } },
+      { t: 'row', id: 'r1', set: { m02: '●' } },
+    ]);
+    const both = row({ m01: '●', m02: '●▲' });
+    expect(symbolEdits([{ row: both, key: 'm01' }, { row: both, key: 'm02' }], '●').map((e) => e.t === 'row' && e.set)).toEqual([{ m01: undefined }, { m02: '▲' }]);
+  });
+
+  it('makes a window over the months selected, and undoes it', () => {
+    const r = row({ m02: '●' });
+    const [on] = windowEdits([r], 1, 3);
+    expect(on).toEqual({ t: 'row', id: 'r1', set: { m02: '(●', m04: ')' } });
+    const [off] = windowEdits([{ ...r, m02: '(●', m04: ')' }], 1, 3);
+    expect(off).toEqual({ t: 'row', id: 'r1', set: { m02: '●', m04: undefined } });
+  });
+
+  it('copies and pastes cells as Excel does', () => {
+    const grid = [['●', 'Two\nlines'], ['say "hi"', '']];
+    expect(fromTsv(toTsv(grid))).toEqual(grid);
+    expect(fromTsv('a\tb\r\nc\td\r\n')).toEqual([['a', 'b'], ['c', 'd']]);
+  });
+
+  it('builds the sheet with what EnviroDB knows about each row’s project', () => {
+    const rows = [row({ id: 'b', order: 2, projectId: 'p1', siteIds: ['gw1'] }), row({ id: 'a', order: 1, job: 'Another job' })];
+    const sheet = buildSheet(
+      {
+        rows,
+        marks: [{ id: 'b|2026-03', item: 'b', month: '2026-03', status: 'done', updatedAt: '' }],
+        projects: [project],
+        samples: [
+          { projectId: 'p1', siteId: 'gw1', date: '2026-03-02' },
+          { projectId: 'p1', siteId: 'gw2', date: '2026-04-02' },
+        ],
+        obligations: [],
+        sites: [],
+      },
+      2026,
+    );
+    expect(sheet.rows.map((r) => r.id)).toEqual(['a', 'b']);
+    expect([...sheet.facts.get('b')!.results.keys()]).toEqual(['2026-03']);
+    expect(sheet.facts.has('a')).toBe(false);
+    expect(sheet.marks.get('b|2026-03')?.status).toBe('done');
+    expect(rowMonths(rows[0])).toHaveLength(12);
+  });
+});
+
+describe('spreadsheet colours', () => {
+  it('reads green as done, yellow or orange as doing, pink or red as cancelled, bright yellow as a highlight', () => {
+    expect(['E2F0D9', 'C6EFCE', 'FFC5E0B4', 'FFE699', 'FFEB9C', 'FFC000', 'FFD9D9', 'FFC7CE', 'FF0000', 'FFFF00', 'FFFFFF', 'D9D9D9', '4472C4', undefined].map(statusFromFill)).toEqual([
+      'done', 'done', 'done', 'doing', 'doing', 'doing', 'cancelled', 'cancelled', 'cancelled', 'highlight', null, null, null, null,
+    ]);
   });
 });

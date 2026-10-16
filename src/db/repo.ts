@@ -3,6 +3,8 @@ import { db } from './db';
 import { same } from '../sync/model';
 import type {
   CalendarMark,
+  CalendarRow,
+  CalendarStatus,
   ExceedanceNote,
   GuidelineSet,
   MonitoringSchedule,
@@ -67,8 +69,21 @@ export async function touchProject(projectId: string): Promise<void> {
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
-  await db.transaction('rw', [db.projects, db.sites, db.samples, db.results, db.rules, db.notes, db.schedules, db.obligations, db.imports, db.calendarMarks], async () => {
-    await db.calendarMarks.where('projectId').equals(projectId).delete();
+  await db.transaction('rw', [db.projects, db.sites, db.samples, db.results, db.rules, db.notes, db.schedules, db.obligations, db.imports, db.calendarRows], async () => {
+    // its rows on the monitoring calendar stay, with the project's details
+    const project = await db.projects.get(projectId);
+    for (const r of await db.calendarRows.where('projectId').equals(projectId).toArray()) {
+      await db.calendarRows.update(r.id, {
+        projectId: undefined,
+        siteIds: undefined,
+        job: r.job || project?.name || '',
+        jobCode: project?.code,
+        purchaseOrder: project?.purchaseOrder,
+        consents: project?.consents,
+        folder: project?.folder,
+        updatedAt: nowIso(),
+      });
+    }
     await db.results.where('projectId').equals(projectId).delete();
     await db.samples.where('projectId').equals(projectId).delete();
     await db.sites.where('projectId').equals(projectId).delete();
@@ -228,10 +243,7 @@ export async function saveSchedule(s: MonitoringSchedule, before?: MonitoringSch
   await saveEdited(db.schedules, s, before);
 }
 export async function deleteSchedule(id: string) {
-  await db.transaction('rw', db.schedules, db.calendarMarks, async () => {
-    await db.schedules.delete(id);
-    await db.calendarMarks.where('item').equals(id).delete();
-  });
+  await db.schedules.delete(id);
 }
 
 export function newObligation(projectId: string, patch: Partial<ReportObligation> = {}): ReportObligation {
@@ -264,30 +276,115 @@ export async function setSubmitted(obligationId: string, period: { periodStart: 
   });
 }
 export async function deleteObligation(id: string) {
-  await db.transaction('rw', db.obligations, db.calendarMarks, async () => {
-    await db.obligations.delete(id);
-    await db.calendarMarks.where('item').equals(id).delete();
-  });
+  await db.obligations.delete(id);
 }
 
 // ------------------------------------------------------------ the monitoring calendar
 
-/** Sets the status and note of an item's month on the monitoring calendar (none of either clears it). */
-export async function saveCalendarMark(m: Omit<CalendarMark, 'id' | 'updatedAt'>): Promise<void> {
-  const id = `${m.item}|${m.month}`;
-  const clear = !m.status && !m.note?.trim() && !m.item.startsWith('x-');
-  if (clear) await db.calendarMarks.delete(id);
-  else await db.calendarMarks.put({ ...m, note: m.note?.trim() || undefined, id, updatedAt: nowIso() });
+/** A change to the monitoring calendar: fields of a row, a colour (none: cleared), or a project's field shown on it. */
+export type CalendarEdit =
+  | { t: 'row'; id: string; set: Partial<CalendarRow> }
+  | { t: 'mark'; id: string; mark: CalendarMark | null }
+  | { t: 'project'; id: string; set: Partial<Project> };
+
+/** Makes the changes, all or none, and gives back the changes that undo them. */
+export async function applyCalendarEdits(edits: CalendarEdit[]): Promise<CalendarEdit[]> {
+  const undo: CalendarEdit[] = [];
+  await db.transaction('rw', db.calendarRows, db.calendarMarks, db.projects, async () => {
+    for (const e of edits) {
+      if (e.t === 'mark') {
+        const cur = await db.calendarMarks.get(e.id);
+        undo.unshift({ t: 'mark', id: e.id, mark: cur ?? null });
+        if (e.mark) await db.calendarMarks.put({ ...e.mark, id: e.id, updatedAt: nowIso() });
+        else if (cur) await db.calendarMarks.delete(e.id);
+        continue;
+      }
+      const table = (e.t === 'row' ? db.calendarRows : db.projects) as unknown as Table<Record<string, unknown> & { id: string }, string>;
+      const cur = await table.get(e.id);
+      if (!cur) continue;
+      const before: Record<string, unknown> = {};
+      const set: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(e.set)) {
+        if (same(cur[k] ?? undefined, v ?? undefined)) continue;
+        before[k] = cur[k];
+        set[k] = v;
+      }
+      if (!Object.keys(set).length) continue;
+      undo.unshift({ t: e.t, id: e.id, set: before } as CalendarEdit);
+      await table.update(e.id, { ...set, updatedAt: nowIso() });
+    }
+  });
+  return undo;
 }
 
-/** An extra job in a month of the calendar, e.g. "# metals suite". */
-export async function addCalendarExtra(projectId: string, month: string, symbol: string, label: string): Promise<void> {
-  const item = `x-${uid().slice(0, 8)}`;
-  await db.calendarMarks.put({ id: `${item}|${month}`, projectId, item, month, symbol, label, updatedAt: nowIso() });
+/** Colours a month (YYYY-MM) of a row – or another of its columns that year – done, doing or cancelled; none clears it. */
+export async function setCalendarStatus(rowId: string, month: string, status: CalendarStatus | undefined, field?: CalendarMark['field']): Promise<CalendarEdit[]> {
+  const id = field ? `${rowId}|${month.slice(0, 4)}|${field}` : `${rowId}|${month}`;
+  const cur = await db.calendarMarks.get(id);
+  const mark: CalendarMark | null = status || cur?.note ? { ...(cur ?? { id, item: rowId, month: field ? month.slice(0, 4) : month, field }), status, updatedAt: nowIso() } : null;
+  return applyCalendarEdits([{ t: 'mark', id, mark }]);
 }
 
-export async function deleteCalendarMark(id: string): Promise<void> {
-  await db.calendarMarks.delete(id);
+export function newCalendarRow(patch: Partial<CalendarRow> = {}): CalendarRow {
+  return { id: uid('cal'), order: 0, job: '', updatedAt: nowIso(), ...patch };
+}
+
+/** Adds rows to the calendar: at the end, or before or after a row. */
+export async function addCalendarRows(rows: Array<Partial<CalendarRow>>, at: { after?: string; before?: string } = {}): Promise<CalendarRow[]> {
+  return db.transaction('rw', db.calendarRows, async () => {
+    const all = (await db.calendarRows.toArray()).sort((a, b) => a.order - b.order);
+    const n = rows.length + 1;
+    let lo: number;
+    let hi: number;
+    const b = at.before ? all.findIndex((r) => r.id === at.before) : -1;
+    const a = at.after ? all.findIndex((r) => r.id === at.after) : -1;
+    if (b >= 0) {
+      hi = all[b].order;
+      lo = b > 0 ? all[b - 1].order : hi - n;
+    } else if (a >= 0) {
+      lo = all[a].order;
+      hi = a + 1 < all.length ? all[a + 1].order : lo + n;
+    } else {
+      lo = all.length ? all[all.length - 1].order : 0;
+      hi = lo + n;
+    }
+    const step = (hi - lo) / n;
+    const made = rows.map((r, k) => newCalendarRow({ ...r, order: lo + step * (k + 1) }));
+    await db.calendarRows.bulkPut(made);
+    if (step < 1e-6) await renumberCalendar();
+    return made;
+  });
+}
+
+async function renumberCalendar() {
+  const all = (await db.calendarRows.toArray()).sort((a, b) => a.order - b.order);
+  await Promise.all(all.map((r, i) => (r.order === i + 1 ? null : db.calendarRows.update(r.id, { order: i + 1 }))));
+}
+
+/** Swaps two rows of the calendar (moving one up or down past the other). */
+export async function swapCalendarRows(aId: string, bId: string): Promise<void> {
+  await db.transaction('rw', db.calendarRows, async () => {
+    const [a, b] = await db.calendarRows.bulkGet([aId, bId]);
+    if (!a || !b) return;
+    if (a.order !== b.order) {
+      await db.calendarRows.update(a.id, { order: b.order });
+      await db.calendarRows.update(b.id, { order: a.order });
+      return;
+    }
+    // the same place: number them all, then swap
+    await renumberCalendar();
+    const [x, y] = await db.calendarRows.bulkGet([aId, bId]);
+    await db.calendarRows.update(x!.id, { order: y!.order });
+    await db.calendarRows.update(y!.id, { order: x!.order });
+  });
+}
+
+/** Deletes rows from the calendar, with their colours and notes. */
+export async function deleteCalendarRows(ids: string[]): Promise<void> {
+  await db.transaction('rw', db.calendarRows, db.calendarMarks, async () => {
+    await db.calendarMarks.where('item').anyOf(ids).delete();
+    await db.calendarRows.bulkDelete(ids);
+  });
 }
 
 // ------------------------------------------------------------ guideline sets & templates

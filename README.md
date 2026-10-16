@@ -101,17 +101,24 @@ there as they work and show up for the others within seconds.
 - **Review the latest results at a glance.** Each project's overview shows the latest sample at
   every site (or any recent month) with exceedances highlighted, values that are unusual for that
   site marked ▲/▼, and the previous result on hover.
-- **A monitoring calendar for the whole team.** *Monitoring calendar* lays out the year like a
-  monitoring-schedule spreadsheet: a row per project (or per sampling schedule and report), a column per
-  month, a mark for each schedule (● ▲ ■ …, R for reports, # % @ for extra jobs) and a colour for where it
-  stands – **done** (green, once the results are sent or reported), **doing** (yellow, e.g. still analysing
-  the lab results), **cancelled / on hold** (pink) or **overdue** (red). It fills itself in: results imported
-  for a round show it under way, a round whose results went into a submitted report shows done, and a
-  submitted report is done. Click a month to change its status, add a note or an extra job (an extra
-  metals suite, a survey). Beside each project: the key to its marks, your notes, reports due, consents,
-  job and purchase order numbers and a link to its folder. Show January–December or July–June, and
-  download it as an Excel sheet. Each project's *Schedule* tab has its own year at a glance; a schedule's
-  mark and sampling window (e.g. any time in a three-month window) are set when editing it.
+- **A monitoring calendar for the whole team – your monitoring spreadsheet, connected.** *Monitoring
+  calendar* is laid out like a team's "Schedule All Monitoring" sheet: a row per job with its job code and
+  purchase order, the twelve months, then the monitoring schedule details, monitoring notes, annual report
+  due, management plan, notes, consents and folder link. Months hold the marks you use (● ▲ ■ R # % @ …, typed
+  or picked from the toolbar) and sampling windows (drawn like the sheet's merged "(_____)" cells – select
+  the months and click *Window*). Colour cells as the year goes – **done** (green: don't mark it green until
+  the results are sent or reported), **currently doing** (yellow) and **cancelled / on hold** (pink) – from
+  the toolbar or with Alt+1, 2, 3 (Alt+0 clears); a whole job can be put on hold, and other cells
+  highlighted yellow. The plan stays the same from year to year, the colours are kept for each year.
+  It works like a spreadsheet: click or drag to select, type to change a cell (Enter edits what's there,
+  Alt+Enter for a new line), arrow keys, copy and paste with Excel, Delete, and undo (Ctrl+Z). A note can be
+  added to any month. *Import* brings in your existing spreadsheet – its rows, windows and colours – and
+  *Excel* downloads the calendar in the same layout. A row linked to a project shows the project's job
+  code, PO, consents and folder (changing them on the calendar changes the project's), dots the months its
+  results came in, lists its reports due, and can be filled in from the project's sampling schedules
+  (a schedule's mark and sampling window are set when editing it). Results in for a month that isn't green
+  yet show up in *Actions to take*, with a button to mark it done. Each project's *Schedule* tab shows its
+  rows.
 - **Your own dashboard.** The dashboard is made of widgets you arrange yourself (*Customise*): drag them
   by their title, resize them from the corner, remove the ones you don't need and add others –
   *Actions to take* (reports due, results to send or report – tick them off – sampling still to do,
@@ -133,7 +140,7 @@ there as they work and show up for the others within seconds.
 ## Finding your way around
 
 - **Dashboard** – your own arrangement of widgets: actions to take, this month's monitoring, deadlines,
-  exceedances, projects and more. **Monitoring calendar** – the team's year of sampling and reporting.
+  exceedances, projects and more. **Monitoring calendar** – the team's monitoring schedule spreadsheet, linked to the projects.
   **Import data** brings in lab results for any project.
 - **A project** has tabs for each job: *Overview* (latest results at a glance), *Data*, *Graphs*,
   *Compliance*, *Schedule* (reporting dates and sampling rounds), *Reports* and *Setup*. Its main

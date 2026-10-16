@@ -17,8 +17,7 @@ import { unitLabel } from '../lib/units';
 import { fmtNum } from '../lib/values';
 import { NewProjectButton } from './Projects';
 import { db } from '../db/db';
-import { calendarMonths } from '../lib/calendar';
-import { useCalendar } from '../hooks/useCalendarData';
+import { useCalendarSheet } from '../hooks/useCalendarSheet';
 import { actionsToTake } from '../lib/actions';
 import { DEFAULT_DASHBOARD, WIDGET_MAP, WIDGETS, type DashboardData, type PlacedWidget, type WidgetCtx, type WidgetId } from './dashboard/widgets';
 import type { Deadline } from './dashboard/widgets';
@@ -154,9 +153,8 @@ export function DashboardPage() {
   const { bundles, loading } = useAllBundles();
   const dash = useDashboard(bundles);
   const today = todayStr();
-  const months = useMemo(() => calendarMonths(Number(today.slice(0, 4))), [today]);
-  const calendars = useCalendar(months);
-  const actions = useMemo(() => actionsToTake(bundles, calendars ?? [], today), [bundles, calendars, today]);
+  const sheet = useCalendarSheet(Number(today.slice(0, 4)));
+  const actions = useMemo(() => actionsToTake(bundles, sheet, today), [bundles, sheet, today]);
   const saved = useLiveQuery(() => db.meta.get(DASHBOARD_KEY), [], null);
   const [editing, setEditing] = useState(false);
   const [narrow, setNarrow] = useState(false);
@@ -171,7 +169,7 @@ export function DashboardPage() {
   const placed = validLayout(saved?.value);
   const save = (items: PlacedWidget[]) => db.meta.put({ key: DASHBOARD_KEY, value: { version: 1, items } });
   const unused = WIDGETS.filter((w) => !placed.some((p) => p.i === w.id));
-  const ctx: WidgetCtx = { bundles, dash, calendars, actions, today };
+  const ctx: WidgetCtx = { bundles, dash, sheet, actions, today };
   const remove = (id: WidgetId) => save(placed.filter((p) => p.i !== id));
   const add = (id: WidgetId) => {
     const def = WIDGET_MAP.get(id)!;

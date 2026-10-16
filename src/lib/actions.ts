@@ -1,11 +1,11 @@
 // "Actions to take": what needs doing across the projects, most pressing first – reports overdue or due soon,
-// results that are in but haven't been sent or reported, sampling rounds still to do, and exceedances nobody has
-// followed up yet.
+// results that are in for a month on the monitoring calendar but not yet marked done (sent or reported), sampling
+// rounds still to do, and exceedances nobody has followed up yet.
 
 import type { ProjectBundle } from './analysis';
 import { evaluateAll } from './analysis';
-import type { ProjectCalendar } from './calendar';
-import { addDays, daysBetween, formatDate, todayStr } from './dates';
+import { cellValue, markId, plannedIn, rowMonths, windowsOf, type CalendarSheet } from './calendar';
+import { addDays, addMonths, daysBetween, formatDate, todayStr } from './dates';
 import { nextObligation, scheduleStatus } from './schedule';
 
 export interface Action {
@@ -20,11 +20,11 @@ export interface Action {
   link: string;
   /** When it's due (or happened). */
   date: string;
-  /** Results in: the calendar month it can be marked done on. */
-  calendar?: { projectId: string; item: string; month: string };
+  /** Results in: the calendar row and month (YYYY-MM) it's marked done on. */
+  calendar?: { item: string; month: string };
 }
 
-export function actionsToTake(bundles: ProjectBundle[], calendars: ProjectCalendar[] = [], today = todayStr()): Action[] {
+export function actionsToTake(bundles: ProjectBundle[], sheet: CalendarSheet | null = null, today = todayStr()): Action[] {
   const out: Action[] = [];
   const thisMonth = today.slice(0, 7);
   for (const b of bundles) {
@@ -84,22 +84,30 @@ export function actionsToTake(bundles: ProjectBundle[], calendars: ProjectCalend
       }
     }
   }
-  // results in that haven't been sent or reported (done is marked once they are)
-  for (const c of calendars) {
-    if (c.project.status !== 'active') continue;
-    for (const e of c.entries) {
-      if (e.window || e.item.kind !== 'sampling' || e.state !== 'doing' || e.mark?.status || e.month > thisMonth) continue;
+  // results in that haven't been sent or reported: a month planned on the calendar with results in, not yet done
+  const recent = [-2, -1, 0].map((n) => addMonths(`${thisMonth}-01`, n).slice(0, 7));
+  for (const row of sheet?.rows ?? []) {
+    const project = row.projectId ? sheet!.projects.get(row.projectId) : undefined;
+    const facts = sheet!.facts.get(row.id);
+    if (!project || project.status !== 'active' || row.onHold || !facts) continue;
+    const windows = windowsOf(rowMonths(row));
+    const job = cellValue(row, 'job', project);
+    for (const month of recent) {
+      const res = facts.results.get(month);
+      if (!res || !plannedIn(row, Number(month.slice(5, 7)) - 1, windows)) continue;
+      const status = sheet!.marks.get(markId(row.id, month))?.status;
+      if (status === 'done' || status === 'cancelled') continue;
       out.push({
-        id: `results:${e.item.key}:${e.month}`,
+        id: `results:${row.id}:${month}`,
         kind: 'results',
-        urgency: e.month < thisMonth ? 0 : 1,
-        title: `Send or report the results: ${e.item.label}`,
-        detail: `${monthLabel(e.month)} round · results are in`,
-        projectId: c.project.id,
-        projectName: c.project.name,
-        link: `/projects/${c.project.id}/data`,
-        date: e.due,
-        calendar: { projectId: c.project.id, item: e.item.key, month: e.month },
+        urgency: month < thisMonth ? 0 : 1,
+        title: `Send or report the results: ${job}`,
+        detail: `${monthLabel(month)} · sampled ${res.days.map((d) => formatDate(d)).join(', ')}${status === 'doing' ? ' · under way' : ''}`,
+        projectId: project.id,
+        projectName: project.name,
+        link: `/projects/${project.id}/data`,
+        date: res.days[res.days.length - 1],
+        calendar: { item: row.id, month },
       });
     }
   }

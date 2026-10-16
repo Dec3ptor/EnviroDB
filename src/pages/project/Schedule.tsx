@@ -12,7 +12,7 @@ import { deleteObligation, deleteSchedule, newObligation, newSchedule, saveOblig
 import type { MonitoringSchedule, ReportObligation } from '../../db/types';
 import { db } from '../../db/db';
 import { downloadBlob, safeFileName } from '../../db/backup';
-import { MonitoringCalendar } from '../../components/calendar/MonitoringCalendar';
+import { CalendarSheet } from '../../components/calendar/CalendarSheet';
 import { CALENDAR_SYMBOLS, scheduleSymbols } from '../../lib/calendar';
 
 function ScheduleModal({ value, onClose }: { value: MonitoringSchedule; onClose: () => void }) {
@@ -51,6 +51,7 @@ function ScheduleModal({ value, onClose }: { value: MonitoringSchedule; onClose:
         <Group grow align="flex-start">
           <Select
             label="Mark on the calendar"
+            description="Used when its calendar row is filled in from the schedules"
             data={CALENDAR_SYMBOLS.map((x) => ({ value: x, label: x }))}
             value={s.symbol ?? defaultSymbol}
             onChange={(v) => set('symbol', v ?? undefined)}
@@ -173,15 +174,13 @@ export function ScheduleTab() {
 
   return (
     <Stack gap="lg">
-      {(schedules.length > 0 || obligations.length > 0) && (
-        <Card>
-          <Title order={4}>This year</Title>
-          <Text size="sm" c="dimmed" mb="sm">
-            Sampling rounds and reports by month. Click a month to mark it done (once the results are sent or reported), doing or cancelled, or to add a note or an extra job.
-          </Text>
-          <MonitoringCalendar projectId={project.id} />
-        </Card>
-      )}
+      <Card>
+        <Title order={4}>On the monitoring calendar</Title>
+        <Text size="sm" c="dimmed" mb="sm">
+          The project’s rows on the team’s monitoring calendar – colour a month green once its results are sent or reported. The months results came in are dotted.
+        </Text>
+        <CalendarSheet projectId={project.id} />
+      </Card>
       <Group justify="flex-end">
         <Tooltip label="Download an .ics file of upcoming deadlines to add to Outlook (with 7-day reminders)">
           <Button variant="default" leftSection={<IconCalendarPlus size={16} />} onClick={exportIcs} disabled={!obligations.length && !schedules.length}>

@@ -1,9 +1,10 @@
 import 'fake-indexeddb/auto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { db, ensureBuiltIns } from '../src/db/db';
-import { newObligation, newProject, newRule, newSchedule, newSite, saveNote } from '../src/db/repo';
+import { newCalendarRow, newObligation, newProject, newRule, newSchedule, newSite, saveNote } from '../src/db/repo';
 import { actionsToTake } from '../src/lib/actions';
-import { calendarMonths, projectCalendar } from '../src/lib/calendar';
+import { buildSheet } from '../src/lib/calendar';
+import type { CalendarMark } from '../src/db/types';
 import { loadBundle } from './helpers';
 
 const TODAY = '2026-10-16';
@@ -34,26 +35,33 @@ beforeAll(async () => {
 describe('actions to take', () => {
   it('lists what needs doing, most pressing first', async () => {
     const b = await loadBundle(projectId);
-    const cal = projectCalendar({ project: b.project, schedules: b.schedules, obligations: b.obligations, samples: b.samples, marks: [] }, calendarMonths(2026), TODAY);
-    const actions = actionsToTake([b], [cal], TODAY);
+    // the project's row on the monitoring calendar: sampling every month
+    const row = newCalendarRow({ id: 'row1', projectId, m08: '●', m09: '●', m10: '●' });
+    const sheet = (marks: CalendarMark[] = []) => buildSheet({ rows: [row], marks, projects: [b.project], samples: b.samples, obligations: b.obligations, sites: b.sites }, 2026);
+    const actions = actionsToTake([b], sheet(), TODAY);
     const brief = actions.map((a) => [a.kind, a.urgency, a.title]);
     expect(brief).toEqual([
       ['exceedance', 0, 'Follow up: Ammonia limit'],
+      ['results', 0, 'Send or report the results: Landfill'], // sampled 10 September, still not sent
       ['report', 0, 'Gas survey report is overdue'],
-      ['results', 0, 'Send or report the results: Monthly bores'], // last month's, still not sent
       ['report', 1, 'Annual report due 30 Oct 2026'],
       ['sampling', 2, 'Sample GW1, GW2'],
     ]);
-    // the September results can be marked done from the action
-    expect(actions.find((a) => a.kind === 'results')?.calendar).toEqual({ projectId, item: 'monthly', month: '2026-09' });
+    // the September results can be marked done from the action – and once they are, it goes
+    expect(actions.find((a) => a.kind === 'results')?.calendar).toEqual({ item: 'row1', month: '2026-09' });
+    const done = sheet([{ id: 'row1|2026-09', item: 'row1', month: '2026-09', status: 'done', updatedAt: '' }]);
+    expect(actionsToTake([b], done, TODAY).some((a) => a.kind === 'results')).toBe(false);
+    // nothing planned that month: nothing to send
+    const unplanned = buildSheet({ rows: [{ ...row, m09: undefined }], marks: [], projects: [b.project], samples: b.samples, obligations: b.obligations, sites: b.sites }, 2026);
+    expect(actionsToTake([b], unplanned, TODAY).some((a) => a.kind === 'results')).toBe(false);
   });
 
   it('drops an exceedance once it has a follow-up note', async () => {
     const b0 = await loadBundle(projectId);
-    const ex = actionsToTake([b0], [], TODAY).find((a) => a.kind === 'exceedance')!;
+    const ex = actionsToTake([b0], null, TODAY).find((a) => a.kind === 'exceedance')!;
     const key = ex.id.split(':').slice(2).join(':');
     await saveNote({ projectId, ruleId: 'rule1', key, status: 'notified', text: 'Council told 12 Sep', notifiedOn: '2026-09-12' });
     const b = await loadBundle(projectId);
-    expect(actionsToTake([b], [], TODAY).some((a) => a.kind === 'exceedance')).toBe(false);
+    expect(actionsToTake([b], null, TODAY).some((a) => a.kind === 'exceedance')).toBe(false);
   });
 });

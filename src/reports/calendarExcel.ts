@@ -1,69 +1,161 @@
-import type { Cell } from 'exceljs';
-import { cellState, cellText, legend, monthName, STATE_INFO, type CalendarEntry, type CellState, type ProjectCalendar } from '../lib/calendar';
-import { formatDate } from '../lib/dates';
+import type { Cell, Worksheet } from 'exceljs';
+import type { CalendarRow, CalendarStatus } from '../db/types';
+import type { CalendarSheet } from '../hooks/useCalendarSheet';
+import { CALENDAR_COLUMNS, cellValue, HIGHLIGHT_FILL, markId, monthKey, monthText, MONTH_FIELDS, reportsToShow, rowMonths, STATUS_INFO, windowsOf } from '../lib/calendar';
+import { formatDate, MONTH_SHORT } from '../lib/dates';
 import { downloadBlob } from '../db/backup';
 
-const FILL: Partial<Record<CellState, string>> = { done: 'FFD4EFD9', doing: 'FFFFE699', cancelled: 'FFFFD9D9' };
-const BAND = 'FFEEF2F6';
+// The monitoring calendar as a spreadsheet laid out like a team's "Schedule All Monitoring" sheet: the job, job code
+// and PO, the months (sampling windows as merged cells, "(_____)"), then the details and notes; months coloured
+// for the year, and the legend underneath. It reads back in through the calendar's import.
 
-/** The monitoring calendar as a spreadsheet: marks and colours by month, the key, notes and reports due beside them. */
-export async function exportCalendarXlsx(calendars: ProjectCalendar[], months: string[], rows: 'projects' | 'items', yearLabel: string): Promise<void> {
+const HEAD_FILL = 'FFF2F2F2';
+const THIN = { style: 'thin' as const, color: { argb: 'FFBFBFBF' } };
+const BORDER = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+const argb = (hex: string) => `FF${hex}`;
+const solid = (hex: string) => ({ type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: argb(hex) } });
+
+const LEAD = CALENDAR_COLUMNS.filter((c) => c.lead);
+const TAIL = CALENDAR_COLUMNS.filter((c) => !c.lead);
+const WIDTHS: Record<string, number> = { job: 30, jobCode: 20, purchaseOrder: 18, details: 48, notes: 44, reportDue: 30, managementPlan: 22, other: 40, consents: 24, folder: 40 };
+const TITLES: Record<string, string> = { purchaseOrder: 'Purchase Order No', details: 'Monitoring Schedule Details', reportDue: 'Annual Report Due', other: 'Notes' };
+
+/** A window's cells as text: "(" and ")" at its ends with underscores between, as the spreadsheet draws them. */
+function windowText(label: string, part: 'start' | 'mid' | 'end' | 'whole', span = 1): string {
+  if (part === 'whole') {
+    const n = Math.max(2, span * 5 - label.length);
+    return `(${'_'.repeat(Math.floor(n / 2))}${label}${'_'.repeat(Math.ceil(n / 2))})`;
+  }
+  if (part === 'start') return `(__${label}${label ? '__' : '___'}`;
+  if (part === 'end') return `${label ? `${label}__` : '____'})`;
+  return label || '_____';
+}
+
+export async function buildCalendarWorkbook(sheet: CalendarSheet, rows: CalendarRow[], year: number): Promise<ArrayBuffer> {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
   wb.creator = 'EnviroDB';
-  const ws = wb.addWorksheet(`Monitoring ${yearLabel}`, { views: [{ state: 'frozen', xSplit: 1, ySplit: 1 }] });
-  const head = ['Project', ...months.map((m) => `${monthName(m)}${m.endsWith('-01') && !months[0].endsWith('-01') ? ` ${m.slice(0, 4)}` : ''}`), 'Key / details', 'Notes', 'Reports due', 'Consents', 'Job number', 'PO', 'Folder'];
-  ws.addRow(head);
-  ws.getRow(1).font = { bold: true };
-  ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F2F0' } };
-  ws.columns = head.map((_, i) => ({ width: i === 0 ? 34 : i <= 12 ? 7 : i === 13 ? 48 : i === 14 ? 40 : i === 15 ? 30 : 18 }));
+  const ws = wb.addWorksheet('Schedule All Monitoring', {
+    views: [{ state: 'frozen', xSplit: 1, ySplit: 3 }],
+    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  const nLead = LEAD.length;
+  const col = (i: number) => i + 1; // 1-based
+  const monthCol = (m: number) => col(nLead + m);
+  const tailCol = (i: number) => col(nLead + 12 + i);
+  ws.columns = [...LEAD.map((c) => ({ width: WIDTHS[c.field] })), ...MONTH_FIELDS.map(() => ({ width: 8 })), ...TAIL.map((c) => ({ width: WIDTHS[c.field] }))];
 
-  const paint = (cell: Cell, entries: CalendarEntry[]) => {
-    cell.value = cellText(entries);
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    const state = cellState(entries);
-    const band = entries.length > 0 && entries.every((e) => e.window);
-    const argb = band ? BAND : state ? FILL[state] : undefined;
-    if (argb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
-    if (state === 'overdue') cell.font = { color: { argb: 'FFC92A2A' }, bold: true };
-    const notes = entries.filter((e) => !e.window).map((e) => `${e.item.symbol} ${e.item.label}: ${STATE_INFO[e.state].label}${e.mark?.note ? ` – ${e.mark.note}` : ''}`);
-    if (notes.length) cell.note = notes.join('\n');
+  // the three header rows: titles merged down, the months numbered and named
+  const head = (r: number, c: number, v: string | number) => {
+    const cell = ws.getCell(r, c);
+    cell.value = v;
+    cell.font = { bold: true };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.fill = solid(HEAD_FILL.slice(2));
+    cell.border = BORDER;
+    return cell;
   };
-  const byMonth = (entries: CalendarEntry[]) => {
-    const m = new Map<string, CalendarEntry[]>();
-    for (const e of entries) m.set(e.month, [...(m.get(e.month) ?? []), e]);
-    return m;
-  };
+  LEAD.forEach((c, i) => {
+    head(1, col(i), TITLES[c.field] ?? c.label);
+    head(2, col(i), '');
+    head(3, col(i), '');
+    ws.mergeCells(1, col(i), 3, col(i));
+  });
+  head(1, monthCol(0), `Monitoring Schedule ${year}`);
+  for (let m = 1; m < 12; m++) head(1, monthCol(m), '');
+  ws.mergeCells(1, monthCol(0), 1, monthCol(11));
+  MONTH_FIELDS.forEach((_, m) => {
+    head(2, monthCol(m), m + 1);
+    head(3, monthCol(m), MONTH_SHORT[m]);
+  });
+  TAIL.forEach((c, i) => {
+    head(1, tailCol(i), TITLES[c.field] ?? c.label);
+    head(2, tailCol(i), '');
+    head(3, tailCol(i), '');
+    ws.mergeCells(1, tailCol(i), 3, tailCol(i));
+  });
 
-  for (const c of calendars) {
-    const p = c.project;
-    const tail = [c.reportsDue.map((r) => `${r.label} – ${formatDate(r.due)}`).join('\n'), p.consents ?? '', p.code ?? '', p.purchaseOrder ?? '', p.folder ?? ''];
-    if (rows === 'projects') {
-      const row = ws.addRow([p.name, ...months.map(() => ''), legend(c.items), p.calendarNotes ?? '', ...tail]);
-      const m = byMonth(c.entries);
-      months.forEach((mo, i) => paint(row.getCell(i + 2), m.get(mo) ?? []));
-      row.alignment = { vertical: 'top', wrapText: true };
-      continue;
+  let r = 4;
+  for (const row of rows) {
+    const project = row.projectId ? sheet.projects.get(row.projectId) : undefined;
+    const statusAt = (m: number): CalendarStatus | undefined => sheet.marks.get(markId(row.id, monthKey(year, MONTH_FIELDS[m])))?.status;
+    const paint = (cell: Cell, status?: CalendarStatus, highlight = false) => {
+      const hex = row.onHold ? STATUS_INFO.cancelled.fill : status ? STATUS_INFO[status].fill : highlight ? HIGHLIGHT_FILL : null;
+      if (hex) cell.fill = solid(hex);
+      cell.border = BORDER;
+    };
+    const text = (c: number, field: (typeof CALENDAR_COLUMNS)[number]['field']) => {
+      const cell = ws.getCell(r, c);
+      let v = cellValue(row, field, project);
+      // a project's reports due, when the row doesn't say
+      if (field === 'reportDue' && !v) v = reportsToShow(sheet.facts.get(row.id)?.reports ?? []).map((x) => `${x.name} – ${formatDate(x.due)}${x.submitted ? ` (sent ${formatDate(x.submitted)})` : ''}`).join('\n');
+      cell.value = field === 'folder' && /^https?:\/\//i.test(v) ? { text: v, hyperlink: v } : v || null;
+      cell.alignment = { vertical: 'top', wrapText: true };
+      paint(cell, sheet.marks.get(markId(row.id, String(year), field))?.status, row.highlight?.includes(field));
+    };
+    LEAD.forEach((c, i) => text(col(i), c.field));
+    TAIL.forEach((c, i) => text(tailCol(i), c.field));
+
+    const texts = rowMonths(row);
+    const windows = windowsOf(texts);
+    for (let m = 0; m < 12; m++) {
+      const cell = ws.getCell(r, monthCol(m));
+      const w = windows[m];
+      const label = monthText(texts[m]);
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      paint(cell, statusAt(m));
+      const note = sheet.marks.get(markId(row.id, monthKey(year, MONTH_FIELDS[m])))?.note;
+      if (note) cell.note = note;
+      if (!w.inWindow) {
+        cell.value = label || null;
+        continue;
+      }
+      // a window inside the year, coloured alike and marked only in its first month: merged, as the spreadsheet has it
+      if (w.start && w.span > 1) {
+        const months = Array.from({ length: w.span }, (_, k) => m + k);
+        const alike = months.every((k) => statusAt(k) === statusAt(m)) && months.slice(1).every((k) => !monthText(texts[k])) && windows[m + w.span - 1].end;
+        if (alike) {
+          cell.value = windowText(label, 'whole', w.span);
+          for (const k of months.slice(1)) paint(ws.getCell(r, monthCol(k)), statusAt(k));
+          ws.mergeCells(r, monthCol(m), r, monthCol(m + w.span - 1));
+          m += w.span - 1;
+          continue;
+        }
+      }
+      cell.value = windowText(label, w.start && w.end ? 'whole' : w.start ? 'start' : w.end ? 'end' : 'mid');
     }
-    const group = ws.addRow([p.name, ...months.map(() => ''), '', p.calendarNotes ?? '', ...tail]);
-    group.font = { bold: true };
-    group.alignment = { vertical: 'top', wrapText: true };
-    for (const it of c.items) {
-      const row = ws.addRow([`   ${it.symbol}  ${it.label}`, ...months.map(() => ''), it.detail ?? '']);
-      const m = byMonth(c.entries.filter((e) => e.item.key === it.key));
-      months.forEach((mo, i) => paint(row.getCell(i + 2), m.get(mo) ?? []));
-    }
+    r++;
   }
 
-  ws.addRow([]);
-  for (const s of ['done', 'doing', 'cancelled', 'overdue'] as CellState[]) {
-    const row = ws.addRow([`${STATE_INFO[s].label} – ${STATE_INFO[s].hint.toLowerCase()}`]);
-    const c = row.getCell(1);
-    if (FILL[s]) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL[s]! } };
-    if (s === 'overdue') c.font = { color: { argb: 'FFC92A2A' }, bold: true };
+  // the legend, as in the spreadsheet
+  r++;
+  const legend: Array<[string, string, string | null]> = [
+    ['Don’t mark green until results sent or reported', 'DONE', STATUS_INFO.done.fill],
+    ['●', 'TO DO', null],
+    ['If still to analyse lab results', 'CURRENTLY DOING', STATUS_INFO.doing.fill],
+    ['', 'CANCELLED / ON HOLD', STATUS_INFO.cancelled.fill],
+  ];
+  for (const [a, b, fill] of legend) {
+    const ca = ws.getCell(r, 1);
+    ca.value = a || null;
+    if (fill) ca.fill = solid(fill);
+    ca.border = BORDER;
+    ws.getCell(r, 2).value = b;
+    ws.getCell(r, 2).font = { bold: true };
+    r++;
   }
-  ws.addRow(['● ▲ ■ … sampling (each project’s key beside it) · R report due · # % @ extra jobs · grey: sampling window']);
+  ws.getCell(r + 1, 1).value = 'Exported from EnviroDB’s monitoring calendar';
+  ws.getCell(r + 1, 1).font = { italic: true, color: { argb: 'FF808080' } };
+  setPrintArea(ws, r);
+  return (await wb.xlsx.writeBuffer()) as ArrayBuffer;
+}
 
-  const buf = await wb.xlsx.writeBuffer();
-  downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `Monitoring calendar ${yearLabel}.xlsx`);
+function setPrintArea(ws: Worksheet, lastRow: number) {
+  ws.pageSetup.printTitlesRow = '1:3';
+  ws.pageSetup.printArea = `A1:${ws.getColumn(LEAD.length + 12 + TAIL.length).letter}${lastRow}`;
+}
+
+export async function downloadCalendarXlsx(sheet: CalendarSheet, rows: CalendarRow[], year: number): Promise<void> {
+  const buf = await buildCalendarWorkbook(sheet, rows, year);
+  downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `Monitoring schedule ${year}.xlsx`);
 }

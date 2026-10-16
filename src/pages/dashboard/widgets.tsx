@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActionIcon, Anchor, Badge, Button, Group, List, Paper, SegmentedControl, SimpleGrid, Stack, Table, Text, Textarea, ThemeIcon, Tooltip } from '@mantine/core';
+import { ActionIcon, Anchor, Badge, Button, Group, List, Paper, SegmentedControl, SimpleGrid, Stack, Table, Text, Textarea, ThemeIcon, Tooltip, UnstyledButton } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
@@ -9,11 +9,12 @@ import { db } from '../../db/db';
 import type { ProjectBundle } from '../../lib/analysis';
 import type { RuleEvaluation } from '../../lib/compliance';
 import type { Action } from '../../lib/actions';
-import { monthName, monthOf, STATE_INFO, type CalendarEntry, type ProjectCalendar } from '../../lib/calendar';
-import { addMonths, daysUntil, formatDate, relativeDays } from '../../lib/dates';
-import { saveCalendarMark, setSubmitted } from '../../db/repo';
+import { cellValue, markId, MONTH_FIELDS, monthName, monthText, plannedIn, rowMonths, STATUS_INFO, STATUSES, windowRange, windowsOf, type CalendarSheet as SheetData } from '../../lib/calendar';
+import { addMonths, daysUntil, formatDate, MONTH_SHORT, relativeDays } from '../../lib/dates';
+import { nextObligation, obligationPeriods } from '../../lib/schedule';
+import { setCalendarStatus } from '../../db/repo';
 import { LevelBadge, StatTile } from '../../components/common';
-import { MonitoringCalendar } from '../../components/calendar/MonitoringCalendar';
+import { CalendarSheet } from '../../components/calendar/CalendarSheet';
 import { NewProjectButton } from '../Projects';
 
 // The dashboard's widgets: each is a card that can be placed, moved and resized on the dashboard.
@@ -38,7 +39,8 @@ export interface DashboardData {
 export interface WidgetCtx {
   bundles: ProjectBundle[];
   dash: DashboardData;
-  calendars: ProjectCalendar[] | null;
+  /** The monitoring calendar this year. */
+  sheet: SheetData | null;
   actions: Action[];
   today: string;
 }
@@ -126,7 +128,7 @@ function ActionsToTake({ actions }: WidgetCtx) {
                     aria-label="Mark done"
                     onClick={(e) => {
                       e.stopPropagation();
-                      void saveCalendarMark({ ...a.calendar!, status: 'done' });
+                      void setCalendarStatus(a.calendar!.item, a.calendar!.month, 'done');
                     }}
                   >
                     <IconCheck size={16} />
@@ -141,25 +143,21 @@ function ActionsToTake({ actions }: WidgetCtx) {
   );
 }
 
-const STATE_COLOR = { done: 'teal', doing: 'yellow', cancelled: 'pink', todo: 'gray', overdue: 'red' } as const;
-
-function MonthList({ calendars, today }: WidgetCtx) {
+/** A month's jobs on the monitoring calendar – this month or next – to colour as they're done. */
+function MonthList({ sheet, today }: WidgetCtx) {
   const [which, setWhich] = useState<'this' | 'next'>('this');
   const thisMonth = today.slice(0, 7);
   const nextMonth = addMonths(`${thisMonth}-01`, 1).slice(0, 7);
   const month = which === 'this' ? thisMonth : nextMonth;
+  const i = Number(month.slice(5, 7)) - 1;
   const rows = useMemo(
     () =>
-      (calendars ?? [])
-        .filter((c) => c.project.status === 'active')
-        .map((c) => ({ c, entries: c.entries.filter((e) => e.month === month && !e.window) }))
-        .filter((x) => x.entries.length),
-    [calendars, month],
+      (sheet?.rows ?? []).filter((r) => {
+        const p = r.projectId ? sheet!.projects.get(r.projectId) : undefined;
+        return !r.onHold && (!p || p.status === 'active') && plannedIn(r, i);
+      }),
+    [sheet, i],
   );
-  const markDone = async (e: CalendarEntry) => {
-    if (e.item.kind === 'report') await setSubmitted(e.item.key, { periodStart: e.start, periodEnd: e.end }, today);
-    else await saveCalendarMark({ projectId: e.item.projectId, item: e.item.key, month: monthOf(e.start), status: 'done', note: e.mark?.note, symbol: e.mark?.symbol, label: e.mark?.label });
-  };
   return (
     <Stack gap="xs">
       <SegmentedControl
@@ -172,45 +170,66 @@ function MonthList({ calendars, today }: WidgetCtx) {
         ]}
         w="fit-content"
       />
-      {!calendars ? null : !rows.length ? (
+      {!sheet ? null : !rows.length ? (
         <Text size="sm" c="dimmed">
-          Nothing on the calendar for {monthName(month, true)}.
+          Nothing on the{' '}
+          <Anchor component={Link} to="/calendar" size="sm">
+            monitoring calendar
+          </Anchor>{' '}
+          for {monthName(month, true)}.
         </Text>
       ) : (
-        rows.map(({ c, entries }) => (
-          <div key={c.project.id}>
-            <Anchor component={Link} to={`/projects/${c.project.id}/schedule`} size="sm" fw={600} c="inherit">
-              {c.project.name}
-            </Anchor>
-            <Stack gap={4} mt={4}>
-              {entries.map((e) => (
-                <Group key={`${e.item.key}|${e.start}`} gap="xs" wrap="nowrap" justify="space-between">
-                  <Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
-                    <Text fw={700} w={20} ta="center">
-                      {e.item.symbol}
+        rows.map((row) => {
+          const project = row.projectId ? sheet.projects.get(row.projectId) : undefined;
+          const status = sheet.marks.get(markId(row.id, month))?.status;
+          const res = sheet.facts.get(row.id)?.results.get(month);
+          const windows = windowsOf(rowMonths(row));
+          const own = monthText(row[MONTH_FIELDS[i]] ?? '');
+          const [a, b] = windowRange(windows, i);
+          const marks = own || monthText(row[MONTH_FIELDS[a]] ?? '');
+          const window = b > a ? `${MONTH_SHORT[a]}–${MONTH_SHORT[b]}` : '';
+          return (
+            <Group key={row.id} gap="xs" wrap="nowrap" justify="space-between" className={`dash-month${status ? ` st-${status}` : ''}`}>
+              <div style={{ minWidth: 0 }}>
+                <Group gap={8} wrap="nowrap">
+                  {marks && (
+                    <Text fw={700} size="sm" style={{ flexShrink: 0 }}>
+                      {marks}
                     </Text>
-                    <Text size="sm" truncate>
-                      {e.item.label}
-                      {e.count && e.count > 1 ? ` ×${e.count}` : ''}
+                  )}
+                  {project ? (
+                    <Anchor component={Link} to={`/projects/${project.id}/schedule`} size="sm" fw={500} c="inherit" truncate>
+                      {cellValue(row, 'job', project)}
+                    </Anchor>
+                  ) : (
+                    <Text size="sm" fw={500} truncate>
+                      {row.job || 'Untitled job'}
                     </Text>
-                  </Group>
-                  <Group gap={4} wrap="nowrap">
-                    <Badge size="sm" variant="light" color={STATE_COLOR[e.state]}>
-                      {STATE_INFO[e.state].label}
-                    </Badge>
-                    {e.state !== 'done' && e.state !== 'cancelled' && (
-                      <Tooltip label={e.item.kind === 'report' ? 'Mark submitted' : 'Mark done – results sent or reported'}>
-                        <ActionIcon size="sm" variant="subtle" color="teal" onClick={() => void markDone(e)} aria-label="Mark done">
-                          <IconCheck size={14} />
-                        </ActionIcon>
-                      </Tooltip>
-                    )}
-                  </Group>
+                  )}
                 </Group>
-              ))}
-            </Stack>
-          </div>
-        ))
+                <Text size="xs" c="dimmed" truncate>
+                  {[window && `window ${window}`, res ? `results in ${res.days.map((d) => formatDate(d)).join(', ')}` : project ? 'no results in yet' : '', status ? STATUS_INFO[status].label.toLowerCase() : '']
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+              </div>
+              <Group gap={4} wrap="nowrap">
+                {STATUSES.map((s) => (
+                  <Tooltip key={s} label={status === s ? `${STATUS_INFO[s].label} – click to clear` : STATUS_INFO[s].label}>
+                    <UnstyledButton
+                      className={`dash-st${status === s ? ' on' : ''}`}
+                      onClick={() => void setCalendarStatus(row.id, month, status === s ? undefined : s)}
+                      aria-label={`Mark ${STATUS_INFO[s].label.toLowerCase()}`}
+                      aria-pressed={status === s}
+                    >
+                      <span className={`cal-swatch st-${s}`} />
+                    </UnstyledButton>
+                  </Tooltip>
+                ))}
+              </Group>
+            </Group>
+          );
+        })
       )}
     </Stack>
   );
@@ -260,12 +279,21 @@ function Deadlines({ dash, today }: WidgetCtx) {
   );
 }
 
-function ReportsDue({ calendars, today }: WidgetCtx) {
-  const list = (calendars ?? [])
-    .filter((c) => c.project.status === 'active')
-    .flatMap((c) => c.entries.filter((e) => e.item.kind === 'report').map((e) => ({ c, e })))
-    .filter(({ e }) => e.state !== 'done' && e.state !== 'cancelled')
-    .sort((a, b) => a.e.due.localeCompare(b.e.due))
+function ReportsDue({ bundles, today }: WidgetCtx) {
+  const end = `${today.slice(0, 4)}-12-31`;
+  const list = bundles
+    .filter((b) => b.project.status === 'active')
+    .flatMap((b) =>
+      b.obligations
+        .filter((o) => o.active)
+        .flatMap((o) => {
+          const periods = obligationPeriods(o, today).filter((p) => !p.submission);
+          const next = nextObligation(o, today);
+          if (next && !next.submission && !periods.some((p) => p.index === next.index)) periods.push(next);
+          return periods.filter((p) => p.dueDate <= end).map((p) => ({ b, o, p }));
+        }),
+    )
+    .sort((a, b) => a.p.dueDate.localeCompare(b.p.dueDate))
     .slice(0, 12);
   if (!list.length)
     return (
@@ -275,22 +303,22 @@ function ReportsDue({ calendars, today }: WidgetCtx) {
     );
   return (
     <Stack gap={6}>
-      {list.map(({ c, e }) => (
-        <Group key={`${e.item.key}|${e.due}`} gap="sm" wrap="nowrap" justify="space-between">
+      {list.map(({ b, o, p }) => (
+        <Group key={`${o.id}|${p.index}`} gap="sm" wrap="nowrap" justify="space-between">
           <div style={{ minWidth: 0 }}>
-            <Anchor component={Link} to={`/projects/${c.project.id}/reports?obligation=${e.item.key}`} size="sm" fw={500} c="inherit" lineClamp={1}>
-              {e.item.label}
+            <Anchor component={Link} to={`/projects/${b.project.id}/reports?obligation=${o.id}&period=${p.index}`} size="sm" fw={500} c="inherit" lineClamp={1}>
+              {o.name}
             </Anchor>
             <Text size="xs" c="dimmed" lineClamp={1}>
-              {c.project.name}
+              {b.project.name}
             </Text>
           </div>
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
             <Text size="sm" className="tabular">
-              {formatDate(e.due)}
+              {formatDate(p.dueDate)}
             </Text>
-            <Text size="xs" c={e.due < today ? 'red' : 'dimmed'}>
-              {e.state === 'doing' ? 'under way' : relativeDays(daysUntil(e.due))}
+            <Text size="xs" c={p.dueDate < today ? 'red' : 'dimmed'}>
+              {relativeDays(daysUntil(p.dueDate))}
             </Text>
           </div>
         </Group>
@@ -485,7 +513,7 @@ function QuickLinks() {
 }
 
 function CalendarWidget() {
-  return <MonitoringCalendar compact />;
+  return <CalendarSheet compact />;
 }
 
 export const WIDGETS: WidgetDef[] = [
@@ -498,11 +526,11 @@ export const WIDGETS: WidgetDef[] = [
     render: (c) => <ActionsToTake {...c} />,
     extra: (c) => (c.actions.length ? <Badge variant="light" color={c.actions.some((a) => a.urgency === 0) ? 'red' : 'orange'}>{c.actions.length}</Badge> : null),
   },
-  { id: 'thisMonth', title: 'This month’s monitoring', description: 'What’s on the calendar this month and next, to tick off', size: { w: 5, h: 8, minW: 3, minH: 4 }, render: (c) => <MonthList {...c} /> },
+  { id: 'thisMonth', title: 'This month’s monitoring', description: 'The jobs on the monitoring calendar this month and next, to colour as they’re done', size: { w: 5, h: 8, minW: 3, minH: 4 }, render: (c) => <MonthList {...c} /> },
   {
     id: 'calendar',
     title: 'Monitoring calendar',
-    description: 'The year of sampling rounds and reports, project by project',
+    description: 'The team’s monitoring schedule for the year, as in the spreadsheet',
     size: { w: 12, h: 8, minW: 6, minH: 5 },
     render: () => <CalendarWidget />,
     extra: () => (
@@ -512,7 +540,7 @@ export const WIDGETS: WidgetDef[] = [
     ),
   },
   { id: 'deadlines', title: 'Upcoming deadlines', description: 'Reports and sampling rounds, soonest first', size: { w: 7, h: 8, minW: 4, minH: 4 }, render: (c) => <Deadlines {...c} /> },
-  { id: 'reports', title: 'Reports due', description: 'This year’s reports not yet submitted', size: { w: 5, h: 6, minW: 3, minH: 3 }, render: (c) => <ReportsDue {...c} /> },
+  { id: 'reports', title: 'Reports due', description: 'Reports due by the end of the year, not yet submitted', size: { w: 5, h: 6, minW: 3, minH: 3 }, render: (c) => <ReportsDue {...c} /> },
   { id: 'exceedances', title: 'Recent exceedances', description: 'Consent limits and triggers exceeded in the last 90 days', size: { w: 12, h: 7, minW: 5, minH: 4 }, render: (c) => <Exceedances {...c} /> },
   { id: 'projects', title: 'Projects', description: 'Your active projects and whether they comply', size: { w: 5, h: 8, minW: 3, minH: 4 }, render: (c) => <Projects {...c} /> },
   { id: 'imports', title: 'Recent imports', description: 'The latest lab files imported, by anyone', size: { w: 5, h: 5, minW: 3, minH: 3 }, render: (c) => <RecentImports {...c} /> },
