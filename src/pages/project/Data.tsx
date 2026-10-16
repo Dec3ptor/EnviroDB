@@ -1,13 +1,13 @@
-import { useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, Badge, Button, Card, Drawer, Group, Menu, NumberInput, Pill, Popover, SegmentedControl, Select, Stack, Table, Text, TextInput, ActionIcon, Textarea, UnstyledButton, CloseButton, Tooltip } from '@mantine/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconDeviceFloppy, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending } from '@tabler/icons-react';
+import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { ConsentViewControl, EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
-import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResults, pivot, type ConsentView, type PivotRow } from '../../lib/analysis';
+import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResults, pivot, type ConsentView, type PivotRow, type CellFlag } from '../../lib/analysis';
 import { formatDate } from '../../lib/dates';
 import { unitLabel } from '../../lib/units';
 import { exportPivotCsv, exportPivotXlsx } from '../../reports/excel';
@@ -21,9 +21,12 @@ import type { ReportBlock, Result, Sample } from '../../db/types';
 import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
 import { parseValue } from '../../lib/values';
+import { cellClass, SET_COLOURS, setColourIndex } from '../../lib/highlight';
 import { AiInputModal } from '../../components/AiInputModal';
 import { applyView, DEFAULT_SORT, describeFilter, FILTER_OPS, SHOW_ROWS, sortLabel, type FilterOp, type ShowRows, type SortKey, type SortState, type ValueFilter } from '../../lib/tableView';
 import type { Parameter } from '../../db/types';
+import { SaveButton } from '../../components/Unsaved';
+import { same } from '../../sync/model';
 
 function Legend({ guidelineNames, hardness }: { guidelineNames: string[]; hardness?: boolean }) {
   return (
@@ -34,8 +37,14 @@ function Legend({ guidelineNames, hardness }: { guidelineNames: string[]; hardne
       </Text>
       <Text size="xs">
         <span className="hl-swatch" style={{ background: 'var(--edb-hl-guideline)' }} />
-        Trigger / guideline exceeded{guidelineNames.length ? ` (${guidelineNames.join(', ')})` : ''}
+        Trigger{guidelineNames.length ? ` or ${guidelineNames[0]}` : ''} exceeded
       </Text>
+      {guidelineNames.slice(1).map((name, i) => (
+        <Text size="xs" key={name}>
+          <span className="hl-swatch" style={{ background: SET_COLOURS[setColourIndex(i + 1)].fill }} />
+          {name} exceeded
+        </Text>
+      ))}
       <Text size="xs">
         <span className="hl-swatch" style={{ background: 'var(--edb-hl-check)' }} />
         Detection limit above limit
@@ -52,9 +61,6 @@ function Legend({ guidelineNames, hardness }: { guidelineNames: string[]; hardne
   );
 }
 
-function cellClass(f?: { kind: string }) {
-  return f ? (f.kind === 'limit' ? 'hl-limit' : f.kind === 'guideline' ? 'hl-guideline' : 'hl-check') : '';
-}
 
 function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () => void }) {
   const { sites, index, paramMap } = useProject();
@@ -145,9 +151,9 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
           >
             Delete sample
           </Button>
-          <Button leftSection={<IconDeviceFloppy size={16} />} onClick={save}>
+          <SaveButton dirty={!same(s, sample) || Object.keys(edits).length > 0} onClick={save}>
             Save changes
-          </Button>
+          </SaveButton>
         </Group>
       </Stack>
     </Drawer>
@@ -193,16 +199,33 @@ interface HeadProps {
   onFilter: (k: string) => void;
 }
 
-function SamplesAsRows({ rows, columns, flags, onRow, head }: { rows: PivotRow[]; columns: ReturnType<typeof pivot>['columns']; flags: Map<string, { kind: string; messages: string[] }>; onRow: (s: Sample) => void; head: HeadProps }) {
+/** Keeps the second header row (units, dates) right under the first however tall its names wrap, so neither is covered. */
+function useHeaderRows() {
+  const ref = useRef<HTMLTableSectionElement>(null);
+  useLayoutEffect(() => {
+    const head = ref.current;
+    const first = head?.rows[0];
+    if (!head || !first) return;
+    const fit = () => head.closest('table')?.style.setProperty('--edb-head1', `${first.getBoundingClientRect().height}px`);
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(first);
+    return () => ro.disconnect();
+  }, []);
+  return ref;
+}
+
+function SamplesAsRows({ rows, columns, flags, onRow, head }: { rows: PivotRow[]; columns: ReturnType<typeof pivot>['columns']; flags: Map<string, CellFlag>; onRow: (s: Sample) => void; head: HeadProps }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const v = useVirtualizer({ count: rows.length, getScrollElement: () => parentRef.current, estimateSize: () => 27, overscan: 12 });
   const items = v.getVirtualItems();
   const padTop = items.length ? items[0].start : 0;
   const padBottom = items.length ? v.getTotalSize() - items[items.length - 1].end : 0;
+  const headRef = useHeaderRows();
   return (
     <div ref={parentRef} style={{ maxHeight: 'calc(100vh - 330px)', minHeight: 300, overflow: 'auto', border: '1px solid var(--edb-grid)', borderRadius: 8 }}>
       <table className="edb-grid">
-        <thead>
+        <thead ref={headRef}>
           <tr>
             <th className="sticky-col" style={{ minWidth: 110 }}>
               <SortHead label="Date" sortKey="date" sort={head.sort} onSort={head.onSort} />
@@ -262,8 +285,9 @@ function SamplesAsRows({ rows, columns, flags, onRow, head }: { rows: PivotRow[]
   );
 }
 
-function ParamsAsRows({ rows, columns, flags, onRow }: { rows: PivotRow[]; columns: ReturnType<typeof pivot>['columns']; flags: Map<string, { kind: string; messages: string[] }>; onRow: (s: Sample) => void }) {
+function ParamsAsRows({ rows, columns, flags, onRow }: { rows: PivotRow[]; columns: ReturnType<typeof pivot>['columns']; flags: Map<string, CellFlag>; onRow: (s: Sample) => void }) {
   const shown = rows.slice(-120);
+  const headRef = useHeaderRows();
   return (
     <Stack gap={4}>
       {rows.length > shown.length && (
@@ -273,7 +297,7 @@ function ParamsAsRows({ rows, columns, flags, onRow }: { rows: PivotRow[]; colum
       )}
       <div style={{ maxHeight: 'calc(100vh - 330px)', minHeight: 300, overflow: 'auto', border: '1px solid var(--edb-grid)', borderRadius: 8 }}>
         <table className="edb-grid" style={{ ['--edb-col1' as string]: '220px' }}>
-          <thead>
+          <thead ref={headRef}>
             <tr>
               <th className="sticky-col" style={{ minWidth: 220 }}>
                 Parameter

@@ -132,6 +132,75 @@ export async function addParameterAlias(paramId: string, alias: string): Promise
   await db.parameters.update(paramId, { aliases: [...p.aliases, a] });
 }
 
+/** What deleting a parameter – from the library, or from one project – takes with it. */
+export interface ParameterImpact {
+  /** Projects with results for it, and how many. */
+  projects: Array<{ id: string; name: string; results: number }>;
+  results: number;
+  /** Samples with no other results, which go too. */
+  emptySamples: number;
+  /** Rules for it alone (limits, triggers …), which go with it. */
+  rules: Array<{ id: string; name: string; projectId: string }>;
+  /** Sampling schedules that name it; they keep their other parameters. */
+  schedules: Array<{ id: string; name: string; projectId: string }>;
+  /** Your own guideline sets with a value for it (library deletions only; built-in sets are left as published). */
+  guidelineSets: Array<{ id: string; name: string }>;
+  /** Report templates with sections that choose it; those sections leave it out. */
+  templates: Array<{ id: string; name: string }>;
+}
+
+const blockParams = (b: ReportTemplate['blocks'][number]): string[] => ('parameterIds' in b && Array.isArray(b.parameterIds) ? b.parameterIds : []);
+
+async function parameterWork(paramId: string, projectId?: string) {
+  const projects = projectId ? (await db.projects.bulkGet([projectId])).filter((p): p is Project => !!p) : await db.projects.toArray();
+  const results = (await Promise.all(projects.map((p) => db.results.where('[projectId+parameterId]').equals([p.id, paramId]).toArray()))).flat();
+  // samples whose only results are these
+  const sampleIds = [...new Set(results.map((r) => r.sampleId))];
+  const others = new Set((await db.results.where('sampleId').anyOf(sampleIds).toArray()).filter((r) => r.parameterId !== paramId).map((r) => r.sampleId));
+  const emptySamples = sampleIds.filter((id) => !others.has(id));
+  const inScope = (x: { projectId: string }) => !projectId || x.projectId === projectId;
+  const rules = (await db.rules.toArray()).filter((r) => r.parameterId === paramId && inScope(r));
+  const schedules = (await db.schedules.toArray()).filter((s) => s.parameterIds.includes(paramId) && inScope(s));
+  const sets = projectId ? [] : (await db.guidelineSets.toArray()).filter((g) => !g.builtIn && g.values.some((v) => v.parameterId === paramId));
+  const templates = projectId ? [] : (await db.templates.toArray()).filter((t) => t.blocks.some((b) => blockParams(b).includes(paramId)));
+  return { projects, results, emptySamples, rules, schedules, sets, templates };
+}
+
+export async function parameterImpact(paramId: string, projectId?: string): Promise<ParameterImpact> {
+  const w = await parameterWork(paramId, projectId);
+  const counts = new Map<string, number>();
+  for (const r of w.results) counts.set(r.projectId, (counts.get(r.projectId) ?? 0) + 1);
+  return {
+    projects: w.projects.filter((p) => counts.has(p.id)).map((p) => ({ id: p.id, name: p.name, results: counts.get(p.id)! })),
+    results: w.results.length,
+    emptySamples: w.emptySamples.length,
+    rules: w.rules.map((r) => ({ id: r.id, name: r.name || r.condition || r.level, projectId: r.projectId })),
+    schedules: w.schedules.map((s) => ({ id: s.id, name: s.name, projectId: s.projectId })),
+    guidelineSets: w.sets.map((g) => ({ id: g.id, name: g.name })),
+    templates: w.templates.map((t) => ({ id: t.id, name: t.name })),
+  };
+}
+
+/**
+ * Deletes a parameter's results (and samples left with none), its rules and their notes, and takes it off sampling
+ * schedules – in one project, or (without `projectId`) everywhere, along with your guideline sets' values for it and
+ * the parameter itself. Report templates keep their choice: a section leaves out a parameter that isn't there.
+ */
+export async function deleteParameter(paramId: string, projectId?: string): Promise<void> {
+  await db.transaction('rw', [db.projects, db.parameters, db.results, db.samples, db.rules, db.notes, db.schedules, db.guidelineSets, db.templates], async () => {
+    const w = await parameterWork(paramId, projectId);
+    await db.results.bulkDelete(w.results.map((r) => r.id));
+    await db.samples.bulkDelete(w.emptySamples);
+    await db.rules.bulkDelete(w.rules.map((r) => r.id));
+    if (w.rules.length) await db.notes.where('ruleId').anyOf(w.rules.map((r) => r.id)).delete();
+    for (const s of w.schedules) await db.schedules.update(s.id, { parameterIds: s.parameterIds.filter((id) => id !== paramId) });
+    for (const g of w.sets) await db.guidelineSets.update(g.id, { values: g.values.filter((v) => v.parameterId !== paramId), updatedAt: nowIso() });
+    if (!projectId) await db.parameters.delete(paramId);
+    const touched = new Set([...w.results.map((r) => r.projectId), ...w.rules.map((r) => r.projectId)]);
+    for (const id of touched) await db.projects.update(id, { updatedAt: nowIso() });
+  });
+}
+
 // ------------------------------------------------------------ rules, notes, schedules, obligations
 
 export function newRule(projectId: string, patch: Partial<Rule> = {}): Rule {

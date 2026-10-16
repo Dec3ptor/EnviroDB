@@ -1,0 +1,9 @@
+SampleCode,ChemCode,OriginalChemName,Prefix,Result,Result_Unit,Total_or_Filtered,Result_Type,Method_Type,Method_Name,Extraction_Date,Analysed_Date,EQL,EQL_Units
+NH2600002001,16887-00-6,Chloride,,45.2,g/m3,F,REG,Anions in Water,Ani_W - Ani_W: Anions by Ion Chromatography,11-Feb-26,11-Feb-26,0.5,g/m3
+NH2600002001,TKN,Total Kjeldahl Nitrogen as N,,1.2,g/m3,T,REG,Total Kjeldahl Nitrogen as N in Water,TKN_W,12-Feb-26,13-Feb-26,0.1,g/m3
+NH2600002002,16887-00-6,Chloride,<,0.5,g/m3,F,REG,Anions in Water,Ani_W,11-Feb-26,11-Feb-26,0.5,g/m3
+SampleCode,ChemCode,OriginalChemName,Prefix,Result,Result_Unit,Total_or_Filtered,Result_Type,Method_Type,Method_Name,Extraction_Date,Analysed_Date,EQL,EQL_Units,Comments,Lab_Qualifier,UCL,LCL
+NH2600002002,14797-55-8(as N),Nitrate as N,<,0.020,g/m3,F,REG,Nitrate as Nitrogen via Calculation,NO3N_Calc,,12-Feb-26,0.002,g/m3,Reported Analyte LOR is higher than Requested LOR,,,
+NH2600099001_NH2600002,TKN,Total Kjeldahl Nitrogen as N,,0.3,g/m3,T,REG,Total Kjeldahl Nitrogen as N in Water,TKN_W,,13-Feb-26,0.1,g/m3,,,,
+QC-1234567-001_NH2600002,16887-00-6,Chloride,<,0.5,g/m3,F,REG,Anions in Water,Ani_W,11-Feb-26,11-Feb-26,0.5,g/m3,,,,
+QC-1234567-003_NH2600002,16887-00-6,Chloride,,96.6,%,F,REG,Anions in Water,Ani_W,11-Feb-26,11-Feb-26,0.5,%,,,110,93

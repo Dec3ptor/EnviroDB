@@ -199,6 +199,30 @@ describe('graph limit, trigger and guideline lines', () => {
     expect(narrow.grid.bottom).toBeGreaterThan(wide.grid.bottom); // the plot makes room for the key
   });
 
+  it('fits the axes to the sites shown when one is switched off in the key', async () => {
+    const b = await loadBundle(projectId);
+    const spec = buildChartSpec({ index: b.index, param: b.paramMap.get('ec')!, sites: b.sites, siteIds: [], guidelineSets: [], rules: b.rules, showRules: false });
+    expect(spec.series.length).toBeGreaterThan(1);
+    const top = [...spec.series].sort((x, y) => Math.max(...y.points.map((p) => p.v)) - Math.max(...x.points.map((p) => p.v)))[0];
+    const yMax = (hidden: Set<string>) => {
+      const chart = echarts.init(null as unknown as HTMLElement, undefined, { renderer: 'svg', ssr: true, width: 600, height: 300 });
+      try {
+        const opt = chartOption(spec, { forExport: true, width: 600, hidden }) as { legend?: Array<{ selected?: Record<string, boolean> }> | { selected?: Record<string, boolean> } };
+        chart.setOption({ ...(opt as object), animation: false });
+        const legend = Array.isArray(opt.legend) ? opt.legend[0] : opt.legend;
+        if (hidden.size) expect(legend?.selected?.[top.name]).toBe(false);
+        return (chart as unknown as { getModel(): { getComponent(t: string): { axis: { scale: { getExtent(): [number, number] } } } } }).getModel().getComponent('yAxis').axis.scale.getExtent()[1];
+      } finally {
+        chart.dispose();
+      }
+    };
+    const all = yMax(new Set());
+    const without = yMax(new Set([top.name]));
+    const othersMax = Math.max(...spec.series.filter((x) => x !== top).flatMap((x) => x.points.map((p) => p.v)));
+    expect(without).toBeLessThan(all);
+    expect(without).toBeGreaterThanOrEqual(othersMax);
+  });
+
   it('draws small guideline values exactly where they belong (not rounded to 2 decimals)', async () => {
     const b = await loadBundle(projectId);
     const as = buildChartSpec({ index: b.index, param: b.paramMap.get('as-d')!, sites: b.sites, siteIds: [], guidelineSets: [b.setMap.get('anzg-fw-95')!, b.setMap.get('anzg-fw-99')!], rules: b.rules, showRules: true });

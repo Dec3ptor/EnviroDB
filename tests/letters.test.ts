@@ -112,7 +112,7 @@ describe('results vs previous rounds', () => {
     expect(trendOf(r(5.5), r(5.5), p)).toBe('Stable');
     expect(trendOf(r(0.01, '<'), r(0.005, '<'), p)).toBe('Stable'); // both below detection
     expect(trendOf(r(0.02), r(0.01, '<'), p)).toBe('Increase');
-    expect(trendOf(r(1), undefined, p)).toBe('First result');
+    expect(trendOf(r(1), undefined, p)).toBe(''); // no previous round: the comment just says whether it complies
   });
 
   it('drafts a summary for each site from its results', () => {

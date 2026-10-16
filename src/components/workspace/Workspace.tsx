@@ -526,7 +526,19 @@ export function RemoteNotices() {
   useEffect(
     () =>
       onRemoteUpdate((u) => {
-        for (const { by, text } of summary(u)) {
+        const joined = new Set(u.joined.map((p) => p.id));
+        for (const p of u.joined) {
+          const added = u.changes.filter((c) => c.by === p.id && c.t === 'projects' && c.action === 'added').map((c) => String(c.rec?.name ?? 'a project'));
+          notifications.show({
+            id: `joined-${p.id}`,
+            title: `${p.name} joined the workspace`,
+            message: added.length ? `and added ${added.length === 1 ? `the project “${added[0]}”` : `${added.length} projects`} from their browser` : 'They can now see and work on everything here.',
+            color: 'blue',
+            autoClose: 7000,
+            icon: <IconUsers size={16} />,
+          });
+        }
+        for (const { by, text } of summary({ ...u, changes: u.changes.filter((c) => !joined.has(c.by)) })) {
           notifications.show({ id: `remote-${by}`, title: `${u.names.get(by) ?? 'A colleague'} made changes`, message: `Updated here: ${text}`, color: 'teal', autoClose: 5000, icon: <IconCloudCheck size={16} /> });
         }
         const shown = u.conflicts.slice(0, 3);

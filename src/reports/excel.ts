@@ -1,5 +1,6 @@
 import type { Parameter, Result } from '../db/types';
 import type { CellFlag, PivotRow } from '../lib/analysis';
+import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
 import { displayValue } from '../lib/analysis';
 import { formatDate } from '../lib/dates';
 import { unitLabel } from '../lib/units';
@@ -31,7 +32,7 @@ export async function exportPivotXlsx(x: PivotExport): Promise<void> {
     cell.alignment = { horizontal: 'right' };
     const f = x.flags.get(r.id);
     if (f) {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL[f.kind] } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${flagFillColour(f)!.slice(1)}` } };
       cell.font = { bold: f.kind !== 'check' };
       cell.note = f.messages.join('\n');
     }
@@ -68,8 +69,13 @@ export async function exportPivotXlsx(x: PivotExport): Promise<void> {
   legend.addRow([]);
   const l1 = legend.addRow(['', 'Consent limit exceeded']);
   l1.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL.limit } };
-  const l2 = legend.addRow(['', `Trigger level or guideline exceeded${x.guidelineNames.length ? ` (${x.guidelineNames.join('; ')})` : ''}`]);
+  const l2 = legend.addRow(['', `Trigger level${x.guidelineNames.length ? ` or ${x.guidelineNames[0]}` : ''} exceeded`]);
   l2.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL.guideline } };
+  // each further guideline set has its own colour
+  x.guidelineNames.slice(1).forEach((name, i) => {
+    const row = legend.addRow(['', `${name} exceeded`]);
+    row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${SET_COLOURS[setColourIndex(i + 1)].fill.slice(1)}` } };
+  });
   const l3 = legend.addRow(['', 'Detection limit above the limit / guideline – cannot assess']);
   l3.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL.check } };
   legend.addRow(['', '"<" = below the laboratory detection limit. Hover over shaded cells for details.']);

@@ -39,6 +39,8 @@ export interface ChartSpec {
   hasNd: boolean;
   xMin?: number;
   xMax?: number;
+  /** The dates axis follows the data (no period chosen), so it narrows to the sites shown. */
+  xAuto?: boolean;
   /** A time range to shade, e.g. the reporting period against earlier years (UTC ms). */
   band?: { from: number; to: number };
 }
@@ -126,10 +128,13 @@ export function buildChartSpec(input: ChartInput): ChartSpec {
     hasNd,
     xMin: input.start && input.start > '1901' ? toUtcMs(input.start) : xs.length ? Math.min(...xs) : undefined,
     xMax: input.end && input.end < '2199' ? toUtcMs(input.end) : xs.length ? Math.max(...xs) : undefined,
+    xAuto: !(input.start && input.start > '1901') || !(input.end && input.end < '2199'),
   };
 }
 
 export interface RenderOpts {
+  /** Sites switched off in the legend: the axes fit the others. */
+  hidden?: ReadonlySet<string>;
   dark?: boolean;
   forExport?: boolean;
   showTitle?: boolean;
@@ -219,7 +224,13 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
   const legendFont = 11.5 * fs;
   const legendRows = multi ? packRows(spec.series.map((s) => 18 + 5 + textWidth(s.name, legendFont)), avail, 14).length : 0;
   const top = (showTitle ? (spec.subtitle ? 46 : 30) : 8) + (multi ? 26 * legendRows : 0);
-  const values = spec.series.flatMap((s) => s.points.map((p) => p.v));
+  // the axes fit the sites shown (all of them if every one is switched off)
+  const shown = spec.series.filter((s) => !opts.hidden?.has(s.name));
+  const fitted = shown.length ? shown : spec.series;
+  const values = fitted.flatMap((s) => s.points.map((p) => p.v));
+  const times = fitted.flatMap((s) => s.points.map((p) => p.t));
+  const xMin = spec.xAuto && times.length && spec.xMin !== undefined ? Math.max(spec.xMin, Math.min(...times)) : spec.xMin;
+  const xMax = spec.xAuto && times.length && spec.xMax !== undefined ? Math.min(spec.xMax, Math.max(...times)) : spec.xMax;
   const lineValues = spec.lines.flatMap((l) => l.values);
   const dataMax = Math.max(0, ...values);
   const lineMax = Math.max(0, ...lineValues);
@@ -337,6 +348,7 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
           left: 0,
           width: avail,
           data: spec.series.map((s) => s.name),
+          selected: Object.fromEntries(spec.series.map((s) => [s.name, !opts.hidden?.has(s.name)])),
           icon: 'path://M0,0 L24,0 L24,4 L0,4 Z',
           itemWidth: 18,
           itemHeight: 3,
@@ -371,8 +383,8 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
         },
     xAxis: {
       type: 'time',
-      min: spec.xMin,
-      max: spec.xMax,
+      min: xMin,
+      max: xMax,
       axisLine: { lineStyle: { color: ink.axis } },
       axisTick: { lineStyle: { color: ink.axis } },
       axisLabel: {

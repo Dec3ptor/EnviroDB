@@ -25,6 +25,8 @@ export interface RawSample {
   status?: string;
   /** The lab had not finished with the sample: its note starts with PROVISIONAL_NOTE, removed once final results are imported. */
   provisional?: boolean;
+  /** The lab, when files from several labs are imported together. */
+  labName?: string;
 }
 
 /** Start of the note on samples whose results were still with the lab when imported. */

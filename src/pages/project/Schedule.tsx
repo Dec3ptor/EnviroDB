@@ -163,6 +163,94 @@ export function ScheduleTab() {
       <Card>
         <Group justify="space-between" mb="sm">
           <div>
+            <Title order={4}>Sampling schedules</Title>
+            <Text size="sm" c="dimmed">
+              Required sampling frequency – shows which sites are still to be sampled this period and any missed rounds
+            </Text>
+          </div>
+          <Button leftSection={<IconPlus size={16} />} onClick={() => setEditS(newSchedule(project.id, { siteIds: data.sites.map((s) => s.id) }))} disabled={!data.sites.length}>
+            Add schedule
+          </Button>
+        </Group>
+        {!schedules.length ? (
+          <EmptyState title="No sampling schedules">e.g. “Monthly at US1, DP1 and DS1”; “Quarterly groundwater at GW1–GW3”.</EmptyState>
+        ) : (
+          <SimpleGrid cols={{ base: 1, lg: 2 }}>
+            {statuses.map((st) => {
+              const pct = st.totalPeriods ? Math.round((st.completedPeriods / st.totalPeriods) * 100) : 100;
+              return (
+                <Card key={st.schedule.id} padding="md" bg="var(--mantine-color-body)">
+                  <Group justify="space-between" wrap="nowrap" mb={6}>
+                    <div>
+                      <Group gap="xs">
+                        <Text fw={600}>{st.schedule.name}</Text>
+                        <Badge variant="outline">{frequencyLabel(st.schedule.every, st.schedule.unit)}</Badge>
+                      </Group>
+                      <Text size="xs" c="dimmed">
+                        {st.schedule.siteIds.map((id) => siteMap.get(id)?.code).join(', ')}
+                      </Text>
+                    </div>
+                    <Menu position="bottom-end">
+                      <Menu.Target>
+                        <ActionIcon variant="subtle" aria-label="Actions">
+                          <IconDots size={16} />
+                        </ActionIcon>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        <Menu.Item leftSection={<IconEdit size={14} />} onClick={() => setEditS(st.schedule)}>
+                          Edit
+                        </Menu.Item>
+                        <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => modals.openConfirmModal({ title: 'Delete schedule?', labels: { confirm: 'Delete', cancel: 'Cancel' }, confirmProps: { color: 'red' }, onConfirm: () => deleteSchedule(st.schedule.id) })}>
+                          Delete
+                        </Menu.Item>
+                      </Menu.Dropdown>
+                    </Menu>
+                  </Group>
+                  {st.current ? (
+                    <Stack gap={6}>
+                      <Text size="sm">
+                        Current period: <b>{formatDate(st.current.start)} – {formatDate(st.current.end)}</b>
+                      </Text>
+                      <Group gap={6}>
+                        {st.schedule.siteIds.map((id) => {
+                          const done = st.current!.sampled[id];
+                          return (
+                            <Tooltip key={id} label={done ? `Sampled ${done.map((d) => formatDate(d)).join(', ')}` : `Not yet sampled – due by ${formatDate(st.current!.end)}`}>
+                              <Badge color={done ? 'green' : 'orange'} variant={done ? 'light' : 'filled'} leftSection={done ? <IconCheck size={12} /> : undefined}>
+                                {siteMap.get(id)?.code}
+                              </Badge>
+                            </Tooltip>
+                          );
+                        })}
+                      </Group>
+                    </Stack>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      Schedule not running today.
+                    </Text>
+                  )}
+                  <Group gap="xs" mt="sm" align="center">
+                    <Text size="xs" c="dimmed" w={170}>
+                      Rounds completed (2 yrs): {st.completedPeriods}/{st.totalPeriods}
+                    </Text>
+                    <Progress value={pct} color={pct === 100 ? 'green' : pct >= 90 ? 'teal' : 'orange'} style={{ flex: 1 }} />
+                  </Group>
+                  {st.missed.length > 0 && (
+                    <Text size="xs" c="orange.8" mt={4}>
+                      Missed: {st.missed.slice(-6).map((m) => `${siteMap.get(m.siteId)?.code} (${formatDate(m.start)})`).join(', ')}
+                      {st.missed.length > 6 ? ` and ${st.missed.length - 6} more` : ''}
+                    </Text>
+                  )}
+                </Card>
+              );
+            })}
+          </SimpleGrid>
+        )}
+      </Card>
+
+      <Card>
+        <Group justify="space-between" mb="sm">
+          <div>
             <Title order={4}>Reporting obligations</Title>
             <Text size="sm" c="dimmed">
               Reports required by the consent, with due dates and submission tracking
@@ -270,94 +358,6 @@ export function ScheduleTab() {
               );
             })}
           </Stack>
-        )}
-      </Card>
-
-      <Card>
-        <Group justify="space-between" mb="sm">
-          <div>
-            <Title order={4}>Sampling schedules</Title>
-            <Text size="sm" c="dimmed">
-              Required sampling frequency – shows which sites are still to be sampled this period and any missed rounds
-            </Text>
-          </div>
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setEditS(newSchedule(project.id, { siteIds: data.sites.map((s) => s.id) }))} disabled={!data.sites.length}>
-            Add schedule
-          </Button>
-        </Group>
-        {!schedules.length ? (
-          <EmptyState title="No sampling schedules">e.g. “Monthly at US1, DP1 and DS1”; “Quarterly groundwater at GW1–GW3”.</EmptyState>
-        ) : (
-          <SimpleGrid cols={{ base: 1, lg: 2 }}>
-            {statuses.map((st) => {
-              const pct = st.totalPeriods ? Math.round((st.completedPeriods / st.totalPeriods) * 100) : 100;
-              return (
-                <Card key={st.schedule.id} padding="md" bg="var(--mantine-color-body)">
-                  <Group justify="space-between" wrap="nowrap" mb={6}>
-                    <div>
-                      <Group gap="xs">
-                        <Text fw={600}>{st.schedule.name}</Text>
-                        <Badge variant="outline">{frequencyLabel(st.schedule.every, st.schedule.unit)}</Badge>
-                      </Group>
-                      <Text size="xs" c="dimmed">
-                        {st.schedule.siteIds.map((id) => siteMap.get(id)?.code).join(', ')}
-                      </Text>
-                    </div>
-                    <Menu position="bottom-end">
-                      <Menu.Target>
-                        <ActionIcon variant="subtle" aria-label="Actions">
-                          <IconDots size={16} />
-                        </ActionIcon>
-                      </Menu.Target>
-                      <Menu.Dropdown>
-                        <Menu.Item leftSection={<IconEdit size={14} />} onClick={() => setEditS(st.schedule)}>
-                          Edit
-                        </Menu.Item>
-                        <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => modals.openConfirmModal({ title: 'Delete schedule?', labels: { confirm: 'Delete', cancel: 'Cancel' }, confirmProps: { color: 'red' }, onConfirm: () => deleteSchedule(st.schedule.id) })}>
-                          Delete
-                        </Menu.Item>
-                      </Menu.Dropdown>
-                    </Menu>
-                  </Group>
-                  {st.current ? (
-                    <Stack gap={6}>
-                      <Text size="sm">
-                        Current period: <b>{formatDate(st.current.start)} – {formatDate(st.current.end)}</b>
-                      </Text>
-                      <Group gap={6}>
-                        {st.schedule.siteIds.map((id) => {
-                          const done = st.current!.sampled[id];
-                          return (
-                            <Tooltip key={id} label={done ? `Sampled ${done.map((d) => formatDate(d)).join(', ')}` : `Not yet sampled – due by ${formatDate(st.current!.end)}`}>
-                              <Badge color={done ? 'green' : 'orange'} variant={done ? 'light' : 'filled'} leftSection={done ? <IconCheck size={12} /> : undefined}>
-                                {siteMap.get(id)?.code}
-                              </Badge>
-                            </Tooltip>
-                          );
-                        })}
-                      </Group>
-                    </Stack>
-                  ) : (
-                    <Text size="sm" c="dimmed">
-                      Schedule not running today.
-                    </Text>
-                  )}
-                  <Group gap="xs" mt="sm" align="center">
-                    <Text size="xs" c="dimmed" w={170}>
-                      Rounds completed (2 yrs): {st.completedPeriods}/{st.totalPeriods}
-                    </Text>
-                    <Progress value={pct} color={pct === 100 ? 'green' : pct >= 90 ? 'teal' : 'orange'} style={{ flex: 1 }} />
-                  </Group>
-                  {st.missed.length > 0 && (
-                    <Text size="xs" c="orange.8" mt={4}>
-                      Missed: {st.missed.slice(-6).map((m) => `${siteMap.get(m.siteId)?.code} (${formatDate(m.start)})`).join(', ')}
-                      {st.missed.length > 6 ? ` and ${st.missed.length - 6} more` : ''}
-                    </Text>
-                  )}
-                </Card>
-              );
-            })}
-          </SimpleGrid>
         )}
       </Card>
       {editS && <ScheduleModal key={editS.id} value={editS} onClose={() => setEditS(null)} />}

@@ -19,7 +19,7 @@ import { BUILT_IN_PARAMETERS, splitPhysicalAndField } from '../data/parameters';
 import { BUILT_IN_GUIDELINES } from '../data/guidelines';
 import { BUILT_IN_TEMPLATES } from '../data/templates';
 import { captureMiddleware, markUncaptured } from '../sync/capture';
-import type { DirtySegment, SyncRow } from '../sync/model';
+import { isDeleted, isSharedRecord, rowKey, type DirtySegment, type SyncRow } from '../sync/model';
 import type { SyncedFile } from '../sync/engine';
 
 /** This browser's own workspace details: its client id, your name, the folder, the workspace it holds. */
@@ -95,12 +95,17 @@ const LEGACY_FIELD_GROUP = 'Physical & field';
 /** Insert / refresh built-in reference data while keeping the user's own additions. */
 export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<void> {
   await migrateSettings(database);
-  await database.transaction('rw', database.parameters, database.guidelineSets, database.templates, async (tx) => {
+  await forgetUnsharedSync(database);
+  await database.transaction('rw', [database.parameters, database.guidelineSets, database.templates, database.syncState], async (tx) => {
     markUncaptured(tx.idbtrans); // the same in every browser: not a change to share
     const existing = new Map((await database.parameters.toArray()).map((p) => [p.id, p]));
+    // built-in parameters someone deleted (here or in the workspace) stay deleted
+    const states = await database.syncState.bulkGet(BUILT_IN_PARAMETERS.map((p) => rowKey('parameters', p.id)));
+    const deleted = new Set(states.filter((r): r is SyncRow => !!r && isDeleted(r)).map((r) => r.k));
     const toPut: Parameter[] = [];
     for (const p of BUILT_IN_PARAMETERS) {
       const cur = existing.get(p.id);
+      if (deleted.has(p.id)) continue;
       if (!cur) toPut.push(p);
       else {
         const aliases = Array.from(new Set([...cur.aliases, ...p.aliases]));
@@ -154,6 +159,13 @@ export async function saveSettings(patch: Partial<Settings>, database: EnviroDat
       await database.meta.put({ key, value: next });
     }
   });
+}
+
+/** Report work used to be shared: what was kept for sharing it goes (the work itself stays in this browser). */
+async function forgetUnsharedSync(database: EnviroDatabase): Promise<void> {
+  const rows = await database.syncState.where('tk').between('meta\u0001', 'meta\u0001\uffff').toArray();
+  const stale = rows.filter((r) => !isSharedRecord('meta', r.k)).map((r) => r.tk);
+  if (stale.length) await database.syncState.bulkDelete(stale);
 }
 
 /** Settings used to be one record: this person's own move to their own record (once). */

@@ -7,10 +7,12 @@ It runs entirely in the browser and is hosted on GitHub Pages. A team works toge
 **shared workspace folder** (SharePoint, OneDrive or a network drive): everyone's changes are saved
 there as they work and show up for the others within seconds.
 
-- **Import** Hill Labs Excel results, your existing monitoring master spreadsheets
+- **Import** lab results from Hill Labs, ALS and Linnaeus – Excel, CSV or the PDF reports, several
+  files at once or the zip they came in – your existing monitoring master spreadsheets
   (dates down the rows, analytes across the columns, one sheet per site, units rows,
   guideline rows…), monitoring-database exports or long tables. Sites and analytes are matched
-  automatically, and the matches are remembered for next time.
+  automatically, and the matches are remembered for next time. Results from different labs for the
+  same site and day (field pH and conductivity from one, the chemistry from another) become one sample.
 - **Set up projects** with monitoring sites, consent limits and trigger levels, sampling
   frequencies and reporting due dates.
 - **Check compliance** right after import. The supported rule types are:
@@ -34,7 +36,8 @@ there as they work and show up for the others within seconds.
   chemical stressor values, and selected DWSNZ (2022) MAVs. You can also add your own
   sets, such as site-specific trigger values, or import one from CSV/Excel. The Guidelines page
   can show concentrations in g/m³, mg/L or µg/L (it remembers your choice); comparisons always
-  convert units automatically.
+  convert units automatically. With several guideline sets chosen, each set's exceedances have a
+  colour of their own (amber, blue, green, pink, teal) in tables, Excel exports and reports, with a key.
 - **Graph** any parameter by site, with consent limits (solid red), triggers (dashed amber) and
   guideline values (dotted grey) drawn as lines and named in a key below the graph. Graphs export
   as high-resolution PNGs, can be copied straight into Word, or exported all at once to a
@@ -120,10 +123,16 @@ there as they work and show up for the others within seconds.
   action, *Import results*, is top right; less common ones (*Copy for AI input* on a phone,
   *Download project file*) are under ⋯.
 - **Library** – reference data shared by every project: *Guidelines*, *Report templates* and
-  *Parameters* (the analyte dictionary: names, units and the aliases used in lab files).
+  *Parameters* (the analyte dictionary: names, units and the aliases used in lab files). A parameter
+  can be deleted from the library, or removed from one project in its Setup tab (▸ *Display units or
+  remove*); you're shown first what goes with it – its results in each project, its consent rules,
+  the sampling schedules and guideline sets that name it.
 - **Settings & backup** – your name, company, signature and letterhead, the workspace (who's connected)
   and backups. The **Saved** badge top right shows when your changes are in the folder and who else is
   connected.
+
+**Unsaved changes stand out.** A row or card you've changed but not saved turns yellow and its save
+button turns orange and pulses until you click it; closing the page with unsaved changes asks first.
 
 Everyday controls are on show. Settings most people leave alone are folded away with a summary of
 what they're set to (▸ *Assessment settings* and ▸ *Display units* in Setup, ▸ *Placeholders* in the
@@ -165,7 +174,8 @@ notice and waits; changes already made are kept and saved as soon as the folder 
 - **Different changes to the same thing are both kept.** If you edit a project's consent number
   while a colleague edits its client, both changes stay. Forms save only the fields you changed onto
   the record as it is now, so a colleague's change made while your form was open is never undone.
-  Report commentary is kept section by section, so two people can write the same report at once.
+- **Reports are each person's own.** Your commentary, figures, layout changes and site choices stay in
+  your browser (and your own backups); everyone makes their own reports from the shared data.
 - **The same thing changed by two people at once:** the later change is kept everywhere, and the
   person whose change was replaced is told ("Bo Jones also changed project … – their later change is
   the one kept"). A deletion wins over changes made to the record at the same time, and you're told
@@ -192,17 +202,19 @@ browser still ends up with the same data. Don't edit or delete files in the fold
 - **Share a single project** with someone outside the team using the project menu → *Download project
   file*. They open it from the Projects page.
 
-Backups hold everything: projects and data, templates, report commentary, figures and layout changes,
-and the settings. The team shares the company name and letterhead; your name, signature, date format
-and other preferences are your own and stay in your browser.
+Backups hold the projects and data, templates and the settings. A backup you download also holds your
+report work (commentary, figures, layout changes and site choices); the daily copies in the folder
+don't, as that's each person's own – restoring one leaves yours as it is. The team shares the company
+name and letterhead; your name, signature, date format and other preferences are your own and stay in
+your browser.
 
 ## Getting started
 
 1. Open the site in Edge or Chrome and connect to your team's workspace folder (see above). Choose
    **Load demo project** to explore with synthetic data, or **New project**.
 2. In the project's **Setup** tab, add your monitoring sites (paste a list with *Add several*).
-3. **Import results**: drag in a Hill Labs Excel file or your master spreadsheet. Try the
-   example files on the import page first.
+3. **Import results**: drag in the lab's files (or the zip from the lab's email) or your master
+   spreadsheet. Try the example files on the import page first.
 4. On the **Compliance** tab, add consent limits and triggers (presets are included, e.g.
    pH range, change from upstream, NPS-FM nitrate / ammonia bottom lines).
 5. On the **Schedule** tab, add reporting obligations (e.g. annual report due 30 September for
@@ -218,6 +230,15 @@ and other preferences are your own and stay in your browser.
 | Monitoring spreadsheet (one row per sample) | Master sheets | Header row, optional units row, date (and time) columns, and the site from a column, the sheet name or a fixed value. Guideline / statistics rows without a valid date are skipped automatically. Dates-across-columns sheets are supported too. |
 | Monitoring-database export | `Sample:` and `Unit:` rows above a `Date, Status, Lab Reference, …` header | The site and units come from the rows above the header, lined up with their analytes even when they're written a column to the left. *Lab Reference* becomes the lab number. Rows marked *Missed*, *Due* or *Waiting* are left out (and counted); samples still *At Lab* are imported with a provisional note that goes when the final results are imported. `No Result` / `Completed` cells, processing dates and the ion balance check are ignored, and 00:00 / 01:00 clock times on dates are dropped. |
 | Long table (one row per result) | LIMS / database exports | Columns such as Site, Date, Analyte, Result, Units, Detection limit. |
+| ALS results, a row per result | ALS *CSV_Simple* files | The site is the name in *ClientSampleReference* without the number in front (`2026000101 - Upstream` → *Upstream*): the numbers change every round, the names don't. Dissolved and total metals are told apart from ALS's analyte codes (`ICPM_WS_…`, `ICPM_WT_…`). Surrogate recoveries (%) are left out. |
+| ALS ESdat files | `NH…_0.csv` / `.xlsx` chemistry files | They only number the samples: drop them with the ALS PDF report (or the ESdat sample file) and the site names and sampling dates are taken from it. The lab's QC (blanks, spikes, duplicates and other clients' samples in the batch) is left out and counted. |
+| Linnaeus analysis reports | CSV exports (`2026000101-0106.csv`) | Site and number from *SAMPLE_ID*, date and time from the cell beside it; the *Analytica Laboratories Report* rows (the reference to ALS's report) and empty results are skipped. |
+| Lab PDF reports | ALS certificates of analysis, Linnaeus analysis reports, Hill Laboratories certificates | Read from where the words sit on the page: a column per sample (its name and sampling date above or below the lab number), a row per test, the report's sections (e.g. *Elements in Water (Soluble)*). Footnote marks (`ø`, `*`) are dropped. A sample another lab names only by ALS's number (`NH2600001_003`) gets its site from ALS's files. |
+
+Drop **several files at once, or the zip** they came in. When a lab sends the same results as a PDF and
+as a spreadsheet, they're taken from the spreadsheet (the PDF still names the samples); the same
+file sent twice (CSV and Excel) is read once. Parameters that are new to you – e.g. a leachate's
+organics suite – can be added in one go, grouped (hydrocarbons, pesticides, other organics, PFAS).
 
 Results such as `< 0.0010`, `>2420`, `ND`, `NS`, `1,200` and `0.5*` are understood. Units are converted
 automatically (g/m³ ↔ mg/L ↔ µg/L, mS/m ↔ µS/cm…). Dates are read day-first (NZ format).

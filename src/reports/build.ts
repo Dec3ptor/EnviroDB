@@ -13,6 +13,7 @@ import { statLabel } from '../lib/stats';
 import { fmtNum } from '../lib/values';
 import { imageSize, logoSizeMm } from '../lib/image';
 import { buildChartSpec, chartOption } from '../charts/timeSeries';
+import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
 import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type ReportDoc, type ReportLook, type Run } from './model';
 import { CELL_PAD_MM, fontWidthFactor, longestWordMm as longestWord, textWidthMm as textWidth } from './measure';
 
@@ -132,10 +133,16 @@ function historyNote(c: ReviewCell | null): string {
   if (!c) return '';
   if (c.record) return c.record === 'high' ? 'Highest on record' : 'Lowest on record';
   if (c.unusual) return c.unusual === 'high' ? 'Above usual range' : 'Below usual range';
-  return c.previous ? '' : 'First result';
+  return '';
 }
 
-const flagFill = (f?: CellFlag) => (f ? (f.kind === 'limit' ? FILLS.limit : f.kind === 'guideline' ? FILLS.guideline : FILLS.check) : undefined);
+const flagFill = (f?: CellFlag) => flagFillColour(f);
+
+/** What the shading means: red, amber for triggers and the first guideline set, then a colour per further set. */
+function shadingNote(sets: GuidelineSet[]): string {
+  const more = sets.slice(1).map((s, i) => `${SET_COLOURS[setColourIndex(i + 1)].name} = ${s.shortName} guideline exceeded; `).join('');
+  return `Shading: red = consent limit exceeded; amber = trigger level${sets.length ? ` or ${sets[0].shortName} guideline` : ''} exceeded; ${more}purple = detection limit above the limit.`;
+}
 
 function listText(items: string[]): string {
   if (items.length <= 1) return items.join('');
@@ -288,7 +295,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     if (consentBrackets) n.push('Consent values in brackets are assessed on a statistic or consecutive results, or apply only at the sites named.');
     if (highlight && look.highlight === 'text')
       n.push(`Red = consent limit (bold) or trigger level${sets.length ? ` or ${sets.map((s) => s.shortName).join(' / ')} guideline` : ''} exceeded; purple = detection limit above the limit.`);
-    else if (highlight) n.push(`Shading: red = consent limit exceeded; amber = trigger level${sets.length ? ` or ${sets.map((s) => s.shortName).join(' / ')} guideline` : ''} exceeded; purple = detection limit above the limit.`);
+    else if (highlight) n.push(shadingNote(sets));
     if (project.hardnessAdjust && sets.some((s) => s.values.some((v) => v.hardness))) n.push('* Hardness-dependent guideline value shown at 30 mg/L CaCO3; results were compared with hardness-modified values (ANZECC 2000) where hardness was measured.');
     return n;
   };
@@ -674,7 +681,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           if (show.has('range')) row.push({ text: c?.usual ? `${fmtNum(c.usual.lo, p.decimals)}–${fmtNum(c.usual.hi, p.decimals)}` : '', align: 'center' });
           if (show.has('note')) {
             const note = historyNote(c);
-            row.push({ text: note, bold: !!(c?.record || c?.unusual), italic: note === 'First result' });
+            row.push({ text: note, bold: !!(c?.record || c?.unusual) });
           }
           return row;
         });
@@ -1036,9 +1043,12 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   };
 }
 
-/** How a result compares with the previous round's: Increase, Decrease, Stable (also when both are below detection) or First result. */
+/**
+ * How a result compares with the previous round's: Increase, Decrease or Stable (also when both are below detection) –
+ * nothing when there is no previous result, so the comment just says whether it complies.
+ */
 export function trendOf(r: Result, prev: Result | undefined, p: Parameter): string {
-  if (!prev) return 'First result';
+  if (!prev) return '';
   const [a, z] = [displayValue(r, p), displayValue(prev, p)];
   if (a.text === z.text || (r.qualifier === '<' && prev.qualifier === '<')) return 'Stable';
   if (a.value === null || z.value === null) return '';

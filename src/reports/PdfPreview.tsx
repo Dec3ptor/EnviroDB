@@ -4,21 +4,10 @@ import { IconZoomIn, IconZoomOut, IconZoomReset } from '@tabler/icons-react';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type { ReportDoc } from './model';
 import { pdfBytes } from './pdf';
+import { loadPdfJs } from '../lib/pdfjs';
 
 // The preview shows the real PDF – the same file "Download PDF" saves – so what you see is what you get.
 
-type PdfJs = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
-let pdfjsPromise: Promise<PdfJs> | null = null;
-function loadPdfJs(): Promise<PdfJs> {
-  if (!pdfjsPromise) {
-    pdfjsPromise = (async () => {
-      const [lib, worker] = await Promise.all([import('pdfjs-dist/legacy/build/pdf.mjs'), import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')]);
-      lib.GlobalWorkerOptions.workerSrc = worker.default;
-      return lib;
-    })();
-  }
-  return pdfjsPromise;
-}
 
 interface PageSize {
   width: number; // PDF points

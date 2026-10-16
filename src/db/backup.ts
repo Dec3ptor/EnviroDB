@@ -16,7 +16,11 @@ export interface WorkspaceBackup {
   meta?: MetaRecord[];
 }
 
-export async function exportWorkspace(): Promise<WorkspaceBackup> {
+/**
+ * Everything in the workspace. With `reportWork` (your own downloads), also your report work – commentary,
+ * figures, layout changes and site choices; the team's daily copies leave it out, as it is each person's own.
+ */
+export async function exportWorkspace(opts: { reportWork?: boolean } = { reportWork: true }): Promise<WorkspaceBackup> {
   const data: WorkspaceBackup['data'] = {};
   let meta: MetaRecord[] = [];
   await db.transaction('r', [...DATA_TABLES.map((t) => db.table(t)), db.meta], async () => {
@@ -26,7 +30,7 @@ export async function exportWorkspace(): Promise<WorkspaceBackup> {
       data[t] = rows;
     }
     // the team's settings and your own, together as before
-    meta = [{ key: 'settings', value: await getSettings() }, ...(await db.meta.toArray()).filter((r) => REPORT_WORK.test(r.key))];
+    meta = [{ key: 'settings', value: await getSettings() }, ...(opts.reportWork ? (await db.meta.toArray()).filter((r) => REPORT_WORK.test(r.key)) : [])];
   });
   return { app: BACKUP_APP, kind: 'workspace', version: BACKUP_VERSION, exportedAt: new Date().toISOString(), data, meta };
 }
@@ -40,7 +44,8 @@ async function restoreMeta(meta: MetaRecord[] | undefined, mode: 'replace' | 'me
   const work = meta.filter((r) => r && typeof r.key === 'string' && REPORT_WORK.test(r.key));
   const saved = meta.find((r) => r?.key === 'settings')?.value as Partial<Settings> | undefined;
   await db.transaction('rw', db.meta, async () => {
-    if (mode === 'replace') {
+    // a team copy has no report work: yours stays as it is
+    if (mode === 'replace' && work.length) {
       const old = (await db.meta.toCollection().primaryKeys()).filter((k) => typeof k === 'string' && REPORT_WORK.test(k));
       await db.meta.bulkDelete(old);
     }

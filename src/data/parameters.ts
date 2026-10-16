@@ -9,9 +9,9 @@ type P = Omit<Parameter, 'builtIn' | 'order'>;
 // Measured on site, listed first as in field sheets and monitoring tables.
 const field: P[] = [
   { id: 'ph-field', name: 'pH (field)', group: 'Field', unit: 'pH', aliases: ['field pH', 'pH field', 'pH - field', 'pH (insitu)', 'in situ pH'], decimals: 1 },
-  { id: 'temp', name: 'Temperature', short: 'Temp', group: 'Field', unit: '°C', aliases: ['temperature', 'temp', 'water temperature', 'water temp', 'field temperature', 'temperature (field)', 'temp (field)'], decimals: 1 },
+  { id: 'temp', name: 'Temperature', short: 'Temp', group: 'Field', unit: '°C', aliases: ['temperature', 'temp', 'water temperature', 'water temp', 'field temperature', 'temperature (field)', 'temp (field)', 'temperature on site', 'site temperature'], decimals: 1 },
   { id: 'ec-field', name: 'Electrical Conductivity (field)', short: 'EC (field)', group: 'Field', unit: 'µS/cm', aliases: ['field ec', 'ec field', 'field conductivity', 'conductivity (field)', 'ec (field)', 'specific conductivity (field)'] },
-  { id: 'do', name: 'Dissolved Oxygen', short: 'DO', group: 'Field', unit: 'mg/L', aliases: ['dissolved oxygen', 'do', 'do (mg/l)', 'dissolved oxygen (field)', 'do conc', 'oxygen dissolved'], decimals: 1 },
+  { id: 'do', name: 'Dissolved Oxygen', short: 'DO', group: 'Field', unit: 'mg/L', aliases: ['dissolved oxygen', 'do', 'do (mg/l)', 'dissolved oxygen (field)', 'do conc', 'oxygen dissolved', 'dissolved oxygen field test', 'dissolved oxygen (field test)'], decimals: 1 },
   { id: 'do-sat', name: 'Dissolved Oxygen Saturation', short: 'DO %', group: 'Field', unit: '% sat', aliases: ['do %', 'do saturation', 'dissolved oxygen saturation', '% do', 'do sat', 'dissolved oxygen (% saturation)', 'do (%)', 'oxygen saturation'], decimals: 0 },
   { id: 'turbidity-field', name: 'Turbidity (field)', short: 'Turb (field)', group: 'Field', unit: 'NTU', aliases: ['field turbidity', 'turbidity field', 'turbidity (field)'] },
   { id: 'orp', name: 'Redox Potential', short: 'ORP', group: 'Field', unit: 'mV', aliases: ['orp', 'redox', 'redox potential', 'oxidation reduction potential', 'eh'], decimals: 0 },
@@ -23,7 +23,7 @@ const field: P[] = [
 
 // Laboratory physical measurements.
 const physical: P[] = [
-  { id: 'ph', name: 'pH', group: 'Physical', unit: 'pH', aliases: ['pH', 'pH (lab)', 'pH lab', 'lab pH', 'pH value', 'pH units'], decimals: 1 },
+  { id: 'ph', name: 'pH', group: 'Physical', unit: 'pH', aliases: ['pH', 'pH (lab)', 'pH lab', 'lab pH', 'pH value', 'pH units', 'pH - Water', 'pH (water)'], decimals: 1 },
   { id: 'ec', name: 'Electrical Conductivity', short: 'EC', group: 'Physical', unit: 'µS/cm', aliases: ['electrical conductivity (ec)', 'electrical conductivity', 'conductivity', 'ec', 'specific conductance', 'spc', 'cond', 'conductivity (lab)', 'ec (lab)'] },
   { id: 'turbidity', name: 'Turbidity', short: 'Turb', group: 'Physical', unit: 'NTU', aliases: ['turbidity', 'turb', 'turbidity (lab)'] },
   { id: 'tss', name: 'Total Suspended Solids', short: 'TSS', group: 'Physical', unit: 'mg/L', aliases: ['total suspended solids', 'tss', 'suspended solids', 'ss', 'suspended solids (total)', 'total suspended solids (tss)', 'non-filterable residue', 'nfr'] },
@@ -164,6 +164,15 @@ const pfas: P[] = [
   { id: 'pfhxs', name: 'PFHxS', group: 'PFAS', unit: 'µg/L', aliases: ['pfhxs', 'perfluorohexane sulfonate', 'perfluorohexanesulfonic acid', 'perfluorohexane sulphonate'] },
 ];
 
+const chromium6: P = {
+  id: 'cr6',
+  name: 'Hexavalent Chromium',
+  short: 'Cr(VI)',
+  group: 'Metals (dissolved)',
+  unit: 'mg/L',
+  aliases: ['hexavalent chromium', 'chromium - hexavalent', 'chromium hexavalent', 'chromium (vi)', 'chromium vi', 'cr(vi)', 'cr vi', 'cr6+', 'cr6', 'cr (vi)', 'hexavalent chromium (cr6+)'],
+};
+
 // dissolved metals together, then total metals (the generator gives each metal's two fractions in turn)
 const metals = metalParams();
 export const BUILT_IN_PARAMETERS: Parameter[] = [
@@ -173,13 +182,30 @@ export const BUILT_IN_PARAMETERS: Parameter[] = [
   ...nutrients,
   ...micro,
   ...metals.filter((p) => p.group === 'Metals (dissolved)'),
+  chromium6,
   ...metals.filter((p) => p.group === 'Metals (total)'),
   ...hydrocarbons,
   ...pfas,
 ].map((p, i) => ({ ...p, builtIn: true, order: i }));
 
 /** Parameter groups in the order they are listed everywhere: field measurements first, then the laboratory groups. */
-export const PARAMETER_GROUPS = ['Field', 'Physical', 'General chemistry', 'Nutrients', 'Microbiology', 'Metals (dissolved)', 'Metals (total)', 'Hydrocarbons', 'PFAS', 'Other'];
+export const PARAMETER_GROUPS = ['Field', 'Physical', 'General chemistry', 'Nutrients', 'Microbiology', 'Metals (dissolved)', 'Metals (total)', 'Hydrocarbons', 'Pesticides', 'Other organics', 'PFAS', 'Other'];
+
+const PESTICIDE = /\b(DD[DET]|BHC|HCH|lindane|aldrin|dieldrin|endrin|endosulfan|heptachlor|chlordane|methoxychlor|hexachlorobenzene|mirex|toxaphene|atrazine|simazine|glyphosate|2,4-D|MCPA|triclopyr|picloram|chlorpyrifos|diazinon|pesticide|herbicide)\b/i;
+const PAH = /naphthalene|anthracene|phenanthrene|pyrene|fluoranthene|fluorene|chrysene|acenaphth|perylene|benzo\s*[([]|indeno|\bPAH|TEQ|aromatic hydrocarbon/i;
+const PETROLEUM = /\bTPH\b|hydrocarbon|\bC\d{1,2}\s*[-–]\s*C\d{1,2}\b|\bbenzene$|toluene|xylene|ethylbenzene|\bBTEX\b/i;
+const PFAS_RE = /\bPF[A-Z]{2,5}\b|perfluoro|fluorotelomer|\bFTS\b/i;
+const ORGANIC = /phenol|phthalate|adipate|chloro|bromo|nitro|ether|amine|aniline|benz|toluene|ethane|ethene|methane|propane|butadiene|isophorone|furan|alcohol|sulfonate|sulphonate|organic|SVOC|VOC|semi-volatile/i;
+
+/** The group a parameter added from a lab file most likely belongs in, from its name and the report's section. */
+export function guessGroup(name: string, section = ''): string {
+  const t = `${name} ${section}`;
+  if (PFAS_RE.test(t)) return 'PFAS';
+  if (PESTICIDE.test(name) || /pesticide|organochlorine|organophosph/i.test(section)) return 'Pesticides';
+  if (PAH.test(name) || PETROLEUM.test(name) || /aromatic hydrocarbon|petroleum|\bBTEX\b|\bTPH\b/i.test(section)) return 'Hydrocarbons';
+  if (ORGANIC.test(t)) return 'Other organics';
+  return 'Other';
+}
 
 const GROUP_RANK = new Map(PARAMETER_GROUPS.map((g, i) => [g, i]));
 

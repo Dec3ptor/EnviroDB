@@ -68,7 +68,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
           siteId,
           date,
           sampleName: raw.sampleName,
-          labName: opts.labName,
+          labName: raw.labName ?? opts.labName,
           labJob: raw.labJob ?? parsed.labJob,
           labNumber: raw.labNumber,
           importId: batch.id,
@@ -82,7 +82,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
         const patch: Partial<Sample> = {};
         if (!sample.labNumber && raw.labNumber) patch.labNumber = raw.labNumber;
         if (!sample.labJob && (raw.labJob ?? parsed.labJob)) patch.labJob = raw.labJob ?? parsed.labJob;
-        if (!sample.labName && opts.labName) patch.labName = opts.labName;
+        if (!sample.labName && (raw.labName ?? opts.labName)) patch.labName = raw.labName ?? opts.labName;
         if (sample.date.length === 10 && date.length > 10) patch.date = date;
         // final results replace provisional ones, and their note goes
         let notes = sample.notes;

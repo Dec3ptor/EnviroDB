@@ -10,8 +10,11 @@ export const SHARED = new Set<string>(SHARED_TABLES);
 /** Kept with each change: which fields changed when (and by whom, through the stamp), and when it was deleted. */
 export const SYNC_TABLES = ['syncState', 'syncDirty'] as const;
 
-/** Meta records shared with the workspace: the team settings and report work. The rest stays in this browser. */
-export const SHARED_META = /^(settings$|draft:|figs:|layout:|sites:)/;
+/**
+ * Meta records shared with the workspace: the team settings. The rest – report work (commentary, figures, layout
+ * changes, site choices) included – stays in this browser: each person makes their own reports.
+ */
+export const SHARED_META = /^settings$/;
 
 export function isSharedRecord(table: string, key: unknown): boolean {
   return SHARED.has(table) && (table !== 'meta' || (typeof key === 'string' && SHARED_META.test(key)));

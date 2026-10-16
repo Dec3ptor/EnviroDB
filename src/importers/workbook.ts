@@ -14,6 +14,10 @@ export interface SheetGrid {
   rows: Cell[][];
   nRows: number;
   nCols: number;
+  /** Read from a PDF report (rows made from its results tables). */
+  pdf?: boolean;
+  /** The file it came from, when several are imported at once. */
+  file?: string;
 }
 
 const EMPTY: Cell = { v: null };

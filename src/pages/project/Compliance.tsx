@@ -8,7 +8,7 @@ import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
 import { useProject } from '../../hooks/useProjectData';
 import { DateField, EmptyState, LevelBadge, PeriodPicker, RuleStatusBadge, defaultPeriod, type PeriodValue } from '../../components/common';
-import { evaluateAll } from '../../lib/analysis';
+import { evaluateAll, isLimitLevel } from '../../lib/analysis';
 import { formatDate } from '../../lib/dates';
 import { unitLabel } from '../../lib/units';
 import { fmtNum } from '../../lib/values';
@@ -160,6 +160,14 @@ export function ComplianceTab() {
   const [editing, setEditing] = useState<Rule | null>(null);
   const evals = useMemo(() => evaluateAll(data, period.start, period.end, rules.filter((r) => r.active)), [data, period, rules]);
   const evalMap = new Map(evals.map((e) => [e.rule.id, e]));
+  // most important first: limits exceeded, then triggers, results to check, compliant, no data, paused
+  const rank = (r: Rule) => {
+    const ev = evalMap.get(r.id);
+    if (!r.active) return 9;
+    if (!ev) return 8;
+    return ev.status === 'exceeded' ? (isLimitLevel(r.level) ? 0 : 1) : ev.status === 'inconclusive' ? 2 : ev.status === 'compliant' ? 4 : 5;
+  };
+  const ordered = [...rules].sort((a, b) => rank(a) - rank(b) || (evalMap.get(b.id)?.exceedances.length ?? 0) - (evalMap.get(a.id)?.exceedances.length ?? 0));
   const exceeded = evals.filter((e) => e.status === 'exceeded').length;
   const withData = evals.filter((e) => e.status !== 'no-data').length;
   const checkDl = evals.filter((e) => e.status === 'inconclusive').length;
@@ -247,7 +255,7 @@ export function ComplianceTab() {
         </EmptyState>
       ) : (
         <Accordion multiple variant="separated" defaultValue={evals.filter((e) => e.status === 'exceeded').map((e) => e.rule.id)}>
-          {rules.map((rule) => {
+          {ordered.map((rule) => {
             const ev = evalMap.get(rule.id);
             return (
               <Accordion.Item key={rule.id} value={rule.id}>

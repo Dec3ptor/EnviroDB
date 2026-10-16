@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { ActionIcon, Anchor, Autocomplete, Box, Button, Card, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Table, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { ActionIcon, Anchor, Autocomplete, Box, Button, Card, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Table, TagsInput, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { Link, useNavigate } from 'react-router-dom';
-import { IconArchive, IconArrowDown, IconArrowUp, IconDeviceFloppy, IconPlus, IconTrash, IconListDetails, IconSparkles } from '@tabler/icons-react';
+import { IconArchive, IconArrowDown, IconArrowUp, IconPlus, IconTrash, IconListDetails, IconSparkles } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { useEditable } from '../../hooks/useEditable';
 import { ProjectForm } from '../Projects';
@@ -14,13 +14,15 @@ import { COMMON_UNITS, unitLabel } from '../../lib/units';
 import { db } from '../../db/db';
 import { MoreOptions } from '../../components/common';
 import { compareParams } from '../../data/parameters';
+import { SaveButton, SaveIcon, UnsavedBadge } from '../../components/Unsaved';
+import { confirmDeleteParameter } from '../../components/DeleteParameter';
 
 function SiteRow({ site, index, count, onMove }: { site: Site; index: number; count: number; onMove: (dir: -1 | 1) => void }) {
   const [s, setS, { dirty, reset }] = useEditable(site);
   const { results } = useProject();
   const n = results.filter((r) => r.siteId === site.id).length;
   return (
-    <Table.Tr>
+    <Table.Tr className={dirty ? 'edb-unsaved-row' : undefined}>
       <Table.Td>
         <Group gap={2} wrap="nowrap">
           <ActionIcon size="sm" variant="subtle" disabled={index === 0} onClick={() => onMove(-1)} aria-label="Move up">
@@ -59,9 +61,7 @@ function SiteRow({ site, index, count, onMove }: { site: Site; index: number; co
       </Table.Td>
       <Table.Td>
         <Group gap={4} wrap="nowrap">
-          <ActionIcon variant={dirty ? 'filled' : 'subtle'} disabled={!dirty || !s.code.trim()} onClick={() => saveSite(s, site).then(reset)} aria-label="Save site">
-            <IconDeviceFloppy size={16} />
-          </ActionIcon>
+          <SaveIcon dirty={dirty} disabled={!s.code.trim()} onClick={() => saveSite(s, site).then(reset)} label="Save site" />
           <ActionIcon
             variant="subtle"
             color="red"
@@ -131,7 +131,7 @@ function BulkSitesModal({ onClose }: { onClose: () => void }) {
 }
 
 function ParametersCard() {
-  const { index, paramMap, results } = useProject();
+  const { project, index, paramMap, results } = useProject();
   const used = index.paramIdsWithData.map((id) => paramMap.get(id)).filter((p): p is NonNullable<typeof p> => !!p).sort(compareParams);
   const [units, setUnits] = useState<Record<string, string>>({});
   if (!used.length) return null;
@@ -141,9 +141,9 @@ function ParametersCard() {
     <Card>
       <Title order={4}>Parameters in this project</Title>
       <Text size="sm" c="dimmed" mb="sm">
-        Display units apply everywhere (tables, graphs, reports); results are converted automatically, e.g. g/m³ → µg/L. Names and aliases are in <Anchor component={Link} to="/parameters">Parameters</Anchor>.
+        Display units apply everywhere (tables, graphs, reports); results are converted automatically, e.g. g/m³ → µg/L. Names and aliases are in <Anchor component={Link} to="/parameters">Parameters</Anchor>. Removing a parameter here deletes its results and rules in this project only.
       </Text>
-      <MoreOptions label="Display units" summary={`${used.length} parameters with results`}>
+      <MoreOptions label="Display units or remove" summary={`${used.length} parameters with results`}>
         <Table.ScrollContainer minWidth={500}>
           <Table>
             <Table.Thead>
@@ -152,11 +152,14 @@ function ParametersCard() {
                 <Table.Th>Group</Table.Th>
                 <Table.Th>Display unit</Table.Th>
                 <Table.Th ta="right">Results</Table.Th>
+                <Table.Th w={40} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {used.map((p) => (
-                <Table.Tr key={p.id}>
+              {used.map((p) => {
+                const changed = units[p.id] !== undefined && units[p.id] !== unitLabel(p.unit);
+                return (
+                <Table.Tr key={p.id} className={changed ? 'edb-unsaved-row' : undefined}>
                   <Table.Td>{p.name}</Table.Td>
                   <Table.Td>
                     <Text size="xs" c="dimmed">
@@ -166,16 +169,22 @@ function ParametersCard() {
                   <Table.Td>
                     <Group gap={4} wrap="nowrap">
                       <Autocomplete size="xs" data={COMMON_UNITS} value={units[p.id] ?? unitLabel(p.unit)} onChange={(v) => setUnits({ ...units, [p.id]: v })} w={130} />
-                      {units[p.id] !== undefined && units[p.id] !== unitLabel(p.unit) && (
-                        <ActionIcon size="sm" onClick={async () => { await db.parameters.update(p.id, { unit: units[p.id] }); notifications.show({ message: `${p.name} now shown in ${units[p.id]}` }); }} aria-label="Save unit">
-                          <IconDeviceFloppy size={14} />
-                        </ActionIcon>
+                      {changed && (
+                        <SaveIcon dirty onClick={async () => { await db.parameters.update(p.id, { unit: units[p.id] }); notifications.show({ message: `${p.name} now shown in ${units[p.id]}` }); }} label="Save unit" />
                       )}
                     </Group>
                   </Table.Td>
                   <Table.Td ta="right">{counts.get(p.id) ?? 0}</Table.Td>
+                  <Table.Td>
+                    <Tooltip label="Remove from this project…" openDelay={300}>
+                      <ActionIcon size="sm" variant="subtle" color="red" onClick={() => confirmDeleteParameter(p, project)} aria-label={`Remove ${p.name} from this project`}>
+                        <IconTrash size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Table.Td>
                 </Table.Tr>
-              ))}
+                );
+              })}
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>
@@ -214,12 +223,13 @@ export function SetupTab() {
           </Group>
         </Card>
       )}
-      <Card>
+      <Card className={dirty ? 'edb-unsaved-card' : undefined}>
         <Group justify="space-between" mb="sm">
-          <Title order={4}>Project details</Title>
-          <Button leftSection={<IconDeviceFloppy size={16} />} disabled={!dirty || !p.name.trim()} onClick={async () => { await saveProject(p, project); reset(); notifications.show({ message: 'Project saved', color: 'teal' }); }}>
-            Save
-          </Button>
+          <Group gap="xs">
+            <Title order={4}>Project details</Title>
+            <UnsavedBadge dirty={dirty} />
+          </Group>
+          <SaveButton dirty={dirty} disabled={!dirty || !p.name.trim()} onClick={async () => { await saveProject(p, project); reset(); notifications.show({ message: 'Project saved', color: 'teal' }); }} />
         </Group>
         <ProjectForm value={p} onChange={setP} letters />
         <Textarea

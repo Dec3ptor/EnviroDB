@@ -1,0 +1,32 @@
+Textbox9,Textbox18,Textbox10,Textbox17,Textbox31,Textbox11,Textbox21,Textbox23,Textbox32,Textbox28
+Example Farms Ltd,10/02/2026 11:45,"PO Box 1
+
+Exampletown,  1234",20/02/2026 13:25,,A. Sampler,Water,These samples were also analysed by ALS NZ. Please see attached report.,Lab Technician,Lab Technician
+,,,,,,,,,
+SAMPLE_ID,Textbox34,NAME,PARAM_UNITS2,textbox2,,,,,
+"2026000101
+Upstream Bridge","10/02/2026
+9:30",Analytica Laboratories Report, ,NH2600001_0,,,,,
+"2026000102
+Pond Outlet","10/02/2026
+10:15",Analytica Laboratories Report, ,NH2600001_0,,,,,
+"2026000101
+Upstream Bridge","10/02/2026
+9:30",pH - Water, ,7.4,,,,,
+"2026000102
+Pond Outlet","10/02/2026
+10:15",Conductivity (25°C),µS/cm,412,,,,,
+"2026000102
+Pond Outlet","10/02/2026
+10:15",pH - Water, ,6.9,,,,,
+"2026000103
+Bore 2 (Deep)","10/02/2026
+11:05",Conductivity (25°C),µS/cm,,,,,,
+"2026000103
+Bore 2 (Deep)","10/02/2026
+11:05",pH - Water, ,7.1,,,,,
+,,,,,,,,,
+NAME1,MET_STD,,,,,,,,
+Analytica Laboratories Report,Subcontracted Tests,,,,,,,,
+pH - Water,APHA 24th Ed 4500-H+ B,,,,,,,,
+Conductivity (25°C),APHA 24th Ed 2510 B,,,,,,,,

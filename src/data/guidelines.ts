@@ -26,6 +26,7 @@ const FRESH_2000: Row[] = [
   ['b-d', [90, 370, 680, 1300], false],
   ['cd-d', [0.06, 0.2, 0.4, 0.8], true, 'Hardness-dependent (at 30 mg/L CaCO3)'],
   ['cr-d', [0.01, 1.0, 6, 40], false, 'Cr(VI) values applied to dissolved chromium (conservative)'],
+  ['cr6', [0.01, 1.0, 6, 40], false, 'Chromium (VI)'],
   ['cu-d', [1.0, 1.4, 1.8, 2.5], true, 'Hardness-dependent (at 30 mg/L CaCO3). Revised DOC-based copper DGVs are being published by ANZG'],
   ['pb-d', [1.0, 3.4, 5.6, 9.4], true, 'Hardness-dependent (at 30 mg/L CaCO3)'],
   ['mn-d', [1200, 1900, 2500, 3600], false],
@@ -47,6 +48,7 @@ const FRESH_2000: Row[] = [
 const MARINE_2000: Row[] = [
   ['cd-d', [0.7, 5.5, 14, 36], false],
   ['cr-d', [0.14, 4.4, 20, 85], false, 'Cr(VI) values applied to dissolved chromium (conservative)'],
+  ['cr6', [0.14, 4.4, 20, 85], false, 'Chromium (VI)'],
   ['co-d', [0.005, 1, 14, 150], false],
   ['cu-d', [0.3, 1.3, 3, 8], false],
   ['pb-d', [2.2, 4.4, 6.6, 12], false],

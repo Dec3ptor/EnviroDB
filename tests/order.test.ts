@@ -12,7 +12,9 @@ describe('the order of analytes', () => {
   const sorted = [...BUILT_IN_PARAMETERS].sort(compareParams);
 
   it('lists field measurements first, then laboratory groups, dissolved metals before total metals', () => {
-    expect(sorted.map((p) => p.group).filter((g, i, a) => a.indexOf(g) === i)).toEqual(PARAMETER_GROUPS.filter((g) => g !== 'Other'));
+    const groups = sorted.map((p) => p.group).filter((g, i, a) => a.indexOf(g) === i);
+    expect(groups).toEqual(PARAMETER_GROUPS.filter((g) => groups.includes(g)));
+    expect(groups).not.toContain('Other');
     expect(ids(sorted).slice(0, 6)).toEqual(['ph-field', 'temp', 'ec-field', 'do', 'do-sat', 'turbidity-field']);
     const at = (id: string) => ids(sorted).indexOf(id);
     expect(at('swl')).toBeLessThan(at('ph')); // groundwater level is a field measurement

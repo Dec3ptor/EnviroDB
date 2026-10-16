@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { IconArrowRight, IconCalendarDue, IconFlask, IconShieldCheck } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { ConsentViewControl, defaultPeriod, LevelBadge, PeriodPicker, RuleStatusBadge, StatTile, type PeriodValue } from '../../components/common';
+import { cellClass } from '../../lib/highlight';
 import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResults, keyParameters, type CellFlag, type ConsentView } from '../../lib/analysis';
 import { reviewCell, reviewLines, samplingRounds, type ReviewCell } from '../../lib/latest';
 import { addMonths, daysUntil, formatDate, formatMonthYear, MONTH_SHORT, relativeDays, todayStr } from '../../lib/dates';
@@ -200,7 +201,7 @@ function LatestResultsReview() {
                       const sample = round.samples[i];
                       if (!c) return <td key={sample.id} />;
                       const f = flags.get(c.result.id);
-                      const cls = f ? (f.kind === 'limit' ? 'hl-limit' : f.kind === 'guideline' ? 'hl-guideline' : 'hl-check') : '';
+                      const cls = cellClass(f);
                       const lines = [...(f?.messages ?? []), ...reviewLines(c, p, siteMap.get(sample.siteId)?.code ?? '', unit)];
                       return (
                         <td key={sample.id} className={`num ${cls} ${c.result.qualifier === '<' ? 'nd' : ''}`}>
@@ -264,7 +265,7 @@ function Trends() {
         {keys.map((pid) => {
           const p = data.paramMap.get(pid)!;
           const spec = buildChartSpec({ index: data.index, param: p, sites: data.sites, siteIds: [], start, end: todayStr(), guidelineSets: sets, rules: data.rules, showRules: true });
-          return <EChart key={pid} option={(width) => chartOption(spec, { dark: scheme === 'dark', fontScale: 0.9, width })} height={240} />;
+          return <EChart key={pid} option={(width, hidden) => chartOption(spec, { dark: scheme === 'dark', fontScale: 0.9, width, hidden })} height={240} />;
         })}
       </SimpleGrid>
     </Card>

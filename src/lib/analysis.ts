@@ -59,23 +59,29 @@ export function evaluateAll(b: ProjectBundle, start: string, end: string, rules 
 export interface CellFlag {
   kind: 'limit' | 'guideline' | 'check';
   messages: string[];
+  /** A guideline highlight from the sets compared: the first of them exceeded (each set has its own colour). */
+  set?: number;
+  /** A consent trigger level was exceeded (amber, whatever sets were also exceeded). */
+  trigger?: boolean;
 }
 
 /** Result id → highlight, combining consent rule exceedances (red) and guideline exceedances (amber). */
 export function flagResults(b: ProjectBundle, evals: RuleEvaluation[], guidelineSetIds: string[], start: string, end: string): Map<string, CellFlag> {
   const flags = new Map<string, CellFlag>();
-  const add = (id: string, kind: CellFlag['kind'], msg: string) => {
-    const f = flags.get(id);
+  const add = (id: string, kind: CellFlag['kind'], msg: string, from?: { set?: number; trigger?: boolean }) => {
+    let f = flags.get(id);
     const rank = { limit: 3, guideline: 2, check: 1 };
-    if (!f) flags.set(id, { kind, messages: [msg] });
+    if (!f) flags.set(id, (f = { kind, messages: [msg] }));
     else {
       if (rank[kind] > rank[f.kind]) f.kind = kind;
       if (!f.messages.includes(msg)) f.messages.push(msg);
     }
+    if (kind === 'guideline' && from?.trigger) f.trigger = true;
+    if (kind === 'guideline' && from?.set !== undefined) f.set = Math.min(f.set ?? Infinity, from.set);
   };
   for (const ev of evals) {
     const isLimit = /limit/i.test(ev.rule.level);
-    for (const ex of ev.exceedances) if (ex.resultId) add(ex.resultId, isLimit ? 'limit' : 'guideline', `${ev.rule.level}: ${ev.rule.name}${ex.limitText ? ` (${ex.limitText})` : ''}`);
+    for (const ex of ev.exceedances) if (ex.resultId) add(ex.resultId, isLimit ? 'limit' : 'guideline', `${ev.rule.level}: ${ev.rule.name}${ex.limitText ? ` (${ex.limitText})` : ''}`, { trigger: !isLimit });
     for (const ex of ev.inconclusive) if (ex.resultId) add(ex.resultId, 'check', `${ev.rule.name}: detection limit above limit`);
   }
   const sets = guidelineSetIds.map((id) => b.setMap.get(id)).filter((s): s is GuidelineSet => !!s);
@@ -85,7 +91,7 @@ export function flagResults(b: ProjectBundle, evals: RuleEvaluation[], guideline
       const param = b.paramMap.get(pid);
       for (const r of resultsFor(b.index, pid, undefined, start, end)) {
         for (const hit of compareAll(r, sets, param, b.index, b.project.hardnessAdjust)) {
-          if (hit.verdict === 'exceed') add(r.id, 'guideline', guidelineMessage(hit, r));
+          if (hit.verdict === 'exceed') add(r.id, 'guideline', guidelineMessage(hit, r), { set: Math.max(0, sets.findIndex((s) => s.id === hit.setId)) });
           else if (hit.verdict === 'inconclusive') add(r.id, 'check', `${hit.setShort}: detection limit above guideline`);
         }
       }

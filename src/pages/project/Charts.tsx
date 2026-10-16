@@ -24,7 +24,7 @@ function ChartCard({ spec, size, title, onTitle, dark }: { spec: ChartSpec; size
   const ref = useRef<EChartHandle>(null);
   const exportSpec = { ...spec, title };
   const png = () => renderChartPng(chartOption(exportSpec, { forExport: true, width: cmToPx(size.w) }), cmToPx(size.w), cmToPx(size.h), 3);
-  const option = useMemo(() => (width: number) => chartOption({ ...spec, title }, { dark, showTitle: false, width }), [spec, title, dark]);
+  const option = useMemo(() => (width: number, hidden: ReadonlySet<string>) => chartOption({ ...spec, title }, { dark, showTitle: false, width, hidden }), [spec, title, dark]);
   return (
     <Card padding="md">
       <Group justify="space-between" mb={4} wrap="nowrap">

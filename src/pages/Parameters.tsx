@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActionIcon, Autocomplete, Button, Card, Group, NumberInput, Pagination, Select, Table, TagsInput, Text, TextInput } from '@mantine/core';
+import { ActionIcon, Autocomplete, Button, Card, Group, NumberInput, Pagination, Select, Table, TagsInput, Text, TextInput, Tooltip } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { IconDeviceFloppy, IconPlus, IconSearch } from '@tabler/icons-react';
+import { IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
 import { db } from '../db/db';
 import type { Parameter } from '../db/types';
 import { createParameter, saveParameter } from '../db/repo';
@@ -9,13 +9,15 @@ import { PARAMETER_GROUPS, compareParams } from '../data/parameters';
 import { COMMON_UNITS } from '../lib/units';
 import { PageHeader } from '../components/common';
 import { useEditable } from '../hooks/useEditable';
+import { SaveIcon } from '../components/Unsaved';
+import { confirmDeleteParameter } from '../components/DeleteParameter';
 
 // The analyte dictionary: every parameter's name, group, unit and the other names it goes by in lab files.
 
 function ParamRow({ p }: { p: Parameter }) {
   const [d, setD, { dirty, reset }] = useEditable(p);
   return (
-    <Table.Tr>
+    <Table.Tr className={dirty ? 'edb-unsaved-row' : undefined}>
       <Table.Td>
         <TextInput size="xs" value={d.name} onChange={(e) => setD({ ...d, name: e.currentTarget.value })} miw={200} />
       </Table.Td>
@@ -35,9 +37,14 @@ function ParamRow({ p }: { p: Parameter }) {
         <NumberInput size="xs" value={d.decimals ?? ''} onChange={(v) => setD({ ...d, decimals: v === '' ? undefined : Number(v) })} w={60} min={0} max={6} hideControls placeholder="auto" />
       </Table.Td>
       <Table.Td>
-        <ActionIcon disabled={!dirty} variant={dirty ? 'filled' : 'subtle'} onClick={() => saveParameter(d, p).then(reset)} aria-label="Save">
-          <IconDeviceFloppy size={16} />
-        </ActionIcon>
+        <Group gap={4} wrap="nowrap">
+          <SaveIcon dirty={dirty} disabled={!d.name.trim()} onClick={() => saveParameter(d, p).then(reset)} label="Save parameter" />
+          <Tooltip label="Delete parameter…" openDelay={300}>
+            <ActionIcon variant="subtle" color="red" onClick={() => confirmDeleteParameter(p)} aria-label={`Delete ${p.name}`}>
+              <IconTrash size={16} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
       </Table.Td>
     </Table.Tr>
   );

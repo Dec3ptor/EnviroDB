@@ -64,7 +64,8 @@ body {
   background: var(--mantine-color-dark-6);
 }
 .edb-grid thead tr:nth-child(2) th {
-  top: 28px;
+  /* just under the first header row, however tall its names wrap (set by the table) */
+  top: var(--edb-head1, 28px);
   font-weight: 400;
   color: var(--edb-muted);
   font-size: 12px;
@@ -95,6 +96,38 @@ body {
   background: var(--edb-hl-limit);
   color: var(--edb-hl-limit-ink);
   font-weight: 700;
+}
+.edb-grid td.hl-g1 {
+  background: #d6e6fb;
+  color: #0b3d75;
+}
+.edb-grid td.hl-g2 {
+  background: #d4efd9;
+  color: #155d27;
+}
+.edb-grid td.hl-g3 {
+  background: #f7d6ea;
+  color: #7a1450;
+}
+.edb-grid td.hl-g4 {
+  background: #cfeeee;
+  color: #0b4f4f;
+}
+[data-mantine-color-scheme='dark'] .edb-grid td.hl-g1 {
+  background: #16365c;
+  color: #d6e6fb;
+}
+[data-mantine-color-scheme='dark'] .edb-grid td.hl-g2 {
+  background: #1b4626;
+  color: #d4efd9;
+}
+[data-mantine-color-scheme='dark'] .edb-grid td.hl-g3 {
+  background: #5a1840;
+  color: #f7d6ea;
+}
+[data-mantine-color-scheme='dark'] .edb-grid td.hl-g4 {
+  background: #134545;
+  color: #cfeeee;
 }
 .edb-grid td.hl-check {
   background: var(--edb-hl-check);
@@ -161,4 +194,31 @@ body {
 }
 .lr-low {
   color: var(--mantine-color-blue-6);
+}
+
+/* ---------------------------------------------------------------- unsaved edits */
+/* a row or card with changes not yet saved, so the save button is not missed */
+.edb-grid tr.edb-unsaved td,
+.edb-unsaved-row td {
+  background: var(--mantine-color-yellow-0) !important;
+}
+.edb-unsaved-row td:first-child {
+  box-shadow: inset 3px 0 0 var(--mantine-color-orange-5);
+}
+[data-mantine-color-scheme='dark'] .edb-unsaved-row td {
+  background: rgba(250, 176, 5, 0.12) !important;
+}
+.edb-unsaved-card {
+  border-color: var(--mantine-color-orange-4) !important;
+  box-shadow: 0 0 0 1px var(--mantine-color-orange-4);
+}
+@keyframes edb-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(253, 126, 20, 0.55); }
+  60% { box-shadow: 0 0 0 6px rgba(253, 126, 20, 0); }
+}
+.edb-save-pulse {
+  animation: edb-pulse 1.6s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .edb-save-pulse { animation: none; }
 }

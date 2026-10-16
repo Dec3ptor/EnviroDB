@@ -86,6 +86,8 @@ export interface RemoteUpdate {
   conflicts: Conflict[];
   /** Client id → name. */
   names: Map<string, string>;
+  /** People who connected for the first time since the last check (their changes are what they brought with them). */
+  joined: Person[];
 }
 
 const updateSubscribers = new Set<(u: RemoteUpdate) => void>();
@@ -263,7 +265,9 @@ async function connect(folder: WorkspaceFolder, ws: WorkspaceFile): Promise<void
   lastPresence = Date.now();
   ctx = c;
   candidate = null;
-  set({ phase: 'ready', people: await readPeople(c), lastSync: Date.now(), pending: await pendingSegments(db), error: undefined, detail: undefined, newerApp: res.newer });
+  const people = await readPeople(c);
+  knownPeople = new Set(people.map((p) => p.id)); // everyone here already: nobody is "joining"
+  set({ phase: 'ready', people, lastSync: Date.now(), pending: await pendingSegments(db), error: undefined, detail: undefined, newerApp: res.newer });
   startLoops();
 }
 
@@ -311,6 +315,8 @@ let dirtySince = 0;
 let lastFull = Date.now();
 let lastPresence = 0;
 let lastSnapshot = 0;
+/** People seen so far: someone new is announced as joining, not as making changes. */
+let knownPeople = new Set<string>();
 
 const FAST = 4000;
 const HIDDEN = 30000;
@@ -400,13 +406,15 @@ async function work(): Promise<void> {
     const people = await readPeople(c);
     if (Date.now() - lastSnapshot > 60 * 60000) {
       lastSnapshot = Date.now();
-      await dailySnapshot(c, todayStr(), exportWorkspace).catch(() => undefined);
+      await dailySnapshot(c, todayStr(), () => exportWorkspace({ reportWork: false })).catch(() => undefined);
     }
     failures = 0;
+    const joined = people.filter((p) => !p.me && !knownPeople.has(p.id));
+    for (const p of people) knownPeople.add(p.id);
     set({ phase: 'ready', people, lastSync: Date.now(), pending: await pendingSegments(db), error: undefined, newerApp: state.newerApp || res.newer });
-    if (res.changes.length || res.conflicts.length) {
+    if (res.changes.length || res.conflicts.length || joined.length) {
       const names = new Map(people.map((p) => [p.id, p.name]));
-      updateSubscribers.forEach((f) => f({ changes: res.changes, conflicts: res.conflicts, names }));
+      updateSubscribers.forEach((f) => f({ changes: res.changes, conflicts: res.conflicts, names, joined }));
     }
   } catch (e) {
     if (isNoPermission(e)) {

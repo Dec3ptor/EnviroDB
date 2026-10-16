@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconCopy, IconDeviceFloppy, IconDownload, IconFileImport, IconInfoCircle, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
+import { IconCopy, IconDownload, IconFileImport, IconInfoCircle, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
 import { db } from '../db/db';
 import type { GuidelineSet, GuidelineValue } from '../db/types';
 import { deleteGuidelineSet, duplicateGuidelineSet, saveGuidelineSet } from '../db/repo';
@@ -18,6 +18,8 @@ import { uid } from '../lib/ids';
 import { downloadBlob, safeFileName } from '../db/backup';
 import { readWorkbook, cellText, cellAt } from '../importers/workbook';
 import { buildParamIndex, matchParameter } from '../lib/matching';
+import { SaveButton } from '../components/Unsaved';
+import { same } from '../sync/model';
 
 function exportCsv(set: GuidelineSet, names: Map<string, string>, unit: string) {
   const rows = [['Parameter', 'Minimum', 'Maximum', 'Unit', 'Hardness-dependent', 'Note']];
@@ -170,9 +172,7 @@ export function GuidelinesPage() {
                       <Button variant="default" onClick={() => setDraft(null)}>
                         Cancel
                       </Button>
-                      <Button leftSection={<IconDeviceFloppy size={16} />} onClick={async () => { await saveGuidelineSet(editing, draftBase?.id === editing.id ? draftBase : undefined); setDraft(null); notifications.show({ message: 'Guideline set saved', color: 'teal' }); }}>
-                        Save
-                      </Button>
+                      <SaveButton dirty={!same(editing, draftBase?.id === editing.id ? draftBase : current)} onClick={async () => { await saveGuidelineSet(editing, draftBase?.id === editing.id ? draftBase : undefined); setDraft(null); notifications.show({ message: 'Guideline set saved', color: 'teal' }); }} />
                     </>
                   ) : (
                     <>

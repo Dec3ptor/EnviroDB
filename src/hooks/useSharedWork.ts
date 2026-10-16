@@ -12,10 +12,9 @@ interface Pending<T> {
 }
 
 /**
- * Report work kept as parts – commentary by section, figures by Figures section, layout changes by setting – that
- * several people may change at once. Shows what is saved, so colleagues' changes appear as they make them, with
- * this screen's own typing on top until it is saved; and saves one part at a time onto what is saved then, so a
- * colleague's change to another part is never undone.
+ * Report work kept as parts – commentary by section, figures by Figures section, layout changes by setting. Shows
+ * what is saved, with this screen's own typing on top until it is saved, and saves one part at a time onto what is
+ * saved then (so another tab or screen changing another part never has it undone).
  */
 export function useSharedWork<T>(key: string) {
   const saved = useLiveQuery(async () => (key ? (((await db.meta.get(key))?.value as Record<string, T> | undefined) ?? {}) : {}), [key]);

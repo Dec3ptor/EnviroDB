@@ -11,8 +11,10 @@ import {
 } from '@tabler/icons-react';
 import { db } from '../db/db';
 import { ProjectDataProvider, useProject } from '../hooks/useProjectData';
-import { readWorkbook, cellAt, cellText, columnLetter, type SheetGrid } from '../importers/workbook';
-import { planSheets, parseWithPlan, type SheetPlan } from '../importers/detect';
+import { cellAt, cellText, columnLetter, type SheetGrid } from '../importers/workbook';
+import { defaultPlans, readImportFiles, type InputFile } from '../importers/files';
+import { detectExport, EMPTY_CONTEXT, EXPORT_LABELS, type ImportContext } from '../importers/labExports';
+import { parseWithPlan, type SheetPlan } from '../importers/detect';
 import { detectWide, gridFor, wideColumns, type WideConfig } from '../importers/wide';
 import { detectLong, type LongConfig } from '../importers/long';
 import type { ParsedImport } from '../importers/model';
@@ -24,13 +26,16 @@ import { commitImport, type CommitSummary, type ImportMapping } from '../importe
 import { createParameter, newSite, saveSite } from '../db/repo';
 import { DateField, EmptyState, LevelBadge, PageHeader, paramOptions } from '../components/common';
 import { formatDate } from '../lib/dates';
-import { COMMON_UNITS, sameDimension, unitLabel } from '../lib/units';
+import { COMMON_UNITS, normUnit, sameDimension, unitLabel } from '../lib/units';
 import { evaluateAll } from '../lib/analysis';
 import { fmtNum } from '../lib/values';
-import { PARAMETER_GROUPS } from '../data/parameters';
+import { guessGroup, PARAMETER_GROUPS } from '../data/parameters';
 import { NewProjectButton } from './Projects';
 
 const ACCEPT = {
+  'application/pdf': ['.pdf'],
+  'application/zip': ['.zip'],
+  'application/x-zip-compressed': ['.zip'],
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
   'application/vnd.ms-excel': ['.xls', '.csv'],
   'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm'],
@@ -219,12 +224,22 @@ interface WizardState {
   fileName: string;
   grids: SheetGrid[];
   plans: SheetPlan[];
+  /** What the files say about each other's samples (a PDF naming an ESdat file's samples). */
+  context: ImportContext;
+  /** Files left out, and why; results taken from one file rather than another. */
+  notes: string[];
 }
 
-function NewParamModal({ initial, onClose, onCreated }: { initial: { name: string; unit?: string }; onClose: () => void; onCreated: (id: string) => void }) {
+/** The display unit for a parameter added from a lab file: mg/L for the g/m³ NZ labs report (the same thing). */
+function newParamUnit(unit?: string): string {
+  if (!unit) return 'mg/L';
+  return normUnit(unit).key === 'g/m3' ? 'mg/L' : unitLabel(unit);
+}
+
+function NewParamModal({ initial, onClose, onCreated }: { initial: { name: string; unit?: string; group?: string }; onClose: () => void; onCreated: (id: string) => void }) {
   const [name, setName] = useState(initial.name);
-  const [unit, setUnit] = useState(initial.unit ?? '');
-  const [group, setGroup] = useState('Other');
+  const [unit, setUnit] = useState(initial.unit ? newParamUnit(initial.unit) : '');
+  const [group, setGroup] = useState(guessGroup(initial.name, initial.group));
   return (
     <Modal opened onClose={onClose} title="New parameter">
       <Stack gap="sm">
@@ -266,10 +281,11 @@ export function ImportWizard(_props: { projectId: string }) {
   const [dupes, setDupes] = useState<'replace' | 'skip' | 'keep'>('replace');
   const [remember, setRemember] = useState(true);
   const [summary, setSummary] = useState<CommitSummary | null>(null);
-  const [newParamFor, setNewParamFor] = useState<{ key: string; name: string; unit?: string } | null>(null);
+  const [newParamFor, setNewParamFor] = useState<{ key: string; name: string; unit?: string; group?: string } | null>(null);
   const [bulkDate, setBulkDate] = useState<string | undefined>();
+  const [creating, setCreating] = useState(false);
 
-  const parsed: ParsedImport | null = useMemo(() => (state ? parseWithPlan(state.grids, state.plans) : null), [state]);
+  const parsed: ParsedImport | null = useMemo(() => (state ? parseWithPlan(state.grids, state.plans, state.context ?? EMPTY_CONTEXT) : null), [state]);
   const siteRows = useSiteTextRows(parsed, sites);
   const analyteRows = useAnalyteRows(parsed, params);
 
@@ -289,14 +305,15 @@ export function ImportWizard(_props: { projectId: string }) {
     });
   }, [analyteRows]);
 
-  const load = async (file: File | { name: string; data: ArrayBuffer }) => {
+  const load = async (files: Array<File | InputFile>) => {
     setLoading(true);
     try {
-      const buf = file instanceof File ? await file.arrayBuffer() : file.data;
-      const grids = await readWorkbook(buf, file.name);
-      if (!grids.length) throw new Error('The file has no data.');
-      const plans = planSheets(grids, buildParamIndex(params));
-      setState({ fileName: file.name, grids, plans });
+      const inputs = await Promise.all(files.map(async (f) => ({ name: f.name, data: f instanceof File ? await f.arrayBuffer() : f.data })));
+      const read = await readImportFiles(inputs);
+      if (!read.grids.length) throw new Error(read.notes.join(' ') || 'The file has no data.');
+      const { plans, notes } = defaultPlans(read.grids, read.context, buildParamIndex(params));
+      const fileName = read.names.length === 1 ? read.names[0] : `${read.names[0]} and ${read.names.length - 1} more`;
+      setState({ fileName, grids: read.grids, plans, context: read.context, notes: [...read.notes, ...notes] });
       setSiteMap({});
       setParamMapping({});
       setUnitMap({});
@@ -312,6 +329,8 @@ export function ImportWizard(_props: { projectId: string }) {
   };
 
   const samples = parsed?.samples ?? [];
+  const labs = [...new Set(samples.map((s) => s.labName ?? parsed?.labName).filter((x): x is string => !!x))];
+  const jobs = [...new Set(samples.map((s) => s.labJob ?? parsed?.labJob).filter((x): x is string => !!x))];
   const sampleSite = (s: (typeof samples)[number]) => siteMap[s.siteText || s.sampleName] ?? null;
   const sampleDate = (s: (typeof samples)[number]) => dateOverrides[s.key] ?? s.date;
   const included = samples.filter((s) => include[s.key] !== false);
@@ -401,7 +420,7 @@ export function ImportWizard(_props: { projectId: string }) {
 
       {step === 0 && (
         <Stack>
-          <Dropzone onDrop={(files) => files[0] && load(files[0])} accept={ACCEPT} loading={loading} multiple={false} maxSize={80 * 1024 * 1024} onReject={() => notifications.show({ message: 'Please choose an Excel or CSV file', color: 'red' })}>
+          <Dropzone onDrop={(files) => files.length && load(files)} accept={ACCEPT} loading={loading} multiple maxSize={80 * 1024 * 1024} onReject={() => notifications.show({ message: 'Please choose Excel, CSV or PDF lab reports, or a zip of them', color: 'red' })}>
             <Group justify="center" gap="xl" mih={180} style={{ pointerEvents: 'none' }}>
               <Dropzone.Accept>
                 <IconUpload size={48} stroke={1.5} />
@@ -414,10 +433,10 @@ export function ImportWizard(_props: { projectId: string }) {
               </Dropzone.Idle>
               <div>
                 <Text size="lg" fw={600}>
-                  Drop a lab results file or monitoring spreadsheet here
+                  Drop lab results or a monitoring spreadsheet here
                 </Text>
                 <Text size="sm" c="dimmed" mt={4}>
-                  Hill Labs Excel results, master sheets (dates down, analytes across), or long tables · .xlsx .xls .xlsm .csv
+                  Lab files from Hill Labs, ALS and Linnaeus – Excel, CSV or PDF reports, several at once or the zip they came in – master sheets, or long tables
                 </Text>
                 <Text size="sm" c="dimmed">
                   Importing into <b>{project.name}</b>
@@ -436,7 +455,7 @@ export function ImportWizard(_props: { projectId: string }) {
                 variant="light"
                 onClick={async () => {
                   const res = await fetch(`./samples/${ex.file}`);
-                  load({ name: ex.file, data: await res.arrayBuffer() });
+                  load([{ name: ex.file, data: await res.arrayBuffer() }]);
                 }}
               >
                 {ex.label}
@@ -453,8 +472,8 @@ export function ImportWizard(_props: { projectId: string }) {
               <div>
                 <Text fw={600}>{state.fileName}</Text>
                 <Text size="sm" c="dimmed">
-                  {parsed.labName ? `${parsed.labName} · ` : ''}
-                  {parsed.labJob ? `Job ${parsed.labJob} · ` : ''}
+                  {labs.length ? `${labs.join(', ')} · ` : ''}
+                  {jobs.length === 1 ? `Job ${jobs[0]} · ` : jobs.length > 1 ? `Jobs ${jobs.join(', ')} · ` : ''}
                   {samples.length} samples · {analyteRows.length} analytes · {samples.reduce((s, x) => s + x.results.length, 0)} results
                 </Text>
               </div>
@@ -470,6 +489,11 @@ export function ImportWizard(_props: { projectId: string }) {
               )}
             </Group>
           </Paper>
+          {state.notes.map((w) => (
+            <Alert key={w} color="blue" variant="light" py={6}>
+              {w}
+            </Alert>
+          ))}
           {parsed.warnings.map((w) => (
             <Alert key={w} color="orange" variant="light" icon={<IconAlertTriangle size={16} />} py={6}>
               {w}
@@ -479,27 +503,34 @@ export function ImportWizard(_props: { projectId: string }) {
             const grid = state.grids.find((g) => g.name === plan.sheet)!;
             const setPlan = (p: SheetPlan) => setState({ ...state, plans: state.plans.map((x, j) => (j === i ? p : x)) });
             const count = samples.filter((s) => s.sheet === plan.sheet).length;
+            const exportOf = detectExport(grid);
             return (
               <Card key={plan.sheet} padding="md">
                 <Group justify="space-between" mb="sm" wrap="wrap">
                   <Group gap="sm">
-                    <Text fw={600}>Sheet “{plan.sheet}”</Text>
+                    <Text fw={600}>{grid.pdf ? `PDF report “${plan.sheet}”` : `Sheet “${plan.sheet}”`}</Text>
                     <Badge variant="light" color={count ? 'teal' : 'gray'}>
                       {count} samples
                     </Badge>
                   </Group>
                   <Select
                     data={[
-                      { value: 'lab', label: 'Lab results (samples across, analytes down)' },
-                      { value: 'wide', label: 'Monitoring spreadsheet (one row per sample)' },
-                      { value: 'long', label: 'Long table (one row per result)' },
-                      { value: 'skip', label: 'Skip this sheet' },
+                      ...(exportOf ? [{ value: 'export', label: grid.pdf ? 'Results from the PDF' : EXPORT_LABELS[exportOf.format] }] : []),
+                      ...(grid.pdf
+                        ? []
+                        : [
+                            { value: 'lab', label: 'Lab results (samples across, analytes down)' },
+                            { value: 'wide', label: 'Monitoring spreadsheet (one row per sample)' },
+                            { value: 'long', label: 'Long table (one row per result)' },
+                          ]),
+                      { value: 'skip', label: grid.pdf ? 'Leave out its results' : 'Skip this sheet' },
                     ]}
                     value={plan.mode}
                     onChange={(v) => {
                       if (!v) return;
                       const index = buildParamIndex(params);
-                      if (v === 'wide') setPlan({ mode: 'wide', sheet: plan.sheet, score: 0, config: detectWide(grid, index).config });
+                      if (v === 'export' && exportOf) setPlan({ mode: 'export', sheet: plan.sheet, score: 0, format: exportOf.format });
+                      else if (v === 'wide') setPlan({ mode: 'wide', sheet: plan.sheet, score: 0, config: detectWide(grid, index).config });
                       else if (v === 'long') setPlan({ mode: 'long', sheet: plan.sheet, score: 0, config: detectLong(grid).config });
                       else setPlan({ mode: v as 'lab' | 'skip', sheet: plan.sheet, score: 0 });
                     }}
@@ -509,13 +540,13 @@ export function ImportWizard(_props: { projectId: string }) {
                 </Group>
                 {plan.mode === 'wide' && <WideConfigEditor grid={grid} config={plan.config} onChange={(c) => setPlan({ ...plan, config: c })} />}
                 {plan.mode === 'long' && <LongConfigEditor grid={grid} config={plan.config} onChange={(c) => setPlan({ ...plan, config: c })} />}
-                {plan.mode === 'lab' && <GridPreview grid={grid} roles={{}} />}
+                {(plan.mode === 'lab' || plan.mode === 'export') && <GridPreview grid={grid} roles={plan.mode === 'export' ? { headerRow: exportOf?.row } : {}} />}
               </Card>
             );
           })}
           <Group justify="space-between">
             <Button variant="default" leftSection={<IconArrowLeft size={16} />} onClick={() => setStep(0)}>
-              Choose another file
+              Choose other files
             </Button>
             <Button rightSection={<IconArrowRight size={16} />} disabled={!samples.length} onClick={() => setStep(2)}>
               Next: sites &amp; dates
@@ -718,13 +749,19 @@ export function ImportWizard(_props: { projectId: string }) {
                   size="xs"
                   variant="light"
                   leftSection={<IconPlus size={14} />}
+                  loading={creating}
                   onClick={async () => {
-                    const next = { ...paramMapping };
-                    for (const r of unmatchedAnalytes) {
-                      const p = await createParameter(r.analyte, r.unit ? unitLabel(r.unit) : 'mg/L', 'Other');
-                      next[r.key] = p.id;
+                    setCreating(true);
+                    try {
+                      const next = { ...paramMapping };
+                      for (const r of unmatchedAnalytes) {
+                        const p = await createParameter(r.analyte, newParamUnit(r.unit), guessGroup(r.analyte, r.group));
+                        next[r.key] = p.id;
+                      }
+                      setParamMapping(next);
+                    } finally {
+                      setCreating(false);
                     }
-                    setParamMapping(next);
                   }}
                 >
                   Create {unmatchedAnalytes.length} new parameter{unmatchedAnalytes.length === 1 ? '' : 's'}
@@ -774,7 +811,7 @@ export function ImportWizard(_props: { projectId: string }) {
                               data={[{ group: 'Actions', items: [{ value: '__skip', label: '— Skip this analyte —' }, { value: '__new', label: '+ New parameter…' }] }, ...paramOptions(params)]}
                               value={pid ?? '__skip'}
                               onChange={(v) => {
-                                if (v === '__new') setNewParamFor({ key: r.key, name: r.analyte, unit: r.unit ? unitLabel(r.unit) : undefined });
+                                if (v === '__new') setNewParamFor({ key: r.key, name: r.analyte, unit: r.unit, group: r.group });
                                 else setParamMapping({ ...paramMapping, [r.key]: v === '__skip' ? null : v });
                               }}
                               searchable

@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconCopy, IconDeviceFloppy, IconDots, IconPlus, IconTrash, IconPhoto, IconStar, IconTemplate, IconFileTypeDocx, IconFileTypePdf } from '@tabler/icons-react';
+import { IconCopy, IconDots, IconPlus, IconTrash, IconPhoto, IconStar, IconTemplate, IconFileTypeDocx, IconFileTypePdf } from '@tabler/icons-react';
 import { db, saveSettings } from '../db/db';
 import type { ReportBlock, ReportTemplate } from '../db/types';
 import { deleteTemplate, duplicateTemplate, saveTemplate } from '../db/repo';
@@ -23,6 +23,7 @@ import { hasMixedPages, samePages } from '../components/report/sections';
 import { newBlock } from '../components/report/blocks';
 import { cmToPx, renderChartPng } from '../charts/render';
 import { exportReport, type ExportKind } from '../reports/export';
+import { SaveButton } from '../components/Unsaved';
 
 function Preview({ template, fill }: { template: ReportTemplate; fill?: boolean }) {
   const data = useProject();
@@ -126,8 +127,8 @@ export function TemplateEditorPage() {
                   </Badge>
                 </Tooltip>
               )}
-              <Button
-                leftSection={<IconDeviceFloppy size={16} />}
+              <SaveButton
+                dirty={dirty}
                 disabled={!dirty}
                 onClick={async () => {
                   // what was saved, colleagues' changes to other parts included
@@ -138,7 +139,7 @@ export function TemplateEditorPage() {
                 }}
               >
                 Save template
-              </Button>
+              </SaveButton>
             </Group>
           )
         }

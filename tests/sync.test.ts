@@ -195,24 +195,18 @@ describe('two people in one workspace', () => {
     expect(opened.client).toBe('Client Ltd');
   });
 
-  it('shares the team’s settings and report commentary, section by section, but not your own settings', async () => {
+  it('shares the team’s settings – not your own settings or report work: each person makes their own reports', async () => {
     await as(ctxA, async (db) => {
       await saveSettings({ company: 'Acme Ltd', author: 'Ann Smith', signatureImage: 'data:image/png;base64,AAAA' }, db);
       await db.meta.put({ key: 'draft:p1:t1:2026-01-01:2026-12-31', value: { intro: 'Ann wrote the introduction.' } });
+      await db.meta.put({ key: 'figs:p1:t1:2026-01-01:2026-12-31', value: { f: [] } });
     });
     await exchange();
     expect(await getSettings(B_())).toMatchObject({ company: 'Acme Ltd', author: '' });
     expect((await getSettings(B_())).signatureImage).toBeUndefined();
-    // both write in the same report at once, in different sections
-    const write = (db: EnviroDatabase, section: string, text: string) =>
-      db.transaction('rw', db.meta, async () => {
-        const cur = (await db.meta.get('draft:p1:t1:2026-01-01:2026-12-31'))!.value as Record<string, string>;
-        await db.meta.put({ key: 'draft:p1:t1:2026-01-01:2026-12-31', value: { ...cur, [section]: text } });
-      });
-    await as(ctxA, (db) => write(db, 'intro', 'Ann rewrote the introduction.'));
-    await as(ctxB, (db) => write(db, 'summary', 'Bo wrote the summary.'));
-    await exchange();
-    for (const db of [A_(), B_()]) expect((await db.meta.get('draft:p1:t1:2026-01-01:2026-12-31'))!.value).toEqual({ intro: 'Ann rewrote the introduction.', summary: 'Bo wrote the summary.' });
+    expect(await B_().meta.get('draft:p1:t1:2026-01-01:2026-12-31')).toBeUndefined();
+    expect(await B_().meta.get('figs:p1:t1:2026-01-01:2026-12-31')).toBeUndefined();
+    expect(await A_().syncState.get(rowKey('meta', 'draft:p1:t1:2026-01-01:2026-12-31'))).toBeUndefined();
   });
 });
 
