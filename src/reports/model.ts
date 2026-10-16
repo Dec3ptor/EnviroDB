@@ -37,7 +37,9 @@ export type DocNode =
   /** Sign-off: signatories side by side, `cols` to a row; without an image a line is left to sign by hand. */
   | { t: 'signatures'; closing?: Run[]; cols: number; colWidthMm: number; imageHeightMm: number; items: Array<{ role: string; name: string; lines: Run[][]; date?: string; image?: { dataUrl: string; widthMm: number; heightMm: number } }> }
   /** New page; `orientation` changes the orientation of the pages that follow. */
-  | { t: 'pagebreak'; orientation?: 'portrait' | 'landscape' };
+  | { t: 'pagebreak'; orientation?: 'portrait' | 'landscape' }
+  /** Blank space. */
+  | { t: 'space'; mm: number };
 
 /** Margins and the header / footer distances from the page edge, in mm. */
 export interface PageGeometry {

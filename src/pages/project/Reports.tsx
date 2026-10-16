@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Anchor, Badge, Button, Card, Grid, Group, Loader, Modal, Select, Stack, Tabs, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Button, Card, Grid, Group, Loader, Modal, Select, Stack, Tabs, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
-import { IconCheck, IconDeviceFloppy, IconFileTypeDocx, IconFileTypePdf, IconLayoutList, IconSettings, IconTemplate } from '@tabler/icons-react';
+import { IconCheck, IconDeviceFloppy, IconFileTypeDocx, IconFileTypePdf, IconLayoutList, IconSettings, IconSparkles, IconTemplate } from '@tabler/icons-react';
 import { db, saveReportWork } from '../../db/db';
 import { useProject } from '../../hooks/useProjectData';
 import { useSharedWork } from '../../hooks/useSharedWork';
 import { same as sameValue } from '../../sync/model';
 import { useSettings } from '../../hooks/useSettings';
-import { MoreOptions, PeriodPicker, defaultPeriod, type PeriodValue } from '../../components/common';
+import { defaultPeriod, EmptyState, MoreOptions, PeriodPicker, type PeriodValue } from '../../components/common';
 import { nextDueReport, obligationPeriod, obligationPresets } from '../../lib/schedule';
 import { roundPeriods } from '../../lib/latest';
 import { formatDate, todayStr } from '../../lib/dates';
@@ -23,6 +23,8 @@ import { saveTemplate, setSubmitted } from '../../db/repo';
 import type { FigureImage, FiguresBlock, LetterBlock, Project, ReportTemplate, TextBlock } from '../../db/types';
 import { FigureImages, FiguresLayout } from '../../components/report/Figures';
 import { SectionsEditor } from '../../components/report/SectionsEditor';
+import { InsertCalc } from '../../components/report/InsertCalc';
+import { summaryText } from '../../reports/build';
 import { PagesControl } from '../../components/report/PagesControl';
 import { JumpToPreview, usePreviewPane } from '../../components/report/JumpToPreview';
 import { ReportSites } from '../../components/report/ReportSites';
@@ -111,7 +113,8 @@ export function ReportsTab() {
 
   const [period, setPeriod] = useState<PeriodValue>(initial.period);
   const [templateId, setTemplateId] = useState<string | null>(initial.templateId ?? settings.defaultTemplateId ?? 'tpl-annual');
-  const stored = templates?.find((t) => t.id === templateId) ?? templates?.find((t) => t.id === 'tpl-annual');
+  // the template chosen – or, when it has been deleted, the default, the annual report or the first there is
+  const stored = templates?.find((t) => t.id === templateId) ?? templates?.find((t) => t.id === settings.defaultTemplateId) ?? templates?.find((t) => t.id === 'tpl-annual') ?? templates?.[0];
 
   // A template for one monitoring round starts on the latest round, unless the period is already a round or
   // belongs to a reporting obligation that uses this template.
@@ -224,6 +227,19 @@ export function ReportsTab() {
 
   const savePrompt = (id: string, text: string | undefined) => drafts.setPart(id, text);
 
+  if (templates && !templates.length)
+    return (
+      <EmptyState
+        title="No report templates"
+        action={
+          <Button component={Link} to="/templates">
+            Report templates
+          </Button>
+        }
+      >
+        Every template has been deleted. Make one from a starter or a document of yours, or put the built-in ones back, on the Report templates page.
+      </EmptyState>
+    );
   if (!templates || !template || !stored)
     return (
       <Group justify="center" p="xl">
@@ -276,7 +292,7 @@ export function ReportsTab() {
     <Grid gutter="lg">
       <Grid.Col span={{ base: 12, lg: 4 }}>
         <Stack gap="md">
-          <Card padding="md" ref={settingsCard} style={{ scrollMarginTop: 72 }}>
+          <Card padding="md" ref={settingsCard} style={{ scrollMarginTop: 72, overflow: 'visible' }}>
             <Tabs value={tab} onChange={setTab}>
               <Tabs.List grow mb="sm">
                 <Tabs.Tab value="report" leftSection={<IconSettings size={15} />}>
@@ -371,7 +387,7 @@ export function ReportsTab() {
                   <Text size="xs" c="dimmed">
                     Tap a section to change it. Drag ⋮⋮ to move it – a heading brings its content – or use the arrows; ⋯ has more.
                   </Text>
-                  <SectionsEditor blocks={template.blocks} onChange={(blocks) => changeTemplate({ ...template, blocks })} orientation={template.orientation} open={open} onOpen={setOpen} />
+                  <SectionsEditor blocks={template.blocks} onChange={(blocks) => changeTemplate({ ...template, blocks })} orientation={template.orientation} open={open} onOpen={setOpen} paletteOpen={false} />
                   <Anchor component={Link} to={`/templates/${stored.id}`} size="xs">
                     <Group gap={4}>
                       <IconTemplate size={13} />
@@ -395,6 +411,7 @@ export function ReportsTab() {
                 {commentaryBoxes.map((c) => (
                   <div key={c.key}>
                     <Textarea
+                      id={`commentary-${c.key}`}
                       label={c.label}
                       description={c.group}
                       autosize
@@ -403,6 +420,26 @@ export function ReportsTab() {
                       value={prompts[c.key] ?? c.text}
                       onChange={(e) => savePrompt(c.key, e.currentTarget.value)}
                     />
+                    {!c.auto && (
+                      <Group gap={4}>
+                        <Tooltip label="Sentences about the period from the results – samples, compliance, guideline exceedances and how it compares with the period before – to edit" multiline maw={300}>
+                          <Button
+                            size="compact-xs"
+                            variant="subtle"
+                            leftSection={<IconSparkles size={14} />}
+                            onClick={() => {
+                              const cur = prompts[c.key] ?? c.text;
+                              const draft = summaryText(data, period.start, period.end, chosenSites ?? undefined);
+                              // the template's starting text is replaced; your own is kept, with the draft after it
+                              savePrompt(c.key, cur.trim() && cur !== c.text ? `${cur.trimEnd()}\n\n${draft}` : draft);
+                            }}
+                          >
+                            Draft from the results
+                          </Button>
+                        </Tooltip>
+                        <InsertCalc target={`commentary-${c.key}`} value={prompts[c.key] ?? c.text} onChange={(text) => savePrompt(c.key, text)} />
+                      </Group>
+                    )}
                     {c.auto && prompts[c.key] !== undefined && prompts[c.key] !== c.text && (
                       <Anchor component="button" type="button" size="xs" onClick={() => savePrompt(c.key, undefined)}>
                         Back to the summary drafted from the results

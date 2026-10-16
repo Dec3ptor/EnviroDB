@@ -4,13 +4,14 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconCopy, IconDots, IconPlus, IconTrash, IconPhoto, IconStar, IconTemplate, IconFileTypeDocx, IconFileTypePdf } from '@tabler/icons-react';
+import { IconCopy, IconDots, IconPlus, IconTrash, IconPhoto, IconStar, IconTemplate, IconFileTypeDocx, IconFileTypePdf, IconFileText, IconRestore } from '@tabler/icons-react';
 import { db, saveSettings } from '../db/db';
-import type { ReportBlock, ReportTemplate } from '../db/types';
-import { deleteTemplate, duplicateTemplate, saveTemplate } from '../db/repo';
+import type { ReportBlock, ReportKind, ReportTemplate } from '../db/types';
+import { deleteTemplate, duplicateTemplate, restoreBuiltInTemplates, saveTemplate, templateFrom } from '../db/repo';
+import { BUILT_IN_TEMPLATES, REPORT_KINDS, STARTER_TEMPLATES } from '../data/templates';
+import { TemplateFromDocModal } from '../components/report/TemplateFromDoc';
 import { MoreOptions, PageHeader, PeriodPicker, defaultPeriod, type PeriodValue } from '../components/common';
 import { PLACEHOLDERS, type ReportDoc } from '../reports/model';
-import { uid } from '../lib/ids';
 import { ProjectDataProvider, useProject } from '../hooks/useProjectData';
 import { useSettings } from '../hooks/useSettings';
 import { buildReport, DEFAULT_LOGO_MM } from '../reports/build';
@@ -20,7 +21,6 @@ import { readImageFile } from '../lib/image';
 import { roundPeriods } from '../lib/latest';
 import { JumpToPreview, usePreviewPane } from '../components/report/JumpToPreview';
 import { hasMixedPages, samePages } from '../components/report/sections';
-import { newBlock } from '../components/report/blocks';
 import { cmToPx, renderChartPng } from '../charts/render';
 import { exportReport, type ExportKind } from '../reports/export';
 import { SaveButton } from '../components/Unsaved';
@@ -153,7 +153,10 @@ export function TemplateEditorPage() {
                   Page &amp; style
                 </Title>
                 <Stack gap="xs">
-                  <TextInput label="Template name" value={t.name} onChange={(e) => setT({ ...t, name: e.currentTarget.value })} />
+                  <Group grow align="flex-end">
+                    <TextInput label="Template name" value={t.name} onChange={(e) => setT({ ...t, name: e.currentTarget.value })} />
+                    <Select label="What it’s for" data={REPORT_KINDS.map((k) => ({ value: k.kind, label: k.label.replace(/s$/, '') }))} value={kindOf(t)} onChange={(v) => v && setT({ ...t, kind: v as ReportKind })} allowDeselect={false} maw={220} />
+                  </Group>
                   <TextInput label="Description" value={t.description ?? ''} onChange={(e) => setT({ ...t, description: e.currentTarget.value })} />
                   <Group align="flex-end" gap="md" wrap="wrap">
                     <div>
@@ -280,12 +283,13 @@ export function TemplateEditorPage() {
               </Card>
             </fieldset>
 
-            <Card padding="md">
+            {/* overflow visible: the palette of sections stays in view while the list scrolls */}
+            <Card padding="md" style={{ overflow: 'visible' }}>
               <Title order={5} mb={4}>
                 Content
               </Title>
               <Text size="xs" c="dimmed" mb="xs">
-                Tap a section to edit it. Drag ⋮⋮ to move it – a heading brings its content – or use the arrows; ⋯ has more.
+                Drag a section in from the palette, or click one to add it. Tap a section to edit it; drag ⋮⋮ to move it – a heading brings its content – or use the arrows; ⋯ has more.
               </Text>
               <SectionsEditor blocks={t.blocks} onChange={setBlocks} orientation={t.orientation} open={open} onOpen={setOpen} readOnly={readOnly} />
             </Card>
@@ -328,104 +332,169 @@ export function TemplateEditorPage() {
   );
 }
 
+/** A template's kind: as set, else a letter or a monitoring report. */
+const kindOf = (t: ReportTemplate): ReportKind => t.kind ?? (t.style === 'letter' ? 'letter' : 'monitoring');
+
 export function TemplatesPage() {
   const templates = useLiveQuery(() => db.templates.toArray(), []);
   const settings = useSettings();
   const navigate = useNavigate();
+  const [fromDoc, setFromDoc] = useState(false);
+  const missing = templates ? BUILT_IN_TEMPLATES.filter((b) => !templates.some((t) => t.id === b.id)).length : 0;
+  const make = async (starter: ReportTemplate, name?: string) => {
+    const t = await templateFrom(starter, name);
+    navigate(`/templates/${t.id}`);
+  };
+  const groups = REPORT_KINDS.map((k) => ({ ...k, list: (templates ?? []).filter((t) => kindOf(t) === k.kind).sort((a, b) => Number(!!a.builtIn) - Number(!!b.builtIn) || a.name.localeCompare(b.name)) })).filter((g) => g.list.length);
   return (
     <Stack>
       <PageHeader
         title="Report templates"
-        description="Templates define the content and layout of your reports. Built-in templates can be duplicated and customised."
+        description="What goes in each kind of report, and how it looks. Make your own from a starter, from a document you’ve written before, or by duplicating one here – and delete the ones you don’t use."
         actions={
-          <Button
-            leftSection={<IconPlus size={16} />}
-            onClick={async () => {
-              const t: ReportTemplate = {
-                id: uid('tpl'),
-                name: 'New template',
-                orientation: 'portrait',
-                pageSize: 'A4',
-                marginMm: 20,
-                fontSize: 10,
-                accent: '#0f766e',
-                headerText: '{{project.name}}',
-                footerText: '{{company}}',
-                numbering: true,
-                blocks: [newBlock('title'), newBlock('summary')],
-                updatedAt: new Date().toISOString(),
-              };
-              await saveTemplate(t);
-              navigate(`/templates/${t.id}`);
-            }}
-          >
-            New template
-          </Button>
+          <Group gap="xs">
+            {missing > 0 && (
+              <Tooltip label="Put the built-in templates that were deleted back on everyone’s list">
+                <Button
+                  variant="default"
+                  leftSection={<IconRestore size={16} />}
+                  onClick={async () => {
+                    const n = await restoreBuiltInTemplates();
+                    notifications.show({ color: 'teal', message: `${n} built-in template${n === 1 ? '' : 's'} back` });
+                  }}
+                >
+                  Restore built-ins ({missing})
+                </Button>
+              </Tooltip>
+            )}
+            <Menu position="bottom-end" width={340}>
+              <Menu.Target>
+                <Button leftSection={<IconPlus size={16} />}>New template</Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item leftSection={<IconFileText size={16} />} onClick={() => setFromDoc(true)}>
+                  <Text size="sm" fw={500}>
+                    From a document…
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    A Word report, plan or letter you’ve written before (or a PDF): its headings and text, with the data’s tables under them
+                  </Text>
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Label>Start from</Menu.Label>
+                {STARTER_TEMPLATES.map((st) => (
+                  <Menu.Item key={st.id} onClick={() => void make(st, st.id === 'start-blank' ? 'New template' : st.name)}>
+                    <Text size="sm" fw={500}>
+                      {st.name}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {st.description}
+                    </Text>
+                  </Menu.Item>
+                ))}
+              </Menu.Dropdown>
+            </Menu>
+          </Group>
         }
       />
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
-        {(templates ?? [])
-          .sort((a, b) => Number(!!a.builtIn) - Number(!!b.builtIn) || a.name.localeCompare(b.name))
-          .map((t) => (
-            <Card key={t.id}>
-              <Stack gap={6} h="100%">
-                <Group justify="space-between" wrap="nowrap" align="flex-start">
-                  <Group gap="xs" wrap="nowrap" align="flex-start">
-                    <IconTemplate size={18} style={{ flexShrink: 0, marginTop: 3 }} />
-                    <Text fw={600}>{t.name}</Text>
+      {templates && !templates.length && (
+        <Alert title="No templates">
+          Every template has been deleted – make one with <b>New template</b>, or put the built-in ones back.
+        </Alert>
+      )}
+      {groups.map((g) => (
+        <Stack key={g.kind} gap="xs">
+          <Title order={5}>{g.label}</Title>
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+            {g.list.map((t) => (
+              <Card key={t.id}>
+                <Stack gap={6} h="100%">
+                  <Group justify="space-between" wrap="nowrap" align="flex-start">
+                    <Group gap="xs" wrap="nowrap" align="flex-start">
+                      <IconTemplate size={18} style={{ flexShrink: 0, marginTop: 3 }} />
+                      <Text fw={600}>{t.name}</Text>
+                    </Group>
+                    <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
+                      {settings.defaultTemplateId === t.id && (
+                        <Badge color="yellow" leftSection={<IconStar size={10} />}>
+                          Default
+                        </Badge>
+                      )}
+                      {t.builtIn ? <Badge variant="outline">Built-in</Badge> : <Badge>Yours</Badge>}
+                    </Group>
                   </Group>
-                  <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
-                    {settings.defaultTemplateId === t.id && (
-                      <Badge color="yellow" leftSection={<IconStar size={10} />}>
-                        Default
-                      </Badge>
-                    )}
-                    {t.builtIn ? <Badge variant="outline">Built-in</Badge> : <Badge>Custom</Badge>}
-                  </Group>
-                </Group>
-                <Text size="sm" c="dimmed" style={{ flex: 1 }}>
-                  {t.description || `${t.blocks.length} sections`}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  {t.pageSize} {t.orientation} · {t.blocks.length} sections
-                </Text>
-                <Group gap="xs" mt="xs">
-                  <Button size="xs" onClick={() => navigate(`/templates/${t.id}`)}>
-                    {t.builtIn ? 'View' : 'Edit'}
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="default"
-                    leftSection={<IconCopy size={14} />}
-                    onClick={async () => {
-                      const c = await duplicateTemplate(t);
-                      navigate(`/templates/${c.id}`);
-                    }}
-                  >
-                    Duplicate
-                  </Button>
-                  <Menu position="bottom-end">
-                    <Menu.Target>
-                      <ActionIcon variant="subtle" size={30} aria-label={`More actions for ${t.name}`}>
-                        <IconDots size={16} />
-                      </ActionIcon>
-                    </Menu.Target>
-                    <Menu.Dropdown>
-                      <Menu.Item leftSection={<IconStar size={14} />} onClick={() => saveSettings({ defaultTemplateId: t.id })}>
-                        Make default
-                      </Menu.Item>
-                      {!t.builtIn && (
-                        <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => modals.openConfirmModal({ title: `Delete “${t.name}”?`, labels: { confirm: 'Delete', cancel: 'Cancel' }, confirmProps: { color: 'red' }, onConfirm: () => deleteTemplate(t.id) })}>
+                  <Text size="sm" c="dimmed" style={{ flex: 1 }}>
+                    {t.description || `${t.blocks.length} sections`}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {t.style === 'letter' ? 'Letter · ' : ''}
+                    {t.pageSize} {t.orientation} · {t.blocks.length} sections
+                  </Text>
+                  <Group gap="xs" mt="xs">
+                    <Button size="xs" onClick={() => navigate(`/templates/${t.id}`)}>
+                      {t.builtIn ? 'View' : 'Edit'}
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="default"
+                      leftSection={<IconCopy size={14} />}
+                      onClick={async () => {
+                        const c = await duplicateTemplate(t);
+                        navigate(`/templates/${c.id}`);
+                      }}
+                    >
+                      Duplicate
+                    </Button>
+                    <Menu position="bottom-end">
+                      <Menu.Target>
+                        <ActionIcon variant="subtle" size={30} aria-label={`More actions for ${t.name}`}>
+                          <IconDots size={16} />
+                        </ActionIcon>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        <Menu.Item leftSection={<IconStar size={14} />} onClick={() => saveSettings({ defaultTemplateId: t.id })}>
+                          Make default
+                        </Menu.Item>
+                        <Menu.Item
+                          color="red"
+                          leftSection={<IconTrash size={14} />}
+                          onClick={() =>
+                            modals.openConfirmModal({
+                              title: `Delete “${t.name}”?`,
+                              children: (
+                                <Text size="sm">
+                                  {t.builtIn
+                                    ? 'It comes off the list for everyone in the workspace. “Restore built-ins” on this page brings it back.'
+                                    : 'It goes for everyone in the workspace. Reports already made from it aren’t changed.'}{' '}
+                                  Reports that used it use your default template instead.
+                                </Text>
+                              ),
+                              labels: { confirm: 'Delete', cancel: 'Cancel' },
+                              confirmProps: { color: 'red' },
+                              onConfirm: () => deleteTemplate(t.id),
+                            })
+                          }
+                        >
                           Delete
                         </Menu.Item>
-                      )}
-                    </Menu.Dropdown>
-                  </Menu>
-                </Group>
-              </Stack>
-            </Card>
-          ))}
-      </SimpleGrid>
+                      </Menu.Dropdown>
+                    </Menu>
+                  </Group>
+                </Stack>
+              </Card>
+            ))}
+          </SimpleGrid>
+        </Stack>
+      ))}
+      {fromDoc && (
+        <TemplateFromDocModal
+          onClose={() => setFromDoc(false)}
+          onMade={(t) => {
+            setFromDoc(false);
+            navigate(`/templates/${t.id}`);
+          }}
+        />
+      )}
     </Stack>
   );
 }

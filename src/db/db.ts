@@ -131,7 +131,10 @@ export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<voi
     for (const cur of existing.values()) if (cur.group === LEGACY_FIELD_GROUP) toPut.push({ ...cur, group: splitPhysicalAndField(cur) });
     if (toPut.length) await database.parameters.bulkPut(toPut);
     await database.guidelineSets.bulkPut(BUILT_IN_GUIDELINES);
-    await database.templates.bulkPut(BUILT_IN_TEMPLATES);
+    // built-in templates someone took off the list stay off it (until put back)
+    const tplStates = await database.syncState.bulkGet(BUILT_IN_TEMPLATES.map((t) => rowKey('templates', t.id)));
+    const tplDeleted = new Set(tplStates.filter((r): r is SyncRow => !!r && isDeleted(r)).map((r) => r.k));
+    await database.templates.bulkPut(BUILT_IN_TEMPLATES.filter((t) => !tplDeleted.has(t.id)));
   });
 }
 

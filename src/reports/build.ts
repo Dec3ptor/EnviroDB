@@ -3,11 +3,11 @@ import { RULE_LEVELS } from '../db/types';
 import type { ProjectBundle } from '../lib/analysis';
 import { displayValue, evaluateAll, flagResults, isLimitLevel, keyParameters, limitToSites, statsTable, type CellFlag } from '../lib/analysis';
 import type { RuleEvaluation } from '../lib/compliance';
-import { STATUS_META } from '../lib/compliance';
-import { addDays, addMonths, formatDate, formatDateLong, MONTH_SHORT, todayStr, toUtcMs } from '../lib/dates';
+import { describeRule, STATUS_META } from '../lib/compliance';
+import { addDays, addMonths, daysBetween, endOfMonth, formatDate, formatDateLong, MONTH_SHORT, todayStr, toUtcMs } from '../lib/dates';
 import { monthLabel, reportPeriodLabel, reviewCell, type ReviewCell } from '../lib/latest';
 import { guidelineFor } from '../lib/guidelines';
-import { scheduleStep, frequencyLabel } from '../lib/schedule';
+import { scheduleStep, frequencyLabel, nextObligation } from '../lib/schedule';
 import { convert, unitLabel } from '../lib/units';
 import { statLabel } from '../lib/stats';
 import { fmtNum } from '../lib/values';
@@ -16,6 +16,7 @@ import { buildChartSpec, chartOption } from '../charts/timeSeries';
 import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
 import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type ReportDoc, type ReportLook, type Run } from './model';
 import { CELL_PAD_MM, fontWidthFactor, longestWordMm as longestWord, textWidthMm as textWidth } from './measure';
+import { calcValue, fillCalcs } from './calc';
 
 export interface BuildOptions {
   bundle: ProjectBundle;
@@ -210,7 +211,8 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     'count.rules': String(evals.length),
     'count.rulesExceeded': String(evals.filter((e) => e.status === 'exceeded').length),
   };
-  const fill = (s: string | undefined) => fillPlaceholders(s ?? '', ctx);
+  // placeholders, then calculations ({{calc:median:no3-n:DS1}})
+  const fill = (s: string | undefined) => fillCalcs(fillPlaceholders(s ?? '', ctx), b, start, end, flagsFor(defaultSets));
   const numbering = t.numbering !== false;
   const numberHeadings = t.numberHeadings ?? numbering;
   const hNum = [0, 0, 0];
@@ -301,6 +303,79 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   };
 
   const blockHandlers: { [K in ReportBlock['type']]: (blk: Extract<ReportBlock, { type: K }>) => void } = {
+    spacer: (blk) => nodes.push({ t: 'space', mm: Math.max(1, Math.min(200, blk.heightMm || 10)) }),
+    calc: (blk) => {
+      const flags = flagsFor(defaultSets);
+      const rows = blk.rows.filter((r) => b.paramMap.has(r.parameterId)).map((r) => calcValue(b, r, start, end, flags));
+      if (!rows.length) {
+        nodes.push({ t: 'p', runs: [{ text: 'No calculations chosen.', italic: true }] });
+        return;
+      }
+      if (blk.show === 'list') {
+        nodes.push({ t: 'ul', items: rows.map((r) => [{ text: `${r.label}: ` }, { text: r.text, bold: true }]) });
+        return;
+      }
+      const head: Cell[][] = [[{ text: 'Calculation' }, { text: 'Value', align: 'right' }, { text: 'Results', align: 'right' }]];
+      const body: Cell[][] = rows.map((r) => [{ text: r.label }, { text: r.text, align: 'right', bold: true }, { text: String(r.n), align: 'right' }]);
+      nodes.push({ t: 'table', caption: tableCaption(fill(blk.title) || `Calculated values, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths: ['*', width * 0.22, width * 0.12], fontSize: t.fontSize - 1 });
+    },
+    programmeTable: (blk) => {
+      const list = b.schedules.filter((x) => x.active);
+      if (!list.length) {
+        nodes.push({ t: 'p', runs: [{ text: 'No sampling schedules have been set up for this project.', italic: true }] });
+        return;
+      }
+      const head: Cell[][] = [[{ text: 'Monitoring' }, { text: 'Sites' }, { text: 'Frequency' }, { text: 'Parameters' }, { text: 'Notes' }]];
+      const body: Cell[][] = list.map((x) => [
+        { text: x.name, bold: true },
+        { text: x.siteIds.map((id) => b.siteMap.get(id)?.code ?? '').filter(Boolean).join(', ') },
+        { text: frequencyLabel(x.every, x.unit) },
+        { text: x.parameterIds.length ? x.parameterIds.map((id) => b.paramMap.get(id)?.name ?? id).join(', ') : 'As required' },
+        { text: x.notes ?? '' },
+      ]);
+      nodes.push({ t: 'table', caption: tableCaption(fill(blk.title) || 'Monitoring programme'), head, body, widths: [width * 0.2, width * 0.18, width * 0.14, '*', width * 0.2], fontSize: t.fontSize - 1 });
+    },
+    tarpTable: (blk) => {
+      const ofLevel = (l: string) => blk.levels === 'all' || (blk.levels === 'limits' ? isLimitLevel(l) : !isLimitLevel(l));
+      const order = (l: string) => {
+        const i = (RULE_LEVELS as readonly string[]).indexOf(l);
+        return i < 0 ? 99 : i;
+      };
+      const list = b.rules.filter((r) => r.active && ofLevel(r.level)).sort((x, y) => order(x.level) - order(y.level) || x.order - y.order);
+      if (!list.length) {
+        nodes.push({ t: 'p', runs: [{ text: 'No consent limits or trigger levels have been set up for this project.', italic: true }] });
+        return;
+      }
+      const head: Cell[][] = [[{ text: 'Level' }, { text: 'Condition' }, { text: 'Exceeded when' }, { text: 'Response required' }]];
+      const body: Cell[][] = list.map((r) => [
+        { text: r.level, bold: true, ...(isLimitLevel(r.level) ? { color: TEXT_FLAGS.exceed } : {}) },
+        { text: [r.condition, r.name].filter(Boolean).join(' – ') },
+        { text: describeRule(r, b.paramMap, b.sites, b.setMap) },
+        { text: r.action || 'Record and review at the next monitoring round.' },
+      ]);
+      const what = blk.levels === 'limits' ? 'Consent limits and responses' : blk.levels === 'triggers' ? 'Trigger levels and responses' : 'Trigger levels, limits and responses';
+      nodes.push({ t: 'table', caption: tableCaption(fill(blk.title) || what), head, body, widths: [width * 0.12, width * 0.24, width * 0.3, '*'], fontSize: t.fontSize - 1 });
+    },
+    reportingTable: (blk) => {
+      const list = b.obligations.filter((o) => o.active);
+      if (!list.length) {
+        nodes.push({ t: 'p', runs: [{ text: 'No reporting requirements have been set up for this project.', italic: true }] });
+        return;
+      }
+      const every = (o: (typeof list)[number]) => (!o.every ? 'Once' : o.unit === 'year' ? (o.every === 1 ? 'Annually' : `Every ${o.every} years`) : frequencyLabel(o.every, 'month'));
+      const head: Cell[][] = [[{ text: 'Report' }, { text: 'Frequency' }, { text: 'Next due' }, { text: 'Submitted to' }, { text: 'Notes' }]];
+      const body: Cell[][] = list.map((o) => {
+        const next = nextObligation(o);
+        return [
+          { text: o.name, bold: true },
+          { text: every(o) },
+          { text: next ? `${formatDate(next.dueDate)} (for ${formatDate(next.periodStart)} – ${formatDate(next.periodEnd)})` : '–' },
+          { text: o.recipient ?? '' },
+          { text: o.notes ?? '' },
+        ];
+      });
+      nodes.push({ t: 'table', caption: tableCaption(fill(blk.title) || 'Reporting requirements'), head, body, widths: [width * 0.22, width * 0.13, width * 0.25, width * 0.17, '*'], fontSize: t.fontSize - 1 });
+    },
     title: (blk) => {
       const details: Array<[string, string]> = (
         [
@@ -1208,5 +1283,63 @@ function summaryNodes(
       }
     }
   }
+  out.push(...comparisonNodes(b, evals, samples, start, end));
   return out;
+}
+
+/** The period of the same length just before: the year before a year, the quarter before a quarter … */
+export function previousPeriod(start: string, end: string): { start: string; end: string } {
+  if (start.endsWith('-01') && end === endOfMonth(end)) {
+    const months = (Number(end.slice(0, 4)) - Number(start.slice(0, 4))) * 12 + Number(end.slice(5, 7)) - Number(start.slice(5, 7)) + 1;
+    return { start: addMonths(start, -months), end: addDays(start, -1) };
+  }
+  const days = daysBetween(start, end) + 1;
+  return { start: addDays(start, -days), end: addDays(start, -1) };
+}
+
+/** How the period compares with the one before: samples, consent rules exceeded, and the key parameters' medians. */
+function comparisonNodes(b: ProjectBundle, evals: RuleEvaluation[], samples: Sample[], start: string, end: string): DocNode[] {
+  const prev = previousPeriod(start, end);
+  const before = b.samples.filter((s) => s.date.slice(0, 10) >= prev.start && s.date.slice(0, 10) <= prev.end);
+  if (!before.length || !samples.length) return [];
+  const sentences: string[] = [];
+  const then = `the previous period (${formatDate(prev.start)} – ${formatDate(prev.end)})`;
+  let first = `In ${then}, ${before.length} sample${before.length === 1 ? ' was' : 's were'} collected`;
+  if (evals.length) {
+    const prevEvals = evaluateAll(b, prev.start, prev.end);
+    const now = evals.filter((e) => e.status === 'exceeded').length;
+    const was = prevEvals.filter((e) => e.status === 'exceeded').length;
+    first += was ? ` and ${was} consent limit${was === 1 ? ' or trigger level was' : 's or trigger levels were'} exceeded` : ' and no consent limits or trigger levels were exceeded';
+    first += now === was ? (now ? ' – the same number as this period' : ', as in this period') : now > was ? ` (${now} this period)` : ` (${now || 'none'} this period)`;
+  }
+  sentences.push(`${first}.`);
+  // the key parameters at the sites their rules are for (all sites when they have none)
+  const phrases: string[] = [];
+  for (const pid of keyParameters(b, 5)) {
+    const p = b.paramMap.get(pid);
+    if (!p) continue;
+    const ruleSites = [...new Set(b.rules.filter((r) => r.active && r.parameterId === pid).flatMap((r) => r.siteIds))];
+    const codes = ruleSites.map((id) => b.siteMap.get(id)?.code).filter((c): c is string => !!c);
+    const nowV = calcValue(b, { stat: 'median', parameterId: pid, sites: codes }, start, end);
+    const wasV = calcValue(b, { stat: 'median', parameterId: pid, sites: codes }, prev.start, prev.end);
+    if (nowV.value === null || wasV.value === null) continue;
+    const ratio = wasV.value === 0 ? (nowV.value === 0 ? 1 : Infinity) : nowV.value / wasV.value;
+    const word = ratio >= 1.2 ? 'higher' : ratio <= 0.8 ? 'lower' : 'similar';
+    phrases.push(`the median ${p.name}${codes.length ? ` at ${listText(codes)}` : ''} ${word} (${nowV.text}, against ${wasV.text})`);
+  }
+  if (phrases.length) sentences.push(`Compared with then, ${listText(phrases)}.`);
+  return [{ t: 'p', runs: [{ text: sentences.join(' ') }] }];
+}
+
+/** The automatic summary as text to edit: sentences and bullets, for a report's commentary. */
+export function summaryText(bundle: ProjectBundle, start: string, end: string, siteIds?: string[]): string {
+  const b = siteIds?.length && siteIds.length < bundle.sites.length ? limitToSites(bundle, siteIds) : bundle;
+  const evals = evaluateAll(b, start, end);
+  const samples = b.samples.filter((s) => s.date.slice(0, 10) >= start && s.date.slice(0, 10) <= end);
+  const sites = b.sites.filter((s) => samples.some((x) => x.siteId === s.id));
+  const runs = (rs: Run[]) => rs.map((r) => (r.bold ? `**${r.text.trim()}**${r.text.endsWith(' ') ? ' ' : ''}` : r.text)).join('');
+  return summaryNodes(b, evals, samples, sites, start, end)
+    .map((n) => (n.t === 'p' ? runs(n.runs) : n.t === 'ul' ? n.items.map((it) => `- ${runs(it)}`).join('\n') : ''))
+    .filter(Boolean)
+    .join('\n\n');
 }

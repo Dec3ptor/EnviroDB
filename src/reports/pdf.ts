@@ -113,6 +113,8 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
       return [{ text: n.text, style: 'note', margin: [0, 0, 0, 6] }];
     case 'pagebreak':
       return []; // applied to the content that follows (see toPdfDefinition)
+    case 'space':
+      return [{ text: '', margin: [0, 0, 0, n.mm * MM] } as Content];
     case 'image': {
       const w = Math.min(n.widthCm * 10 * MM, contentWidthPt);
       const out: Content[] = [];

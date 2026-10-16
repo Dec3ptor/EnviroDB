@@ -136,6 +136,8 @@ function nodeToDocx(n: DocNode, x: Ctx, contentWidthMm: number): Array<Paragraph
       return [new Paragraph({ children: [new TextRun({ text: n.text, size: base - 4, color: '555555' })], indent: ind })];
     case 'pagebreak':
       return [new Paragraph({ children: [new PageBreak()] })];
+    case 'space':
+      return [new Paragraph({ children: [], spacing: { before: 0, after: 0, line: Math.max(20, Math.round(n.mm * 56.6929)), lineRule: 'exact' } })];
     case 'image': {
       const out: Array<Paragraph | Table> = [];
       const wCm = Math.min(n.widthCm, contentWidthMm / 10);

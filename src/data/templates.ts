@@ -1,4 +1,4 @@
-import type { ReportBlock, ReportTemplate } from '../db/types';
+import type { ReportBlock, ReportKind, ReportTemplate } from '../db/types';
 
 const UPDATED = '2026-10-01';
 let n = 0;
@@ -183,10 +183,11 @@ const appendix: ReportBlock[] = [
 ];
 
 export const BUILT_IN_TEMPLATES: ReportTemplate[] = [
-  { ...base, id: 'tpl-annual', name: 'Annual compliance monitoring report', description: 'Full annual report: introduction, summary, sites, sampling, compliance, exceedances, results, statistics, graphs and conclusions.', blocks: annual },
-  { ...base, id: 'tpl-quarterly', name: 'Quarterly / interim data summary', description: 'Short summary of compliance and results for a quarter or other interim period. The results table is on landscape pages.', blocks: quarterly },
+  { ...base, kind: 'monitoring', id: 'tpl-annual', name: 'Annual compliance monitoring report', description: 'Full annual report: introduction, summary, sites, sampling, compliance, exceedances, results, statistics, graphs and conclusions.', blocks: annual },
+  { ...base, kind: 'monitoring', id: 'tpl-quarterly', name: 'Quarterly / interim data summary', description: 'Short summary of compliance and results for a quarter or other interim period. The results table is on landscape pages.', blocks: quarterly },
   {
     ...base,
+    kind: 'monitoring',
     id: 'tpl-round',
     name: 'Monitoring round summary',
     description: "One monitoring round, titled by its month, with each result compared with limits, guidelines and the site's earlier results.",
@@ -195,6 +196,7 @@ export const BUILT_IN_TEMPLATES: ReportTemplate[] = [
   },
   {
     ...letter,
+    kind: 'letter',
     id: 'tpl-letter-annual',
     name: 'Annual report (letter)',
     description: 'An annual report as a letter on your letterhead: consents, monitoring locations and programme, trigger levels, results by site with comments, long-term graphs, figures, summary and sign-off.',
@@ -202,12 +204,115 @@ export const BUILT_IN_TEMPLATES: ReportTemplate[] = [
   },
   {
     ...letter,
+    kind: 'letter',
     id: 'tpl-letter-event',
     name: 'Monitoring event report (letter)',
     description: "One monitoring round as a letter on your letterhead, titled by its month: each site's results beside the previous round and its triggers, with a comment and a summary per site, figures and sign-off.",
     blocks: letterEvent,
     period: 'latestRound',
   },
-  { ...base, id: 'tpl-notification', name: 'Exceedance notification', description: 'Brief notification to the regulator listing exceedances and actions taken.', blocks: notification },
-  { ...base, id: 'tpl-appendix', name: 'Data appendix', description: 'Full results tables and statistics for appending to a report.', blocks: appendix, orientation: 'landscape' },
+  { ...base, kind: 'letter', id: 'tpl-notification', name: 'Exceedance notification', description: 'Brief notification to the regulator listing exceedances and actions taken.', blocks: notification },
+  { ...base, kind: 'monitoring', id: 'tpl-appendix', name: 'Data appendix', description: 'Full results tables and statistics for appending to a report.', blocks: appendix, orientation: 'landscape' },
+];
+
+/** What templates are for, in the order they're listed. */
+export const REPORT_KINDS: Array<{ kind: ReportKind; label: string }> = [
+  { kind: 'monitoring', label: 'Monitoring reports' },
+  { kind: 'letter', label: 'Letters' },
+  { kind: 'management-plan', label: 'Management plans' },
+  { kind: 'investigation', label: 'Site investigations' },
+  { kind: 'ecology', label: 'Ecology' },
+  { kind: 'other', label: 'Other' },
+];
+export const KIND_LABEL = Object.fromEntries(REPORT_KINDS.map((k) => [k.kind, k.label])) as Record<ReportKind, string>;
+
+// ---------------------------------------------------------------- starters: new templates to make your own
+
+const text = (t: string, prompt = true): ReportBlock => ({ id: id('s'), type: 'text', text: t, prompt });
+const h = (t: string, level: 1 | 2 | 3 = 1): ReportBlock => ({ id: id('s'), type: 'heading', text: t, level });
+const titleBlock = (subtitle: string, pageBreakAfter = true): ReportBlock => ({ id: id('s'), type: 'title', title: '{{project.name}}', subtitle, showDetails: true, preparedBy: '{{author}}', reviewedBy: '', pageBreakAfter });
+const results = (title = 'Results'): ReportBlock => ({ id: id('s'), type: 'resultsTable', title, siteIds: [], parameterIds: [], layout: 'parametersAsRows', guidelineSetIds: null, ruleColumns: 'all', highlight: true, splitBySite: true });
+const signs = (): ReportBlock => ({ id: id('s'), type: 'signatures', signatories: [{ id: id('sg'), role: 'Prepared by', self: true, name: '', details: '' }, { id: id('sg'), role: 'Reviewed by', name: '', details: '' }] });
+
+const managementPlan: ReportBlock[] = [
+  titleBlock('Environmental Monitoring and Management Plan'),
+  h('Introduction'),
+  text('This plan sets out how the environmental effects of {{project.name}} are monitored and managed, as required by resource consent(s) {{project.consents}} issued by {{project.regulator}}.'),
+  h('Purpose and objectives'),
+  text('The purpose of this plan is to …\n\nIts objectives are to:\n- monitor …\n- identify and respond to …\n- report …'),
+  h('Site description'),
+  text('Describe the site, the activity and the receiving environment.'),
+  { id: id('s'), type: 'siteTable' },
+  h('Consent requirements'),
+  text('The conditions of consent {{project.consents}} this plan responds to:\n\n> Quote the conditions here.'),
+  h('Monitoring programme'),
+  text('Monitoring is carried out as set out in {{table:programme}}. Samples are collected by suitably trained staff and analysed by an IANZ-accredited laboratory.'),
+  { id: id('s'), type: 'programmeTable', title: '', ref: 'programme' },
+  h('Trigger levels and response actions'),
+  text('Where a result exceeds a trigger level or consent limit, the response in {{table:tarp}} is followed.'),
+  { id: id('s'), type: 'tarpTable', title: '', levels: 'all', ref: 'tarp' },
+  h('Reporting'),
+  { id: id('s'), type: 'reportingTable', title: '' },
+  h('Roles and responsibilities'),
+  text('- **Consent holder:** …\n- **Environmental consultant:** monitoring, analysis and reporting\n- **Site manager:** …'),
+  h('Review of this plan'),
+  text('This plan is reviewed every … years, and whenever the consent conditions, the activity or the monitoring results show it needs to be.'),
+  signs(),
+];
+
+const investigation: ReportBlock[] = [
+  titleBlock('Detailed Site Investigation'),
+  h('Introduction'),
+  text('{{company}} was engaged by {{project.client}} to carry out a site investigation at {{project.location}}. This report presents the investigation and its findings.'),
+  h('Scope of work'),
+  text('The scope of work was to:\n- review the site history\n- collect soil and/or water samples for laboratory analysis\n- compare the results with the assessment criteria\n- report the findings'),
+  h('Site description and history'),
+  text('Describe the site, its surroundings and its history of use, including any activities on the HAIL.'),
+  { id: id('s'), type: 'siteTable' },
+  h('Sampling and analysis'),
+  text('Describe how and where samples were collected and the analyses carried out.'),
+  { id: id('s'), type: 'samplingTable' },
+  h('Assessment criteria'),
+  text('The results are compared with the guideline values shown in {{table:results}}. Describe why these criteria were chosen for the site’s current and proposed use.'),
+  h('Results'),
+  { ...results('Laboratory results'), ref: 'results' } as ReportBlock,
+  { id: id('s'), type: 'exceedances', ruleIds: [], includeGuidelines: true, includeNotes: true },
+  { id: id('s'), type: 'statsTable', title: 'Summary statistics', siteIds: [], parameterIds: [], stats: ['n', 'nd', 'min', 'median', 'p95', 'max', 'exceed'] },
+  h('Discussion'),
+  text('Discuss the results, what they mean for the site’s use and any data gaps.'),
+  h('Conclusions and recommendations'),
+  text('- …'),
+  h('Limitations'),
+  text('This report has been prepared for {{project.client}} for the purpose described. Its findings are based on the samples collected and the information available at the time.'),
+  signs(),
+];
+
+const ecology: ReportBlock[] = [
+  titleBlock('Ecological Survey Report'),
+  h('Introduction'),
+  text('This report presents the results of the ecological survey of {{project.name}} for {{period.label}}.'),
+  h('Methods'),
+  text('Describe the survey methods – e.g. habitat assessment, macroinvertebrate sampling, fish survey, vegetation plots or eDNA – and where they were used.'),
+  { id: id('s'), type: 'siteTable' },
+  { id: id('s'), type: 'samplingTable' },
+  h('Results'),
+  { id: id('s'), type: 'summary' },
+  results('Survey results'),
+  { id: id('s'), type: 'chart', parameterIds: [], siteIds: [], range: 'all', showGuidelines: true, guidelineSetIds: null, showRules: true, logScale: false, size: 'half', aspect: 0.67, widthCm: 8, heightCm: 6, caption: '' },
+  { id: id('s'), type: 'figures', images: [], perRow: 2, heightMm: 0, numbering: 'each', label: 'Figure', caption: '', border: false },
+  h('Discussion'),
+  text('Discuss the results – the condition of the habitats and communities surveyed, changes since earlier surveys and any effects of the activity.'),
+  h('Conclusions and recommendations'),
+  text('- …'),
+  signs(),
+];
+
+const blank: ReportBlock[] = [titleBlock('{{period.label}}', false), h('Introduction'), text('Type your text here.', false)];
+
+/** Starting points for new templates; each one made from them is your own to change. */
+export const STARTER_TEMPLATES: ReportTemplate[] = [
+  { ...base, builtIn: false, kind: 'other', id: 'start-blank', name: 'Blank template', description: 'A title, a heading and some text – add the sections you need.', blocks: blank },
+  { ...base, builtIn: false, kind: 'management-plan', id: 'start-plan', name: 'Management plan', description: 'Purpose, site, consent requirements, the monitoring programme, trigger levels and responses, reporting, roles and review – the tables come from the project.', blocks: managementPlan },
+  { ...base, builtIn: false, kind: 'investigation', id: 'start-investigation', name: 'Site investigation report', description: 'Contaminated land: scope, site history, sampling, assessment criteria, results against the criteria, discussion, conclusions and limitations.', blocks: investigation },
+  { ...base, builtIn: false, kind: 'ecology', id: 'start-ecology', name: 'Ecology survey report', description: 'Methods, sites, survey results with graphs and photos, discussion and conclusions.', blocks: ecology },
 ];

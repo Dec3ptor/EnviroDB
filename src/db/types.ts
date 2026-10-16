@@ -338,7 +338,12 @@ export type ReportBlockType =
   | 'letter'
   | 'figures'
   | 'signatures'
-  | 'pageBreak';
+  | 'pageBreak'
+  | 'spacer'
+  | 'calc'
+  | 'programmeTable'
+  | 'tarpTable'
+  | 'reportingTable';
 
 export interface ReportBlockBase {
   id: string;
@@ -542,6 +547,48 @@ export interface PageBreakBlock extends ReportBlockBase {
   orientation?: 'portrait' | 'landscape';
 }
 
+/** Blank space between sections. */
+export interface SpacerBlock extends ReportBlockBase {
+  type: 'spacer';
+  heightMm: number;
+}
+
+/** A statistic worked out from the results, e.g. the median nitrate-N at DS1 over the period. */
+export type CalcStat = 'mean' | 'median' | 'min' | 'max' | 'p95' | 'count' | 'latest' | 'exceed';
+export interface CalcRow {
+  id: string;
+  /** e.g. "Median nitrate-N downstream"; blank: made from the statistic, parameter and sites. */
+  label?: string;
+  stat: CalcStat;
+  parameterId: ID;
+  /** Site codes (a template is for any project with these sites); none: every site. */
+  sites: string[];
+}
+/** Calculated values: a short table (or list) of statistics for the period. */
+export interface CalcBlock extends ReportBlockBase {
+  type: 'calc';
+  title?: string;
+  rows: CalcRow[];
+  show: 'table' | 'list';
+}
+
+/** The monitoring programme: each sampling schedule's sites, frequency and parameters. */
+export interface ProgrammeTableBlock extends ReportBlockBase {
+  type: 'programmeTable';
+  title?: string;
+}
+/** Trigger–action–response plan: each limit or trigger, the value, where it applies and the response required. */
+export interface TarpTableBlock extends ReportBlockBase {
+  type: 'tarpTable';
+  title?: string;
+  levels: 'limits' | 'triggers' | 'all';
+}
+/** Reporting requirements: each report, the period it covers, when it's due and who it goes to. */
+export interface ReportingTableBlock extends ReportBlockBase {
+  type: 'reportingTable';
+  title?: string;
+}
+
 export type ReportBlock =
   | TitleBlock
   | HeadingBlock
@@ -560,12 +607,22 @@ export type ReportBlock =
   | LetterBlock
   | FiguresBlock
   | SignaturesBlock
-  | PageBreakBlock;
+  | PageBreakBlock
+  | SpacerBlock
+  | CalcBlock
+  | ProgrammeTableBlock
+  | TarpTableBlock
+  | ReportingTableBlock;
+
+/** What a template is for: groups the templates and the starters offered. */
+export type ReportKind = 'monitoring' | 'letter' | 'management-plan' | 'investigation' | 'ecology' | 'other';
 
 export interface ReportTemplate {
   id: ID;
   name: string;
   description?: string;
+  /** What it's for (a monitoring report, a management plan …). */
+  kind?: ReportKind;
   orientation: 'portrait' | 'landscape';
   pageSize: 'A4' | 'A3';
   marginMm: number;

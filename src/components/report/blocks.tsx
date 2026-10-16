@@ -1,7 +1,10 @@
-import { Checkbox, Group, NumberInput, SegmentedControl, Select, Stack, Switch, Text, TextInput, Textarea } from '@mantine/core';
+import { ActionIcon, Button, Checkbox, Group, NumberInput, SegmentedControl, Select, Slider, Stack, Switch, TagsInput, Text, TextInput, Textarea } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { db } from '../../db/db';
-import type { ReportBlock, ReportBlockType } from '../../db/types';
+import type { CalcStat, ReportBlock, ReportBlockType } from '../../db/types';
+import { CALC_STATS } from '../../reports/calc';
+import { InsertCalc } from './InsertCalc';
 import { GuidelinePicker, ParamPicker } from '../common';
 import { uid } from '../../lib/ids';
 import { SignaturesForm } from './Signatures';
@@ -28,7 +31,20 @@ export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string
   samplingTable: { label: 'Sampling table', help: 'Samples collected per site vs the required programme' },
   signatures: { label: 'Signatures', help: 'Sign-off with names and signatures – paste a signature from an email or Word, or upload one' },
   pageBreak: { label: 'New page', help: 'Start a new page, and optionally switch to portrait or landscape from here' },
+  spacer: { label: 'Space', help: 'Blank space between sections, as tall as you like' },
+  calc: { label: 'Calculations', help: 'Values worked out from the results – the median nitrate-N downstream, the highest TSS, how many results were over a limit' },
+  programmeTable: { label: 'Monitoring programme', help: 'Each sampling schedule: its sites, how often and what for' },
+  tarpTable: { label: 'Trigger–action–response plan', help: 'Each consent limit and trigger level, when it is exceeded and the response required' },
+  reportingTable: { label: 'Reporting requirements', help: 'Each report: how often, when it is next due and who it goes to' },
 };
+
+/** The sections offered to add, grouped as in the palette. */
+export const BLOCK_GROUPS: Array<{ label: string; types: ReportBlockType[] }> = [
+  { label: 'Text and layout', types: ['heading', 'text', 'spacer', 'pageBreak', 'title', 'letter', 'signatures'] },
+  { label: 'From the results', types: ['summary', 'calc', 'resultsTable', 'roundTable', 'roundReview', 'statsTable', 'chart', 'figures'] },
+  { label: 'Compliance', types: ['complianceTable', 'exceedances', 'triggerTable'] },
+  { label: 'Programme and plans', types: ['programmeTable', 'tarpTable', 'reportingTable', 'siteTable', 'samplingTable'] },
+];
 
 /** Sections that make tables (refer to them with {{table:name}}) or figures ({{fig:name}}). */
 const REF_KIND: Partial<Record<ReportBlockType, 'table' | 'fig'>> = {
@@ -41,6 +57,10 @@ const REF_KIND: Partial<Record<ReportBlockType, 'table' | 'fig'>> = {
   statsTable: 'table',
   siteTable: 'table',
   samplingTable: 'table',
+  calc: 'table',
+  programmeTable: 'table',
+  tarpTable: 'table',
+  reportingTable: 'table',
   chart: 'fig',
   figures: 'fig',
 };
@@ -78,6 +98,15 @@ export function newBlock(type: ReportBlockType): ReportBlock {
       return { id, type, date: '{{today}}', to: '{{project.recipient}}', subject: '{{project.name}} – consent {{project.consents}}', reference: 'Ref: {{project.code}}', salutation: '{{project.salutation}}' };
     case 'figures':
       return { id, type, images: [], perRow: 2, heightMm: 0, numbering: 'each', label: 'Figure', caption: '', border: false };
+    case 'spacer':
+      return { id, type, heightMm: 10 };
+    case 'calc':
+      return { id, type, title: '', rows: [], show: 'table' };
+    case 'tarpTable':
+      return { id, type, title: '', levels: 'all' };
+    case 'programmeTable':
+    case 'reportingTable':
+      return { id, type, title: '' };
     default:
       return { id, type } as ReportBlock;
   }
@@ -109,6 +138,12 @@ export function blockSummary(b: ReportBlock): string {
       return b.signatories.map((s) => `${s.role || 'Signed'}: ${s.self ? 'you' : s.name || '(no name yet)'}`).join(' · ') || 'Nobody yet';
     case 'pageBreak':
       return b.orientation ? `New page – ${b.orientation} from here on` : 'New page';
+    case 'spacer':
+      return `${b.heightMm} mm`;
+    case 'calc':
+      return b.rows.length ? `${b.rows.length} value${b.rows.length === 1 ? '' : 's'}${b.show === 'list' ? ' as a list' : ' in a table'}` : 'No values chosen yet';
+    case 'tarpTable':
+      return b.levels === 'limits' ? 'Consent limits' : b.levels === 'triggers' ? 'Trigger levels' : 'Limits and trigger levels, with their responses';
     default:
       return BLOCK_LABELS[b.type].help;
   }
@@ -183,7 +218,8 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
     case 'text':
       return (
         <Stack gap="xs">
-          <Textarea label="Text" autosize minRows={3} maxRows={14} value={block.text} onChange={(e) => set({ text: e.currentTarget.value })} description="Blank line = new paragraph · “- ” = bullet · **bold** · *italic* · {{placeholders}}" />
+          <Textarea id={`text-${block.id}`} label="Text" autosize minRows={3} maxRows={14} value={block.text} onChange={(e) => set({ text: e.currentTarget.value })} description="Blank line = new paragraph · “- ” = bullet · **bold** · *italic* · {{placeholders}}" />
+          <InsertCalc target={`text-${block.id}`} value={block.text} onChange={(text) => set({ text })} />
           <Switch label="Fill in each time a report is generated (this text is the starting point)" checked={!!block.prompt} onChange={(e) => set({ prompt: e.currentTarget.checked })} />
         </Stack>
       );
@@ -445,6 +481,51 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
       );
     case 'signatures':
       return <SignaturesForm block={block} onChange={onChange} />;
+    case 'spacer':
+      return (
+        <Stack gap={4}>
+          <Text size="sm" fw={500}>
+            Height: {block.heightMm} mm
+          </Text>
+          <Slider min={2} max={120} step={1} value={block.heightMm} onChange={(v) => set({ heightMm: v })} marks={[{ value: 10, label: '1 cm' }, { value: 50, label: '5 cm' }, { value: 100, label: '10 cm' }]} mb="md" />
+        </Stack>
+      );
+    case 'calc':
+      return <CalcForm block={block} onChange={(b) => onChange(b)} />;
+    case 'programmeTable':
+    case 'reportingTable':
+      return (
+        <Stack gap="xs">
+          <TextInput label="Table title (optional)" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} placeholder={block.type === 'programmeTable' ? 'Monitoring programme' : 'Reporting requirements'} />
+          <Text size="xs" c="dimmed">
+            {block.type === 'programmeTable' ? 'From the project’s sampling schedules (Schedule tab): sites, frequency, parameters and notes.' : 'From the project’s reporting obligations (Schedule tab): frequency, when the next one is due and who it goes to.'}
+          </Text>
+        </Stack>
+      );
+    case 'tarpTable':
+      return (
+        <Stack gap="xs">
+          <TextInput label="Table title (optional)" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} placeholder="Trigger levels, limits and responses" />
+          <div>
+            <Text size="sm" fw={500} mb={4}>
+              Show
+            </Text>
+            <SegmentedControl
+              size="xs"
+              value={block.levels}
+              onChange={(v) => set({ levels: v as typeof block.levels })}
+              data={[
+                { value: 'all', label: 'Limits & triggers' },
+                { value: 'limits', label: 'Limits' },
+                { value: 'triggers', label: 'Triggers' },
+              ]}
+            />
+          </div>
+          <Text size="xs" c="dimmed">
+            From the project’s consent rules (Setup): the response is each rule’s “action if exceeded”.
+          </Text>
+        </Stack>
+      );
     case 'pageBreak':
       return (
         <div>
@@ -469,4 +550,46 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
         </Text>
       );
   }
+}
+
+/** A Calculations section: each value's statistic, parameter and sites. */
+function CalcForm({ block, onChange }: { block: Extract<ReportBlock, { type: 'calc' }>; onChange: (b: ReportBlock) => void }) {
+  const params = useLiveQuery(() => db.parameters.toArray(), []) ?? [];
+  const codes = useLiveQuery(async () => [...new Set((await db.sites.toArray()).map((x) => x.code))].sort(), []) ?? [];
+  const paramData = [...params].sort((a, b) => a.name.localeCompare(b.name)).map((p) => ({ value: p.id, label: p.name }));
+  const rows = block.rows;
+  const setRow = (i: number, patch: Partial<(typeof rows)[number]>) => onChange({ ...block, rows: rows.map((r, k) => (k === i ? { ...r, ...patch } : r)) });
+  return (
+    <Stack gap="xs">
+      <TextInput label="Title (optional)" value={block.title ?? ''} onChange={(e) => onChange({ ...block, title: e.currentTarget.value })} placeholder="Calculated values, {{period.label}}" />
+      {rows.map((r, i) => (
+        <Group key={r.id} gap={6} align="flex-end" wrap="wrap">
+          <Select size="xs" label={i === 0 ? 'Value' : undefined} w={170} data={Object.entries(CALC_STATS).map(([value, label]) => ({ value, label }))} value={r.stat} onChange={(v) => v && setRow(i, { stat: v as CalcStat })} allowDeselect={false} />
+          <Select size="xs" label={i === 0 ? 'Of' : undefined} w={190} data={paramData} value={r.parameterId || null} onChange={(v) => v && setRow(i, { parameterId: v })} searchable placeholder="Parameter" />
+          <TagsInput size="xs" label={i === 0 ? 'At sites (codes)' : undefined} w={170} data={codes} value={r.sites} onChange={(v) => setRow(i, { sites: v })} placeholder={r.sites.length ? '' : 'All sites'} />
+          <TextInput size="xs" label={i === 0 ? 'Label (optional)' : undefined} style={{ flex: 1, minWidth: 140 }} value={r.label ?? ''} onChange={(e) => setRow(i, { label: e.currentTarget.value || undefined })} placeholder="Made from the value, parameter and sites" />
+          <ActionIcon variant="subtle" color="red" mb={2} onClick={() => onChange({ ...block, rows: rows.filter((_, k) => k !== i) })} aria-label="Remove this value">
+            <IconTrash size={14} />
+          </ActionIcon>
+        </Group>
+      ))}
+      <Group gap="sm">
+        <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={() => onChange({ ...block, rows: [...rows, { id: uid('c'), stat: 'median', parameterId: '', sites: [] }] })}>
+          Add a value
+        </Button>
+        <SegmentedControl
+          size="xs"
+          value={block.show}
+          onChange={(v) => onChange({ ...block, show: v as 'table' | 'list' })}
+          data={[
+            { value: 'table', label: 'As a table' },
+            { value: 'list', label: 'As a list' },
+          ]}
+        />
+      </Group>
+      <Text size="xs" c="dimmed">
+        Worked out from each report’s period. To put a value in a sentence instead, use “Insert a calculation” in a Text section.
+      </Text>
+    </Stack>
+  );
 }

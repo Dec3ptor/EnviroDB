@@ -48,6 +48,28 @@ there as they work and show up for the others within seconds.
   statistics, graphs, site and sampling tables, and your own text with `{{placeholders}}`).
   Reports export to **PDF** and **Word**. The preview shows the actual PDF pages, portrait
   and landscape, so what you see is what you download.
+- **Templates for every kind of report – your own, easily.** *Report templates* groups them: monitoring
+  reports, letters, management plans, site investigations, ecology and others. *New template* starts one
+  from a blank page, a starter (a **management plan** with the monitoring programme, trigger–action–response
+  plan and reporting tables filled in from the project; a **site investigation report** for contaminated
+  land; an **ecology survey report**), or **from a document of yours** – a Word report, plan or letter
+  you've written before, or a PDF of one: its headings become the template's, its text the starting text
+  for each report, and the tables, graphs and summaries EnviroDB makes from the data go under the headings
+  that call for them (you check and change which). Built-in templates you don't use can be deleted (for
+  everyone in the workspace) and put back with *Restore built-ins*.
+- **Build templates by dragging sections in.** The template editor has a palette of sections – text and
+  layout, sections from the results, compliance, programme and plans – that stays in view: drag one into
+  place, or click it to add it after the section selected. Among them: **Space** (blank space as tall as
+  you like), **Calculations** (a table or list of values worked out from each report's period – the
+  median nitrate-N at DS1, the highest TSS, how many results were over a limit), **Monitoring
+  programme**, **Trigger–action–response plan** and **Reporting requirements** (from the project's
+  schedules, consent rules and reporting obligations). *Insert a calculation* puts a value into text –
+  `{{calc:median:no3-n:DS1}}` – so a sentence reads "the median nitrate-N at DS1 was 0.82 mg/L".
+- **An automatic summary, and a draft to edit.** The *Automatic summary* section describes the sampling,
+  the monitoring programme, compliance and guideline exceedances, and now compares the period with the
+  one before (samples, limits exceeded, and whether the key parameters' medians were higher, lower or
+  similar). On the Reports tab, *Draft from the results* writes the same sentences into a commentary
+  box, for you to edit.
 - **Report the latest monitoring round.** The *Monitoring round summary* template is titled by the
   round's month ("Monitoring results – September 2026") and opens on the latest round; earlier rounds
   are in the period list. Each site's result sits beside its previous result, the change, the earlier

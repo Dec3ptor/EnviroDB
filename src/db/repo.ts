@@ -1,6 +1,7 @@
 import type { Table } from 'dexie';
-import { db } from './db';
+import { db, getSettings, saveSettings } from './db';
 import { same } from '../sync/model';
+import { BUILT_IN_TEMPLATES } from '../data/templates';
 import type {
   CalendarMark,
   CalendarRow,
@@ -417,8 +418,26 @@ export async function duplicateTemplate(t: ReportTemplate, name?: string): Promi
   await db.templates.put(copy);
   return copy;
 }
+/** Deletes a template – a built-in one too: it comes off everyone's list until put back (restoreBuiltInTemplates). */
 export async function deleteTemplate(id: string) {
   await db.templates.delete(id);
+  // this person's default, if it was this one
+  if ((await getSettings()).defaultTemplateId === id) await saveSettings({ defaultTemplateId: undefined });
+}
+
+/** Puts the built-in templates taken off the list back on it, for everyone. */
+export async function restoreBuiltInTemplates(): Promise<number> {
+  const have = new Set((await db.templates.toArray()).map((t) => t.id));
+  const missing = BUILT_IN_TEMPLATES.filter((t) => !have.has(t.id));
+  if (missing.length) await db.templates.bulkPut(missing);
+  return missing.length;
+}
+
+/** A new template of your own from a starter (or any template): new ids throughout. */
+export async function templateFrom(t: ReportTemplate, name = t.name): Promise<ReportTemplate> {
+  const copy: ReportTemplate = { ...structuredClone(t), id: uid('tpl'), name, builtIn: false, blocks: t.blocks.map((b) => ({ ...structuredClone(b), id: uid('b') })), updatedAt: nowIso() };
+  await db.templates.put(copy);
+  return copy;
 }
 
 // ------------------------------------------------------------ imports / data

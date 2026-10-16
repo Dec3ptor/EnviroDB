@@ -1,11 +1,11 @@
 import { useMemo, useState, type CSSProperties } from 'react';
-import { ActionIcon, Badge, Button, Card, Group, Menu, Stack, Text } from '@mantine/core';
-import { DndContext, KeyboardSensor, MeasuringStrategy, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { ActionIcon, Badge, Button, Card, Collapse, Group, Menu, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core';
+import { DndContext, DragOverlay, KeyboardSensor, MeasuringStrategy, PointerSensor, closestCenter, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragMoveEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { IconArrowDown, IconArrowUp, IconCopy, IconDots, IconPageBreak, IconGripVertical, IconLayoutRows, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowUp, IconChevronDown, IconChevronRight, IconCopy, IconDots, IconPageBreak, IconGripVertical, IconLayoutRows, IconPlus, IconTrash } from '@tabler/icons-react';
 import type { ReportBlock, ReportBlockType } from '../../db/types';
-import { BLOCK_LABELS, BlockForm, blockSummary, newBlock } from './blocks';
+import { BLOCK_GROUPS, BLOCK_LABELS, BlockForm, blockSummary, newBlock } from './blocks';
 import { uid } from '../../lib/ids';
 import { insertAt, moveSection, sectionRange, setPages, stepSection, type Orientation } from './sections';
 import { pageOrientations } from '../../reports/build';
@@ -27,11 +27,13 @@ interface RowProps {
   carrying?: number;
   /** Indent: a heading by its level, anything else under the heading it belongs to. */
   depth: number;
+  /** A section from the palette will drop before (or after) this one. */
+  dropMark?: 'before' | 'after';
   onToggle: () => void;
   onBlocks: (b: ReportBlock[]) => void;
 }
 
-function Row({ block, index, blocks, orient, base, open, readOnly, carrying, depth, onToggle, onBlocks }: RowProps) {
+function Row({ block, index, blocks, orient, base, open, readOnly, carrying, depth, dropMark, onToggle, onBlocks }: RowProps) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: block.id, disabled: readOnly });
   const style: CSSProperties = { transform: CSS.Transform.toString(transform), transition, position: 'relative', zIndex: isDragging ? 5 : undefined, opacity: isDragging ? 0.92 : 1 };
   const isBreak = block.type === 'pageBreak';
@@ -47,7 +49,7 @@ function Row({ block, index, blocks, orient, base, open, readOnly, carrying, dep
   const down = moved(1);
   const copy = () => blocks.slice(a, z).map((b) => ({ ...structuredClone(b), id: uid('b') }));
   return (
-    <div ref={setNodeRef} style={{ ...style, marginLeft: open || isDragging ? 0 : depth * 14 }}>
+    <div ref={setNodeRef} data-sec={block.id} style={{ ...style, marginLeft: open || isDragging ? 0 : depth * 14 }} className={dropMark ? `sec-drop-${dropMark}` : undefined}>
       <Card
         padding={isBreak || isSection ? 6 : 'xs'}
         py={isBreak || isSection ? 6 : 7}
@@ -160,11 +162,31 @@ function Row({ block, index, blocks, orient, base, open, readOnly, carrying, dep
   );
 }
 
+/** A section type in the palette: dragged into the list, or clicked to add. */
+function PaletteItem({ type, onAdd, disabled }: { type: ReportBlockType; onAdd: () => void; disabled?: boolean }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `new:${type}`, disabled });
+  return (
+    <Tooltip label={`${BLOCK_LABELS[type].help}. Drag it into place, or click to add it.`} multiline maw={300} openDelay={400}>
+      <UnstyledButton ref={setNodeRef} {...attributes} {...listeners} className="sec-chip" data-dragging={isDragging || undefined} onClick={onAdd} disabled={disabled} aria-label={`Add ${BLOCK_LABELS[type].label}`}>
+        <IconGripVertical size={12} />
+        {BLOCK_LABELS[type].label}
+      </UnstyledButton>
+    </Tooltip>
+  );
+}
+
+/** Where a section dropped below the last one goes. */
+function EndZone({ active }: { active: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'end' });
+  return <div ref={setNodeRef} className={`sec-end${active ? ' on' : ''}${isOver ? ' over' : ''}`}>{active ? 'Drop here to add it at the end' : ''}</div>;
+}
+
 /**
  * The sections of a report template: drag (or use the arrows) to reorder – a heading takes its section with it –
  * tap to edit, and use the ⋯ menu to duplicate, remove, start a new page or put a section on landscape / portrait pages.
+ * New sections come from the palette: drag one into place, or click it to add it after the section selected.
  */
-export function SectionsEditor({ blocks, onChange, orientation, open, onOpen, readOnly }: { blocks: ReportBlock[]; onChange: (b: ReportBlock[]) => void; orientation: Orientation; open: string | null; onOpen: (id: string | null) => void; readOnly?: boolean }) {
+export function SectionsEditor({ blocks, onChange, orientation, open, onOpen, readOnly, paletteOpen = true }: { blocks: ReportBlock[]; onChange: (b: ReportBlock[]) => void; orientation: Orientation; open: string | null; onOpen: (id: string | null) => void; readOnly?: boolean; paletteOpen?: boolean }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const orient = useMemo(() => pageOrientations(blocks, orientation), [blocks, orientation]);
   const depths = useMemo(() => {
@@ -179,26 +201,52 @@ export function SectionsEditor({ blocks, onChange, orientation, open, onOpen, re
     });
   }, [blocks]);
   const [dragging, setDragging] = useState<string | null>(null);
+  // a new section from the palette: where it will go (an index into the sections)
+  const [dropAt, setDropAt] = useState<number | null>(null);
+  const [showPalette, setShowPalette] = useState(paletteOpen);
+  const fromPalette = dragging?.startsWith('new:') ? (dragging.slice(4) as ReportBlockType) : null;
   const carried = useMemo(() => {
     const i = blocks.findIndex((b) => b.id === dragging);
     if (i < 0) return new Set<string>();
     const [a, z] = sectionRange(blocks, i);
     return new Set(blocks.slice(a + 1, z).map((b) => b.id));
   }, [blocks, dragging]);
+  const insert = (type: ReportBlockType, at: number) => {
+    const b = newBlock(type);
+    const list = [...blocks];
+    list.splice(Math.max(0, Math.min(list.length, at)), 0, b);
+    onChange(list);
+    onOpen(b.id);
+    // the new section in view, open to set it up
+    setTimeout(() => document.querySelector(`[data-sec="${b.id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
+  };
+  const add = (type: ReportBlockType) => {
+    const idx = open ? blocks.findIndex((x) => x.id === open) : -1;
+    insert(type, idx >= 0 ? idx + 1 : blocks.length);
+  };
+  // dropped from the palette: before the section it is over, or after it when over its lower half
+  const targetOf = (e: DragMoveEvent | DragEndEvent): number | null => {
+    if (!e.over) return null;
+    if (e.over.id === 'end') return blocks.length;
+    const i = blocks.findIndex((b) => b.id === e.over!.id);
+    if (i < 0) return null;
+    const r = e.active.rect.current.translated;
+    const after = !!r && r.top + r.height / 2 > e.over.rect.top + e.over.rect.height / 2;
+    return after ? i + 1 : i;
+  };
   const onDragEnd = (e: DragEndEvent) => {
     setDragging(null);
-    if (!e.over || e.active.id === e.over.id) return;
+    setDropAt(null);
+    const id = String(e.active.id);
+    if (id.startsWith('new:')) {
+      const at = targetOf(e);
+      if (at !== null) insert(id.slice(4) as ReportBlockType, at);
+      return;
+    }
+    if (!e.over || e.active.id === e.over.id || e.over.id === 'end') return;
     const from = blocks.findIndex((b) => b.id === e.active.id);
     const to = blocks.findIndex((b) => b.id === e.over!.id);
     if (from >= 0 && to >= 0) onChange(moveSection(blocks, from, to));
-  };
-  const add = (type: ReportBlockType) => {
-    const b = newBlock(type);
-    const idx = open ? blocks.findIndex((x) => x.id === open) : -1;
-    const list = [...blocks];
-    list.splice(idx >= 0 ? idx + 1 : list.length, 0, b);
-    onChange(list);
-    onOpen(b.id);
   };
   return (
     <Stack gap={4}>
@@ -208,34 +256,93 @@ export function SectionsEditor({ blocks, onChange, orientation, open, onOpen, re
         collisionDetection={closestCenter}
         measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
         onDragStart={(e) => setDragging(String(e.active.id))}
-        onDragCancel={() => setDragging(null)}
+        onDragMove={(e) => String(e.active.id).startsWith('new:') && setDropAt(targetOf(e))}
+        onDragCancel={() => {
+          setDragging(null);
+          setDropAt(null);
+        }}
         onDragEnd={onDragEnd}
       >
+        {!readOnly && (
+          <Card withBorder padding="xs" className="sec-palette">
+            <UnstyledButton onClick={() => setShowPalette((o) => !o)} className="sec-palette-head">
+              {showPalette ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+              <Text size="sm" fw={600}>
+                Add a section
+              </Text>
+              <Text size="xs" c="dimmed">
+                {showPalette ? `drag one into place, or click to add it ${open ? 'after the section selected' : 'at the end'}` : ''}
+              </Text>
+            </UnstyledButton>
+            <Collapse in={showPalette}>
+              <Stack gap={6} mt={6}>
+                {BLOCK_GROUPS.map((g) => (
+                  <div key={g.label}>
+                    <Text size="xs" c="dimmed" fw={600} mb={3}>
+                      {g.label}
+                    </Text>
+                    <Group gap={4}>
+                      {g.types.map((type) => (
+                        <PaletteItem key={type} type={type} onAdd={() => add(type)} />
+                      ))}
+                    </Group>
+                  </div>
+                ))}
+              </Stack>
+            </Collapse>
+          </Card>
+        )}
         <SortableContext items={blocks.filter((b) => !carried.has(b.id)).map((b) => b.id)} strategy={verticalListSortingStrategy}>
           {blocks.map((b, i) =>
             carried.has(b.id) ? null : (
-              <Row key={b.id} block={b} index={i} blocks={blocks} orient={orient[i]} base={orientation} open={open === b.id} readOnly={readOnly} carrying={b.id === dragging ? carried.size : 0} depth={depths[i]} onToggle={() => onOpen(open === b.id ? null : b.id)} onBlocks={onChange} />
+              <Row
+                key={b.id}
+                block={b}
+                index={i}
+                blocks={blocks}
+                orient={orient[i]}
+                base={orientation}
+                open={open === b.id}
+                readOnly={readOnly}
+                carrying={b.id === dragging ? carried.size : 0}
+                depth={depths[i]}
+                dropMark={fromPalette && dropAt !== null ? (dropAt === i ? 'before' : dropAt === i + 1 && i === blocks.length - 1 ? 'after' : undefined) : undefined}
+                onToggle={() => onOpen(open === b.id ? null : b.id)}
+                onBlocks={onChange}
+              />
             ),
           )}
         </SortableContext>
+        {!readOnly && <EndZone active={!!fromPalette} />}
+        <DragOverlay dropAnimation={null}>{fromPalette ? <div className="sec-chip sec-chip-drag">{BLOCK_LABELS[fromPalette].label}</div> : null}</DragOverlay>
       </DndContext>
+      {!readOnly && !blocks.length && (
+        <Text size="sm" c="dimmed">
+          No sections yet – drag one from the palette, or click one to add it.
+        </Text>
+      )}
       {!readOnly && (
         <Menu position="bottom-start" width={320} withinPortal>
           <Menu.Target>
-            <Button variant="light" size="xs" leftSection={<IconPlus size={14} />} style={{ alignSelf: 'flex-start' }}>
+            <Button variant="subtle" size="xs" leftSection={<IconPlus size={14} />} style={{ alignSelf: 'flex-start' }}>
               Add section{open ? ' below the selected one' : ''}
             </Button>
           </Menu.Target>
-          <Menu.Dropdown>
-            {(Object.keys(BLOCK_LABELS) as ReportBlockType[]).map((k) => (
-              <Menu.Item key={k} onClick={() => add(k)}>
-                <Text size="sm" fw={500}>
-                  {BLOCK_LABELS[k].label}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  {BLOCK_LABELS[k].help}
-                </Text>
-              </Menu.Item>
+          <Menu.Dropdown mah={420} style={{ overflowY: 'auto' }}>
+            {BLOCK_GROUPS.map((g) => (
+              <div key={g.label}>
+                <Menu.Label>{g.label}</Menu.Label>
+                {g.types.map((k) => (
+                  <Menu.Item key={k} onClick={() => add(k)}>
+                    <Text size="sm" fw={500}>
+                      {BLOCK_LABELS[k].label}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {BLOCK_LABELS[k].help}
+                    </Text>
+                  </Menu.Item>
+                ))}
+              </div>
             ))}
           </Menu.Dropdown>
         </Menu>
