@@ -1,0 +1,543 @@
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ActionIcon, Anchor, Badge, Button, Group, List, Paper, SegmentedControl, SimpleGrid, Stack, Table, Text, Textarea, ThemeIcon, Tooltip } from '@mantine/core';
+import { Link, useNavigate } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
+import {
+  IconAlertTriangle, IconBook2, IconCalendarDue, IconCalendarMonth, IconCheck, IconCircleCheck, IconCircleX, IconFileReport, IconFlask, IconFolders, IconListCheck, IconSettings, IconUpload,
+} from '@tabler/icons-react';
+import { db } from '../../db/db';
+import type { ProjectBundle } from '../../lib/analysis';
+import type { RuleEvaluation } from '../../lib/compliance';
+import type { Action } from '../../lib/actions';
+import { monthName, monthOf, STATE_INFO, type CalendarEntry, type ProjectCalendar } from '../../lib/calendar';
+import { addMonths, daysUntil, formatDate, relativeDays } from '../../lib/dates';
+import { saveCalendarMark, setSubmitted } from '../../db/repo';
+import { LevelBadge, StatTile } from '../../components/common';
+import { MonitoringCalendar } from '../../components/calendar/MonitoringCalendar';
+import { NewProjectButton } from '../Projects';
+
+// The dashboard's widgets: each is a card that can be placed, moved and resized on the dashboard.
+
+export interface Deadline {
+  date: string;
+  kind: 'report' | 'sampling';
+  title: string;
+  project: ProjectBundle;
+  status: string;
+  color: string;
+  link: string;
+}
+
+export interface DashboardData {
+  deadlines: Deadline[];
+  exceedances: Array<{ b: ProjectBundle; ev: RuleEvaluation; date: string; site: string; param: string; value: string; limit: string }>;
+  projectStats: Map<string, { evals: RuleEvaluation[]; exceeded: number; lastSample?: string; samples30: number }>;
+  samples30: number;
+}
+
+export interface WidgetCtx {
+  bundles: ProjectBundle[];
+  dash: DashboardData;
+  calendars: ProjectCalendar[] | null;
+  actions: Action[];
+  today: string;
+}
+
+export type WidgetId = 'stats' | 'actions' | 'thisMonth' | 'calendar' | 'deadlines' | 'reports' | 'exceedances' | 'projects' | 'imports' | 'notes' | 'links';
+
+export interface WidgetDef {
+  id: WidgetId;
+  title: string;
+  description: string;
+  /** Size in grid units (12 columns; rows of 40 px). */
+  size: { w: number; h: number; minW: number; minH: number };
+  render: (ctx: WidgetCtx) => ReactNode;
+  /** Shown beside the title. */
+  extra?: (ctx: WidgetCtx) => ReactNode;
+}
+
+// ------------------------------------------------------------ widgets
+
+function KeyFigures({ bundles, dash, today }: WidgetCtx) {
+  const navigate = useNavigate();
+  const active = bundles.filter((b) => b.project.status === 'active');
+  const overdue = dash.deadlines.filter((d) => d.kind === 'report' && d.date < today).length;
+  const reportsSoon = dash.deadlines.filter((d) => d.kind === 'report' && d.date >= today && daysUntil(d.date) <= 30).length;
+  const exceeded = Array.from(dash.projectStats.values()).reduce((s, p) => s + p.exceeded, 0);
+  return (
+    <SimpleGrid cols={{ base: 1, xs: 2, lg: 4 }}>
+      <StatTile label="Active projects" value={active.length} sub={`${bundles.length - active.length} archived`} icon={<IconFolders size={22} color="var(--mantine-color-dimmed)" />} onClick={() => navigate('/projects')} />
+      <StatTile label="Samples in the last 30 days" value={dash.samples30} icon={<IconFlask size={22} color="var(--mantine-color-dimmed)" />} />
+      <StatTile
+        label="Rules exceeded"
+        value={exceeded}
+        color={exceeded ? 'red' : undefined}
+        sub={`This reporting year · ${dash.exceedances.length} exceedance${dash.exceedances.length === 1 ? '' : 's'} in the last 90 days`}
+        icon={exceeded ? <IconCircleX size={22} color="var(--mantine-color-red-6)" /> : <IconCircleCheck size={22} color="var(--mantine-color-green-6)" />}
+      />
+      <StatTile
+        label="Reports due in 30 days"
+        value={reportsSoon}
+        color={overdue ? 'red' : undefined}
+        sub={overdue ? `${overdue} overdue` : 'None overdue'}
+        icon={<IconCalendarDue size={22} color={overdue ? 'var(--mantine-color-red-6)' : 'var(--mantine-color-dimmed)'} />}
+      />
+    </SimpleGrid>
+  );
+}
+
+const ACTION_ICON: Record<Action['kind'], typeof IconFlask> = { report: IconFileReport, results: IconListCheck, sampling: IconFlask, exceedance: IconAlertTriangle };
+const URGENCY_COLOR = ['red', 'orange', 'gray'] as const;
+
+function ActionsToTake({ actions }: WidgetCtx) {
+  const navigate = useNavigate();
+  if (!actions.length)
+    return (
+      <Group gap="xs">
+        <IconCircleCheck size={18} color="var(--mantine-color-green-6)" />
+        <Text size="sm" c="dimmed">
+          Nothing needs doing right now: no reports due in the next month, results waiting or exceedances to follow up.
+        </Text>
+      </Group>
+    );
+  return (
+    <Stack gap={6}>
+      {actions.slice(0, 40).map((a) => {
+        const Icon = ACTION_ICON[a.kind];
+        return (
+          <Paper key={a.id} withBorder p={8} radius="md" className="clickable-row" onClick={() => navigate(a.link)}>
+            <Group gap="sm" wrap="nowrap" align="flex-start">
+              <ThemeIcon size="md" variant="light" color={URGENCY_COLOR[a.urgency]}>
+                <Icon size={16} />
+              </ThemeIcon>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Text size="sm" fw={500} lineClamp={2}>
+                  {a.title}
+                </Text>
+                <Text size="xs" c="dimmed" lineClamp={2}>
+                  {a.projectName} · {a.detail}
+                </Text>
+              </div>
+              {a.calendar && (
+                <Tooltip label="Mark done – the results have been sent or reported">
+                  <ActionIcon
+                    variant="light"
+                    color="teal"
+                    aria-label="Mark done"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void saveCalendarMark({ ...a.calendar!, status: 'done' });
+                    }}
+                  >
+                    <IconCheck size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              )}
+            </Group>
+          </Paper>
+        );
+      })}
+    </Stack>
+  );
+}
+
+const STATE_COLOR = { done: 'teal', doing: 'yellow', cancelled: 'pink', todo: 'gray', overdue: 'red' } as const;
+
+function MonthList({ calendars, today }: WidgetCtx) {
+  const [which, setWhich] = useState<'this' | 'next'>('this');
+  const thisMonth = today.slice(0, 7);
+  const nextMonth = addMonths(`${thisMonth}-01`, 1).slice(0, 7);
+  const month = which === 'this' ? thisMonth : nextMonth;
+  const rows = useMemo(
+    () =>
+      (calendars ?? [])
+        .filter((c) => c.project.status === 'active')
+        .map((c) => ({ c, entries: c.entries.filter((e) => e.month === month && !e.window) }))
+        .filter((x) => x.entries.length),
+    [calendars, month],
+  );
+  const markDone = async (e: CalendarEntry) => {
+    if (e.item.kind === 'report') await setSubmitted(e.item.key, { periodStart: e.start, periodEnd: e.end }, today);
+    else await saveCalendarMark({ projectId: e.item.projectId, item: e.item.key, month: monthOf(e.start), status: 'done', note: e.mark?.note, symbol: e.mark?.symbol, label: e.mark?.label });
+  };
+  return (
+    <Stack gap="xs">
+      <SegmentedControl
+        size="xs"
+        value={which}
+        onChange={(v) => setWhich(v as 'this' | 'next')}
+        data={[
+          { value: 'this', label: monthName(thisMonth, true) },
+          { value: 'next', label: monthName(nextMonth, true) },
+        ]}
+        w="fit-content"
+      />
+      {!calendars ? null : !rows.length ? (
+        <Text size="sm" c="dimmed">
+          Nothing on the calendar for {monthName(month, true)}.
+        </Text>
+      ) : (
+        rows.map(({ c, entries }) => (
+          <div key={c.project.id}>
+            <Anchor component={Link} to={`/projects/${c.project.id}/schedule`} size="sm" fw={600} c="inherit">
+              {c.project.name}
+            </Anchor>
+            <Stack gap={4} mt={4}>
+              {entries.map((e) => (
+                <Group key={`${e.item.key}|${e.start}`} gap="xs" wrap="nowrap" justify="space-between">
+                  <Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
+                    <Text fw={700} w={20} ta="center">
+                      {e.item.symbol}
+                    </Text>
+                    <Text size="sm" truncate>
+                      {e.item.label}
+                      {e.count && e.count > 1 ? ` ×${e.count}` : ''}
+                    </Text>
+                  </Group>
+                  <Group gap={4} wrap="nowrap">
+                    <Badge size="sm" variant="light" color={STATE_COLOR[e.state]}>
+                      {STATE_INFO[e.state].label}
+                    </Badge>
+                    {e.state !== 'done' && e.state !== 'cancelled' && (
+                      <Tooltip label={e.item.kind === 'report' ? 'Mark submitted' : 'Mark done – results sent or reported'}>
+                        <ActionIcon size="sm" variant="subtle" color="teal" onClick={() => void markDone(e)} aria-label="Mark done">
+                          <IconCheck size={14} />
+                        </ActionIcon>
+                      </Tooltip>
+                    )}
+                  </Group>
+                </Group>
+              ))}
+            </Stack>
+          </div>
+        ))
+      )}
+    </Stack>
+  );
+}
+
+function Deadlines({ dash, today }: WidgetCtx) {
+  const navigate = useNavigate();
+  if (!dash.deadlines.length)
+    return (
+      <Text c="dimmed" size="sm">
+        Nothing due. Add reporting obligations and sampling schedules on each project's Schedule tab.
+      </Text>
+    );
+  return (
+    <Table highlightOnHover>
+      <Table.Tbody>
+        {dash.deadlines.slice(0, 20).map((d, i) => (
+          <Table.Tr key={i} className="clickable-row" onClick={() => navigate(d.link)}>
+            <Table.Td style={{ whiteSpace: 'nowrap' }} w={110}>
+              <Text size="sm" fw={500} className="tabular">
+                {formatDate(d.date)}
+              </Text>
+              <Text size="xs" c={d.date < today ? 'red' : 'dimmed'}>
+                {relativeDays(daysUntil(d.date))}
+              </Text>
+            </Table.Td>
+            <Table.Td>
+              <Group gap={8} wrap="nowrap" align="flex-start">
+                {d.kind === 'report' ? <IconFileReport size={16} style={{ flexShrink: 0, marginTop: 2 }} /> : <IconFlask size={16} style={{ flexShrink: 0, marginTop: 2 }} />}
+                <div>
+                  <Text size="sm">{d.title}</Text>
+                  <Text size="xs" c="dimmed">
+                    {d.project.project.name}
+                  </Text>
+                </div>
+              </Group>
+            </Table.Td>
+            <Table.Td w={120}>
+              <Badge color={d.color} style={{ overflow: 'visible' }} styles={{ label: { overflow: 'visible' } }}>
+                {d.status}
+              </Badge>
+            </Table.Td>
+          </Table.Tr>
+        ))}
+      </Table.Tbody>
+    </Table>
+  );
+}
+
+function ReportsDue({ calendars, today }: WidgetCtx) {
+  const list = (calendars ?? [])
+    .filter((c) => c.project.status === 'active')
+    .flatMap((c) => c.entries.filter((e) => e.item.kind === 'report').map((e) => ({ c, e })))
+    .filter(({ e }) => e.state !== 'done' && e.state !== 'cancelled')
+    .sort((a, b) => a.e.due.localeCompare(b.e.due))
+    .slice(0, 12);
+  if (!list.length)
+    return (
+      <Text size="sm" c="dimmed">
+        No reports outstanding this year.
+      </Text>
+    );
+  return (
+    <Stack gap={6}>
+      {list.map(({ c, e }) => (
+        <Group key={`${e.item.key}|${e.due}`} gap="sm" wrap="nowrap" justify="space-between">
+          <div style={{ minWidth: 0 }}>
+            <Anchor component={Link} to={`/projects/${c.project.id}/reports?obligation=${e.item.key}`} size="sm" fw={500} c="inherit" lineClamp={1}>
+              {e.item.label}
+            </Anchor>
+            <Text size="xs" c="dimmed" lineClamp={1}>
+              {c.project.name}
+            </Text>
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <Text size="sm" className="tabular">
+              {formatDate(e.due)}
+            </Text>
+            <Text size="xs" c={e.due < today ? 'red' : 'dimmed'}>
+              {e.state === 'doing' ? 'under way' : relativeDays(daysUntil(e.due))}
+            </Text>
+          </div>
+        </Group>
+      ))}
+    </Stack>
+  );
+}
+
+function Exceedances({ dash }: WidgetCtx) {
+  const navigate = useNavigate();
+  if (!dash.exceedances.length)
+    return (
+      <Group gap="xs">
+        <IconCircleCheck size={18} color="var(--mantine-color-green-6)" />
+        <Text size="sm" c="dimmed">
+          No consent limit or trigger exceedances in the last 90 days.
+        </Text>
+      </Group>
+    );
+  return (
+    <Table highlightOnHover>
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th>Date</Table.Th>
+          <Table.Th>Project / site</Table.Th>
+          <Table.Th>Parameter</Table.Th>
+          <Table.Th ta="right">Value</Table.Th>
+          <Table.Th>Rule</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>
+        {dash.exceedances.slice(0, 20).map((e, i) => (
+          <Table.Tr key={i} className="clickable-row" onClick={() => navigate(`/projects/${e.b.project.id}/compliance`)}>
+            <Table.Td className="tabular" style={{ whiteSpace: 'nowrap' }}>
+              {formatDate(e.date)}
+            </Table.Td>
+            <Table.Td>
+              <Text size="sm">{e.b.project.name}</Text>
+              <Text size="xs" c="dimmed">
+                {e.site}
+              </Text>
+            </Table.Td>
+            <Table.Td>{e.param}</Table.Td>
+            <Table.Td ta="right" className="tabular" fw={600} style={{ whiteSpace: 'nowrap' }}>
+              {e.value}
+            </Table.Td>
+            <Table.Td>
+              <Group gap={6} wrap="nowrap" align="flex-start">
+                <div style={{ flexShrink: 0 }}>
+                  <LevelBadge level={e.ev.rule.level} />
+                </div>
+                <Tooltip label={e.ev.description}>
+                  <Text size="sm" lineClamp={2}>
+                    {e.ev.rule.name}
+                  </Text>
+                </Tooltip>
+              </Group>
+            </Table.Td>
+          </Table.Tr>
+        ))}
+      </Table.Tbody>
+    </Table>
+  );
+}
+
+function Projects({ bundles, dash }: WidgetCtx) {
+  const navigate = useNavigate();
+  const active = bundles.filter((b) => b.project.status === 'active').sort((a, c) => (a.project.updatedAt < c.project.updatedAt ? 1 : -1));
+  return (
+    <Stack gap="sm">
+      {!active.length && (
+        <Text size="sm" c="dimmed">
+          No active projects.
+        </Text>
+      )}
+      {active.map((b) => {
+        const st = dash.projectStats.get(b.project.id);
+        const exceededRules = st?.evals.filter((e) => e.status === 'exceeded') ?? [];
+        return (
+          <Paper key={b.project.id} withBorder p="sm" radius="md" className="clickable-row" onClick={() => navigate(`/projects/${b.project.id}`)}>
+            <Group justify="space-between" wrap="nowrap" align="flex-start">
+              <div style={{ minWidth: 0 }}>
+                <Text fw={600} truncate>
+                  {b.project.name}
+                </Text>
+                <Text size="xs" c="dimmed" truncate>
+                  {[b.project.code, b.project.client, `${b.sites.length} sites`].filter(Boolean).join(' · ')}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Last sampled {st?.lastSample ? `${formatDate(st.lastSample)} (${relativeDays(daysUntil(st.lastSample.slice(0, 10)))})` : '—'}
+                </Text>
+              </div>
+              {b.rules.length ? (
+                exceededRules.length ? (
+                  <Tooltip label={<List size="xs">{exceededRules.map((e) => <List.Item key={e.rule.id}>{e.rule.name}</List.Item>)}</List>}>
+                    <Badge color="red" variant="filled" leftSection={<IconAlertTriangle size={12} />} style={{ flexShrink: 0 }}>
+                      {exceededRules.length} exceeded
+                    </Badge>
+                  </Tooltip>
+                ) : (
+                  <Badge color="green" leftSection={<IconCircleCheck size={12} />} style={{ flexShrink: 0 }}>
+                    Complying
+                  </Badge>
+                )
+              ) : (
+                <Badge color="gray" style={{ flexShrink: 0 }}>
+                  No rules
+                </Badge>
+              )}
+            </Group>
+          </Paper>
+        );
+      })}
+    </Stack>
+  );
+}
+
+function RecentImports({ bundles }: WidgetCtx) {
+  const imports = useLiveQuery(() => db.imports.orderBy('importedAt').reverse().limit(12).toArray(), []);
+  const names = new Map(bundles.map((b) => [b.project.id, b.project.name]));
+  if (!imports) return null;
+  if (!imports.length)
+    return (
+      <Text size="sm" c="dimmed">
+        Nothing imported yet.
+      </Text>
+    );
+  return (
+    <Stack gap={6}>
+      {imports.map((i) => (
+        <Group key={i.id} gap="sm" wrap="nowrap" justify="space-between">
+          <div style={{ minWidth: 0 }}>
+            <Anchor component={Link} to={`/projects/${i.projectId}/data`} size="sm" fw={500} c="inherit" lineClamp={1}>
+              {i.fileName}
+            </Anchor>
+            <Text size="xs" c="dimmed" lineClamp={1}>
+              {names.get(i.projectId) ?? 'Deleted project'} · {i.results} results from {i.samples} samples
+            </Text>
+          </div>
+          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+            {formatDate(i.importedAt)}
+          </Text>
+        </Group>
+      ))}
+    </Stack>
+  );
+}
+
+const NOTES_KEY = 'dashboardNotes';
+
+function MyNotes() {
+  const saved = useLiveQuery(() => db.meta.get(NOTES_KEY), []);
+  const [text, setText] = useState<string | null>(null);
+  const timer = useRef<number>();
+  useEffect(() => {
+    if (saved !== undefined && text === null) setText((saved?.value as string | undefined) ?? '');
+  }, [saved, text]);
+  return (
+    <Textarea
+      placeholder="Your own notes – only you see them"
+      autosize
+      minRows={3}
+      value={text ?? ''}
+      onChange={(e) => {
+        const v = e.currentTarget.value;
+        setText(v);
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => void db.meta.put({ key: NOTES_KEY, value: v }), 500);
+      }}
+      styles={{ input: { border: 0, padding: 0, background: 'transparent' } }}
+    />
+  );
+}
+
+function QuickLinks() {
+  const links: Array<[string, string, typeof IconUpload]> = [
+    ['/import', 'Import results', IconUpload],
+    ['/calendar', 'Monitoring calendar', IconCalendarMonth],
+    ['/guidelines', 'Guidelines', IconBook2],
+    ['/settings', 'Settings & backup', IconSettings],
+  ];
+  return (
+    <Group gap="xs">
+      <NewProjectButton variant="light" size="xs" />
+      {links.map(([to, label, Icon]) => (
+        <Button key={to} component={Link} to={to} variant="default" size="xs" leftSection={<Icon size={14} />}>
+          {label}
+        </Button>
+      ))}
+    </Group>
+  );
+}
+
+function CalendarWidget() {
+  return <MonitoringCalendar compact />;
+}
+
+export const WIDGETS: WidgetDef[] = [
+  { id: 'stats', title: 'Key figures', description: 'Projects, samples, rules exceeded and reports due', size: { w: 12, h: 4, minW: 3, minH: 4 }, render: (c) => <KeyFigures {...c} /> },
+  {
+    id: 'actions',
+    title: 'Actions to take',
+    description: 'Reports due, results to send or report, sampling still to do, exceedances to follow up',
+    size: { w: 7, h: 8, minW: 3, minH: 4 },
+    render: (c) => <ActionsToTake {...c} />,
+    extra: (c) => (c.actions.length ? <Badge variant="light" color={c.actions.some((a) => a.urgency === 0) ? 'red' : 'orange'}>{c.actions.length}</Badge> : null),
+  },
+  { id: 'thisMonth', title: 'This month’s monitoring', description: 'What’s on the calendar this month and next, to tick off', size: { w: 5, h: 8, minW: 3, minH: 4 }, render: (c) => <MonthList {...c} /> },
+  {
+    id: 'calendar',
+    title: 'Monitoring calendar',
+    description: 'The year of sampling rounds and reports, project by project',
+    size: { w: 12, h: 8, minW: 6, minH: 5 },
+    render: () => <CalendarWidget />,
+    extra: () => (
+      <Anchor component={Link} to="/calendar" size="xs">
+        Open
+      </Anchor>
+    ),
+  },
+  { id: 'deadlines', title: 'Upcoming deadlines', description: 'Reports and sampling rounds, soonest first', size: { w: 7, h: 8, minW: 4, minH: 4 }, render: (c) => <Deadlines {...c} /> },
+  { id: 'reports', title: 'Reports due', description: 'This year’s reports not yet submitted', size: { w: 5, h: 6, minW: 3, minH: 3 }, render: (c) => <ReportsDue {...c} /> },
+  { id: 'exceedances', title: 'Recent exceedances', description: 'Consent limits and triggers exceeded in the last 90 days', size: { w: 12, h: 7, minW: 5, minH: 4 }, render: (c) => <Exceedances {...c} /> },
+  { id: 'projects', title: 'Projects', description: 'Your active projects and whether they comply', size: { w: 5, h: 8, minW: 3, minH: 4 }, render: (c) => <Projects {...c} /> },
+  { id: 'imports', title: 'Recent imports', description: 'The latest lab files imported, by anyone', size: { w: 5, h: 5, minW: 3, minH: 3 }, render: (c) => <RecentImports {...c} /> },
+  { id: 'notes', title: 'My notes', description: 'A notepad only you see', size: { w: 4, h: 5, minW: 2, minH: 3 }, render: () => <MyNotes /> },
+  { id: 'links', title: 'Quick links', description: 'New project, import, calendar, guidelines, settings', size: { w: 5, h: 3, minW: 3, minH: 2 }, render: () => <QuickLinks /> },
+];
+
+export const WIDGET_MAP = new Map(WIDGETS.map((w) => [w.id, w]));
+
+export interface PlacedWidget {
+  i: WidgetId;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The dashboard to start from: what most people want to see first. */
+export const DEFAULT_DASHBOARD: PlacedWidget[] = [
+  { i: 'stats', x: 0, y: 0, w: 12, h: 4 },
+  { i: 'actions', x: 0, y: 4, w: 7, h: 9 },
+  { i: 'thisMonth', x: 7, y: 4, w: 5, h: 9 },
+  { i: 'calendar', x: 0, y: 13, w: 12, h: 8 },
+  { i: 'deadlines', x: 0, y: 21, w: 7, h: 8 },
+  { i: 'projects', x: 7, y: 21, w: 5, h: 8 },
+  { i: 'exceedances', x: 0, y: 29, w: 12, h: 7 },
+];
+

@@ -12,10 +12,13 @@ import { deleteObligation, deleteSchedule, newObligation, newSchedule, saveOblig
 import type { MonitoringSchedule, ReportObligation } from '../../db/types';
 import { db } from '../../db/db';
 import { downloadBlob, safeFileName } from '../../db/backup';
+import { MonitoringCalendar } from '../../components/calendar/MonitoringCalendar';
+import { CALENDAR_SYMBOLS, scheduleSymbols } from '../../lib/calendar';
 
 function ScheduleModal({ value, onClose }: { value: MonitoringSchedule; onClose: () => void }) {
-  const { sites, params } = useProject();
+  const { sites, params, schedules } = useProject();
   const [s, setS] = useState(value);
+  const defaultSymbol = scheduleSymbols([...schedules.filter((x) => x.id !== value.id), value]).get(value.id) ?? CALENDAR_SYMBOLS[0];
   const set = <K extends keyof MonitoringSchedule>(k: K, v: MonitoringSchedule[K]) => setS({ ...s, [k]: v });
   return (
     <Modal opened onClose={onClose} title="Sampling schedule" size="lg">
@@ -45,6 +48,23 @@ function ScheduleModal({ value, onClose }: { value: MonitoringSchedule; onClose:
           <DateField label="End (optional)" value={s.endDate} onChange={(v) => set('endDate', v)} clearable />
         </Group>
         <MultiSelect label="Required parameters (optional)" description="Only samples with at least one of these count. Leave empty to count any sample." data={paramOptions(params)} value={s.parameterIds} onChange={(v) => set('parameterIds', v)} searchable clearable />
+        <Group grow align="flex-start">
+          <Select
+            label="Mark on the calendar"
+            data={CALENDAR_SYMBOLS.map((x) => ({ value: x, label: x }))}
+            value={s.symbol ?? defaultSymbol}
+            onChange={(v) => set('symbol', v ?? undefined)}
+            allowDeselect={false}
+          />
+          <NumberInput
+            label="Sampling window (months)"
+            description="e.g. 3: sample any time in the three months from the start of each round"
+            min={1}
+            max={12}
+            value={s.window ?? 1}
+            onChange={(v) => set('window', Number(v) > 1 ? Number(v) : undefined)}
+          />
+        </Group>
         <Textarea label="Notes" autosize value={s.notes ?? ''} onChange={(e) => set('notes', e.currentTarget.value)} />
         <Switch label="Active" checked={s.active} onChange={(e) => set('active', e.currentTarget.checked)} />
         <Group justify="flex-end">
@@ -153,6 +173,15 @@ export function ScheduleTab() {
 
   return (
     <Stack gap="lg">
+      {(schedules.length > 0 || obligations.length > 0) && (
+        <Card>
+          <Title order={4}>This year</Title>
+          <Text size="sm" c="dimmed" mb="sm">
+            Sampling rounds and reports by month. Click a month to mark it done (once the results are sent or reported), doing or cancelled, or to add a note or an extra job.
+          </Text>
+          <MonitoringCalendar projectId={project.id} />
+        </Card>
+      )}
       <Group justify="flex-end">
         <Tooltip label="Download an .ics file of upcoming deadlines to add to Outlook (with 7-day reminders)">
           <Button variant="default" leftSection={<IconCalendarPlus size={16} />} onClick={exportIcs} disabled={!obligations.length && !schedules.length}>

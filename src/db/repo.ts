@@ -2,6 +2,7 @@ import type { Table } from 'dexie';
 import { db } from './db';
 import { same } from '../sync/model';
 import type {
+  CalendarMark,
   ExceedanceNote,
   GuidelineSet,
   MonitoringSchedule,
@@ -66,7 +67,8 @@ export async function touchProject(projectId: string): Promise<void> {
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
-  await db.transaction('rw', [db.projects, db.sites, db.samples, db.results, db.rules, db.notes, db.schedules, db.obligations, db.imports], async () => {
+  await db.transaction('rw', [db.projects, db.sites, db.samples, db.results, db.rules, db.notes, db.schedules, db.obligations, db.imports, db.calendarMarks], async () => {
+    await db.calendarMarks.where('projectId').equals(projectId).delete();
     await db.results.where('projectId').equals(projectId).delete();
     await db.samples.where('projectId').equals(projectId).delete();
     await db.sites.where('projectId').equals(projectId).delete();
@@ -226,7 +228,10 @@ export async function saveSchedule(s: MonitoringSchedule, before?: MonitoringSch
   await saveEdited(db.schedules, s, before);
 }
 export async function deleteSchedule(id: string) {
-  await db.schedules.delete(id);
+  await db.transaction('rw', db.schedules, db.calendarMarks, async () => {
+    await db.schedules.delete(id);
+    await db.calendarMarks.where('item').equals(id).delete();
+  });
 }
 
 export function newObligation(projectId: string, patch: Partial<ReportObligation> = {}): ReportObligation {
@@ -259,7 +264,30 @@ export async function setSubmitted(obligationId: string, period: { periodStart: 
   });
 }
 export async function deleteObligation(id: string) {
-  await db.obligations.delete(id);
+  await db.transaction('rw', db.obligations, db.calendarMarks, async () => {
+    await db.obligations.delete(id);
+    await db.calendarMarks.where('item').equals(id).delete();
+  });
+}
+
+// ------------------------------------------------------------ the monitoring calendar
+
+/** Sets the status and note of an item's month on the monitoring calendar (none of either clears it). */
+export async function saveCalendarMark(m: Omit<CalendarMark, 'id' | 'updatedAt'>): Promise<void> {
+  const id = `${m.item}|${m.month}`;
+  const clear = !m.status && !m.note?.trim() && !m.item.startsWith('x-');
+  if (clear) await db.calendarMarks.delete(id);
+  else await db.calendarMarks.put({ ...m, note: m.note?.trim() || undefined, id, updatedAt: nowIso() });
+}
+
+/** An extra job in a month of the calendar, e.g. "# metals suite". */
+export async function addCalendarExtra(projectId: string, month: string, symbol: string, label: string): Promise<void> {
+  const item = `x-${uid().slice(0, 8)}`;
+  await db.calendarMarks.put({ id: `${item}|${month}`, projectId, item, month, symbol, label, updatedAt: nowIso() });
+}
+
+export async function deleteCalendarMark(id: string): Promise<void> {
+  await db.calendarMarks.delete(id);
 }
 
 // ------------------------------------------------------------ guideline sets & templates

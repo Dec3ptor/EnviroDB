@@ -17,6 +17,7 @@ import { GuidelinesPage } from './pages/Guidelines';
 import { TemplatesPage, TemplateEditorPage } from './pages/Templates';
 import { SettingsPage } from './pages/Settings';
 import { ParametersPage } from './pages/Parameters';
+import { CalendarPage } from './pages/Calendar';
 
 export function App() {
   const [ready, setReady] = useState(false);
@@ -54,6 +55,7 @@ export function App() {
                   <Route element={<Shell />}>
                     <Route index element={<DashboardPage />} />
                     <Route path="projects" element={<ProjectsPage />} />
+                    <Route path="calendar" element={<CalendarPage />} />
                     <Route path="projects/:projectId/*" element={<ProjectLayout />} />
                     <Route path="import" element={<ImportPage />} />
                     <Route path="guidelines" element={<GuidelinesPage />} />

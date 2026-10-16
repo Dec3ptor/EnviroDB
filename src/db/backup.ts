@@ -124,7 +124,7 @@ export async function restoreWorkspace(obj: unknown, mode: 'replace' | 'merge'):
 export async function exportProjectPackage(projectId: string): Promise<WorkspaceBackup> {
   const project = await db.projects.get(projectId);
   if (!project) throw new Error('Project not found');
-  const [sites, samples, results, rules, notes, schedules, obligations, imports] = await Promise.all([
+  const [sites, samples, results, rules, notes, schedules, obligations, imports, calendarMarks] = await Promise.all([
     db.sites.where('projectId').equals(projectId).toArray(),
     db.samples.where('projectId').equals(projectId).toArray(),
     db.results.where('projectId').equals(projectId).toArray(),
@@ -133,6 +133,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     db.schedules.where('projectId').equals(projectId).toArray(),
     db.obligations.where('projectId').equals(projectId).toArray(),
     db.imports.where('projectId').equals(projectId).toArray(),
+    db.calendarMarks.where('projectId').equals(projectId).toArray(),
   ]);
   const usedParams = new Set(results.map((r) => r.parameterId));
   rules.forEach((r) => r.parameterId && usedParams.add(r.parameterId));
@@ -146,7 +147,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     kind: 'project',
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
-    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates },
+    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarMarks },
   };
 }
 
@@ -202,6 +203,10 @@ export async function importProjectPackage(obj: unknown): Promise<string> {
     });
     await put('schedules', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId, siteIds: ((r.siteIds as string[]) ?? []).map((s) => remap(s)!) }));
     await put('obligations', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId }));
+    await put('calendarMarks', (r) => {
+      const item = remap(r.item as string)!;
+      return { ...r, id: `${item}|${r.month}`, projectId: newProjectId, item };
+    });
   });
   return newProjectId;
 }

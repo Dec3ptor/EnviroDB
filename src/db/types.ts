@@ -32,6 +32,12 @@ export interface Project {
   recipient?: string;
   /** The greeting in letters, e.g. "Dear David," ({{project.salutation}}). */
   salutation?: string;
+  /** Purchase order number, for the monitoring calendar. */
+  purchaseOrder?: string;
+  /** The project's folder: a link or a path to copy (e.g. a SharePoint link or G:\\CLIENTS\\…). */
+  folder?: string;
+  /** Notes for the monitoring calendar, e.g. who results go to. */
+  calendarNotes?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -209,6 +215,33 @@ export interface MonitoringSchedule {
   endDate?: string;
   notes?: string;
   active: boolean;
+  /** Its mark on the monitoring calendar (●, ▲ …); by default one of CALENDAR_SYMBOLS in turn. */
+  symbol?: string;
+  /** Months the sampling can be done in, from the start of each round (default 1). */
+  window?: number;
+}
+
+/** Where a sampling round, report or extra job stands in a month of the monitoring calendar. */
+export type CalendarStatus = 'done' | 'doing' | 'cancelled';
+
+/**
+ * A month of the monitoring calendar: the status of a sampling round or report due then (marked by the person
+ * doing it), or an extra job for that month (e.g. "# metals suite", "% survey").
+ */
+export interface CalendarMark {
+  /** `${item}|${month}` */
+  id: string;
+  projectId: ID;
+  /** The schedule or reporting obligation it's for, or `x-…` for an extra job. */
+  item: string;
+  /** YYYY-MM */
+  month: string;
+  status?: CalendarStatus;
+  note?: string;
+  /** Extra jobs: their mark and what they are. */
+  symbol?: string;
+  label?: string;
+  updatedAt: string;
 }
 
 export interface ReportSubmission {

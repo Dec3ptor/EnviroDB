@@ -26,6 +26,10 @@ export function ProjectForm({ value, onChange, letters }: { value: Project; onCh
         <TextInput label="Regulator" value={value.regulator ?? ''} onChange={(e) => set('regulator', e.currentTarget.value)} placeholder="e.g. Waikato Regional Council" />
       </SimpleGrid>
       <TextInput label="Location" value={value.location ?? ''} onChange={(e) => set('location', e.currentTarget.value)} />
+      <SimpleGrid cols={{ base: 1, sm: 2 }}>
+        <TextInput label="Purchase order" value={value.purchaseOrder ?? ''} onChange={(e) => set('purchaseOrder', e.currentTarget.value || undefined)} />
+        <TextInput label="Project folder" description="A SharePoint link, or a path to copy (G:\CLIENTS\…)" value={value.folder ?? ''} onChange={(e) => set('folder', e.currentTarget.value || undefined)} />
+      </SimpleGrid>
       <Textarea label="Description" autosize minRows={2} value={value.description ?? ''} onChange={(e) => set('description', e.currentTarget.value)} />
       {letters && (
         <SimpleGrid cols={{ base: 1, sm: 2 }}>

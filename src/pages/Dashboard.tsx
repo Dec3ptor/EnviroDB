@@ -1,42 +1,30 @@
-import { useMemo, useState } from 'react';
-import { Badge, Button, Card, Grid, Group, SimpleGrid, Stack, Table, Text, ThemeIcon, Title, Anchor, Loader, Center, Tooltip, List, Paper } from '@mantine/core';
+import { useEffect, useMemo, useState } from 'react';
+import { ActionIcon, Alert, Button, Card, Group, Menu, SimpleGrid, Stack, Text, ThemeIcon, Title, Anchor, Loader, Center, Tooltip, Paper } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
+import ReactGridLayout, { useContainerWidth } from 'react-grid-layout';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import { notifications } from '@mantine/notifications';
-import {
-  IconAlertTriangle,
-  IconCalendarDue,
-  IconFlask,
-  IconFolders,
-  IconPlus,
-  IconUpload,
-  IconSparkles,
-  IconDatabaseImport,
-  IconCircleCheck,
-  IconCircleX,
-  IconFileReport,
-} from '@tabler/icons-react';
+import { IconArrowDown, IconArrowUp, IconCheck, IconDatabaseImport, IconFlask, IconGripVertical, IconLayoutDashboard, IconPlus, IconRestore, IconSparkles, IconUpload, IconX } from '@tabler/icons-react';
 import { useAllBundles } from '../hooks/useAllData';
 import { evaluateAll, type ProjectBundle } from '../lib/analysis';
-import { addDays, daysUntil, formatDate, relativeDays, reportingYear, todayStr } from '../lib/dates';
+import { addDays, daysUntil, formatDate, reportingYear, todayStr } from '../lib/dates';
 import { nextObligation, OBLIGATION_STATUS, scheduleStatus } from '../lib/schedule';
-import { EmptyState, LevelBadge, PageHeader, StatTile } from '../components/common';
+import { PageHeader } from '../components/common';
 import { createDemoProject } from '../db/demo';
 import { unitLabel } from '../lib/units';
 import { fmtNum } from '../lib/values';
 import { NewProjectButton } from './Projects';
+import { db } from '../db/db';
+import { calendarMonths } from '../lib/calendar';
+import { useCalendar } from '../hooks/useCalendarData';
+import { actionsToTake } from '../lib/actions';
+import { DEFAULT_DASHBOARD, WIDGET_MAP, WIDGETS, type DashboardData, type PlacedWidget, type WidgetCtx, type WidgetId } from './dashboard/widgets';
+import type { Deadline } from './dashboard/widgets';
 import type { RuleEvaluation } from '../lib/compliance';
 
-interface Deadline {
-  date: string;
-  kind: 'report' | 'sampling';
-  title: string;
-  project: ProjectBundle;
-  status: string;
-  color: string;
-  link: string;
-}
-
-function useDashboard(bundles: ProjectBundle[]) {
+function useDashboard(bundles: ProjectBundle[]): DashboardData {
   return useMemo(() => {
     const today = todayStr();
     const deadlines: Deadline[] = [];
@@ -165,19 +153,77 @@ function Welcome() {
 export function DashboardPage() {
   const { bundles, loading } = useAllBundles();
   const dash = useDashboard(bundles);
-  const navigate = useNavigate();
-  if (loading)
+  const today = todayStr();
+  const months = useMemo(() => calendarMonths(Number(today.slice(0, 4))), [today]);
+  const calendars = useCalendar(months);
+  const actions = useMemo(() => actionsToTake(bundles, calendars ?? [], today), [bundles, calendars, today]);
+  const saved = useLiveQuery(() => db.meta.get(DASHBOARD_KEY), [], null);
+  const [editing, setEditing] = useState(false);
+  const [narrow, setNarrow] = useState(false);
+  if (loading || saved === null)
     return (
       <Center h={300}>
         <Loader />
       </Center>
     );
-  const active = bundles.filter((b) => b.project.status === 'active');
   if (!bundles.length) return <Welcome />;
-  const today = todayStr();
-  const overdue = dash.deadlines.filter((d) => d.kind === 'report' && d.date < today).length;
-  const reportsSoon = dash.deadlines.filter((d) => d.kind === 'report' && d.date >= today && daysUntil(d.date) <= 30).length;
-  const exceeded = Array.from(dash.projectStats.values()).reduce((s, p) => s + p.exceeded, 0);
+  const active = bundles.filter((b) => b.project.status === 'active');
+  const placed = validLayout(saved?.value);
+  const save = (items: PlacedWidget[]) => db.meta.put({ key: DASHBOARD_KEY, value: { version: 1, items } });
+  const unused = WIDGETS.filter((w) => !placed.some((p) => p.i === w.id));
+  const ctx: WidgetCtx = { bundles, dash, calendars, actions, today };
+  const remove = (id: WidgetId) => save(placed.filter((p) => p.i !== id));
+  const add = (id: WidgetId) => {
+    const def = WIDGET_MAP.get(id)!;
+    const y = placed.reduce((m, p) => Math.max(m, p.y + p.h), 0);
+    save([...placed, { i: id, x: 0, y, w: def.size.w, h: def.size.h }]);
+  };
+  const move = (id: WidgetId, dir: -1 | 1) => {
+    const order = [...placed].sort(byPosition);
+    const i = order.findIndex((p) => p.i === id);
+    const j = i + dir;
+    if (j < 0 || j >= order.length) return;
+    // swap places
+    const a = order[i], b = order[j];
+    save(placed.map((p) => (p.i === a.i ? { ...p, x: b.x, y: b.y } : p.i === b.i ? { ...p, x: a.x, y: a.y } : p)));
+  };
+
+  const card = (id: WidgetId, fill: boolean) => {
+    const def = WIDGET_MAP.get(id)!;
+    return (
+      <Card className={`dash-widget${editing ? ' dash-editing' : ''}${fill ? ' dash-fill' : ''}`} padding="md">
+        <Group justify="space-between" wrap="nowrap" className={`dash-head${editing && !narrow ? ' dash-drag' : ''}`} mb="sm">
+          <Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
+            {editing && !narrow && <IconGripVertical size={16} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0 }} />}
+            <Title order={4} lineClamp={1}>
+              {def.title}
+            </Title>
+            {def.extra?.(ctx)}
+          </Group>
+          {editing && (
+            <Group gap={2} wrap="nowrap" className="dash-tools">
+              {narrow && (
+                <>
+                  <ActionIcon variant="subtle" size="sm" onClick={() => move(id, -1)} aria-label={`Move ${def.title} up`}>
+                    <IconArrowUp size={14} />
+                  </ActionIcon>
+                  <ActionIcon variant="subtle" size="sm" onClick={() => move(id, 1)} aria-label={`Move ${def.title} down`}>
+                    <IconArrowDown size={14} />
+                  </ActionIcon>
+                </>
+              )}
+              <Tooltip label="Remove from the dashboard">
+                <ActionIcon variant="subtle" color="red" size="sm" onClick={() => remove(id)} aria-label={`Remove ${def.title}`}>
+                  <IconX size={14} />
+                </ActionIcon>
+              </Tooltip>
+            </Group>
+          )}
+        </Group>
+        <div className="dash-body">{def.render(ctx)}</div>
+      </Card>
+    );
+  };
 
   return (
     <Stack gap="lg">
@@ -185,210 +231,114 @@ export function DashboardPage() {
         title="Dashboard"
         description={`${formatDate(today)} · ${active.length} active project${active.length === 1 ? '' : 's'}`}
         actions={
-          <>
-            <NewProjectButton variant="default" />
-            <Button component={Link} to="/import" leftSection={<IconUpload size={16} />}>
-              Import results
-            </Button>
-          </>
+          editing ? (
+            <>
+              <Menu position="bottom-end" width={320}>
+                <Menu.Target>
+                  <Button variant="default" leftSection={<IconPlus size={16} />} disabled={!unused.length}>
+                    Add a widget
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {unused.map((w) => (
+                    <Menu.Item key={w.id} onClick={() => add(w.id)}>
+                      <Text size="sm" fw={500}>
+                        {w.title}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {w.description}
+                      </Text>
+                    </Menu.Item>
+                  ))}
+                </Menu.Dropdown>
+              </Menu>
+              <Button variant="default" leftSection={<IconRestore size={16} />} onClick={() => db.meta.delete(DASHBOARD_KEY)}>
+                Reset
+              </Button>
+              <Button leftSection={<IconCheck size={16} />} onClick={() => setEditing(false)}>
+                Done
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="default" leftSection={<IconLayoutDashboard size={16} />} onClick={() => setEditing(true)}>
+                Customise
+              </Button>
+              <NewProjectButton variant="default" />
+              <Button component={Link} to="/import" leftSection={<IconUpload size={16} />}>
+                Import results
+              </Button>
+            </>
+          )
         }
       />
-      <SimpleGrid cols={{ base: 1, xs: 2, lg: 4 }}>
-        <StatTile label="Active projects" value={active.length} sub={`${bundles.length - active.length} archived`} icon={<IconFolders size={22} color="var(--mantine-color-dimmed)" />} onClick={() => navigate('/projects')} />
-        <StatTile label="Samples in the last 30 days" value={dash.samples30} icon={<IconFlask size={22} color="var(--mantine-color-dimmed)" />} />
-        <StatTile
-          label="Rules exceeded"
-          value={exceeded}
-          color={exceeded ? 'red' : undefined}
-          sub={`This reporting year · ${dash.exceedances.length} exceedance${dash.exceedances.length === 1 ? '' : 's'} in the last 90 days`}
-          icon={exceeded ? <IconCircleX size={22} color="var(--mantine-color-red-6)" /> : <IconCircleCheck size={22} color="var(--mantine-color-green-6)" />}
-        />
-        <StatTile
-          label="Reports due in 30 days"
-          value={reportsSoon}
-          color={overdue ? 'red' : undefined}
-          sub={overdue ? `${overdue} overdue` : 'None overdue'}
-          icon={<IconCalendarDue size={22} color={overdue ? 'var(--mantine-color-red-6)' : 'var(--mantine-color-dimmed)'} />}
-        />
-      </SimpleGrid>
-
-      <Grid gutter="lg">
-        <Grid.Col span={{ base: 12, lg: 7 }}>
-          <Stack gap="lg">
-            <Card>
-              <Group justify="space-between" mb="sm">
-                <Title order={4}>Upcoming deadlines</Title>
-                <Text size="sm" c="dimmed">
-                  Reports and sampling rounds
-                </Text>
-              </Group>
-              {dash.deadlines.length ? (
-                <Table.ScrollContainer minWidth={460}>
-                  <Table highlightOnHover>
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th w={110}>Due</Table.Th>
-                        <Table.Th>What</Table.Th>
-                        <Table.Th w={130}>Status</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {dash.deadlines.slice(0, 12).map((d, i) => (
-                        <Table.Tr key={i} className="clickable-row" onClick={() => navigate(d.link)}>
-                          <Table.Td style={{ whiteSpace: 'nowrap' }}>
-                            <Text size="sm" fw={500} className="tabular">
-                              {formatDate(d.date)}
-                            </Text>
-                            <Text size="xs" c={d.date < today ? 'red' : 'dimmed'}>
-                              {relativeDays(daysUntil(d.date))}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td>
-                            <Group gap={8} wrap="nowrap" align="flex-start">
-                              {d.kind === 'report' ? <IconFileReport size={16} style={{ flexShrink: 0, marginTop: 2 }} /> : <IconFlask size={16} style={{ flexShrink: 0, marginTop: 2 }} />}
-                              <div>
-                                <Text size="sm">{d.title}</Text>
-                                <Text size="xs" c="dimmed">
-                                  {d.project.project.name}
-                                </Text>
-                              </div>
-                            </Group>
-                          </Table.Td>
-                          <Table.Td>
-                            <Badge color={d.color} style={{ overflow: 'visible' }} styles={{ label: { overflow: 'visible' } }}>
-                              {d.status}
-                            </Badge>
-                          </Table.Td>
-                        </Table.Tr>
-                      ))}
-                    </Table.Tbody>
-                  </Table>
-                </Table.ScrollContainer>
-              ) : (
-                <Text c="dimmed" size="sm">
-                  Nothing due. Add reporting obligations and sampling schedules on each project's Schedule tab.
-                </Text>
-              )}
-            </Card>
-
-            <Card>
-              <Group justify="space-between" mb="sm">
-                <Title order={4}>Recent exceedances</Title>
-                <Text size="sm" c="dimmed">
-                  Last 90 days
-                </Text>
-              </Group>
-              {dash.exceedances.length ? (
-                <Table.ScrollContainer minWidth={560}>
-                  <Table highlightOnHover>
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th>Date</Table.Th>
-                        <Table.Th>Project / site</Table.Th>
-                        <Table.Th>Parameter</Table.Th>
-                        <Table.Th ta="right">Value</Table.Th>
-                        <Table.Th>Rule</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {dash.exceedances.slice(0, 10).map((e, i) => (
-                        <Table.Tr key={i} className="clickable-row" onClick={() => navigate(`/projects/${e.b.project.id}/compliance`)}>
-                          <Table.Td className="tabular" style={{ whiteSpace: 'nowrap' }}>
-                            {formatDate(e.date)}
-                          </Table.Td>
-                          <Table.Td>
-                            <Text size="sm">{e.b.project.name}</Text>
-                            <Text size="xs" c="dimmed">
-                              {e.site}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td>{e.param}</Table.Td>
-                          <Table.Td ta="right" className="tabular" fw={600} style={{ whiteSpace: 'nowrap' }}>
-                            {e.value}
-                          </Table.Td>
-                          <Table.Td>
-                            <Group gap={6} wrap="nowrap" align="flex-start">
-                              <div style={{ flexShrink: 0 }}>
-                                <LevelBadge level={e.ev.rule.level} />
-                              </div>
-                              <Tooltip label={e.ev.description}>
-                                <Text size="sm" lineClamp={2}>
-                                  {e.ev.rule.name}
-                                </Text>
-                              </Tooltip>
-                            </Group>
-                          </Table.Td>
-                        </Table.Tr>
-                      ))}
-                    </Table.Tbody>
-                  </Table>
-                </Table.ScrollContainer>
-              ) : (
-                <Group gap="xs">
-                  <IconCircleCheck size={18} color="var(--mantine-color-green-6)" />
-                  <Text size="sm" c="dimmed">
-                    No consent limit or trigger exceedances in the last 90 days.
-                  </Text>
-                </Group>
-              )}
-            </Card>
-          </Stack>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, lg: 5 }}>
-          <Card>
-            <Title order={4} mb="sm">
-              Projects
-            </Title>
-            <Stack gap="sm">
-              {active.length === 0 && <EmptyState title="No active projects" />}
-              {active
-                .sort((a, c) => (a.project.updatedAt < c.project.updatedAt ? 1 : -1))
-                .map((b) => {
-                  const st = dash.projectStats.get(b.project.id);
-                  const exceededRules = st?.evals.filter((e) => e.status === 'exceeded') ?? [];
-                  return (
-                    <Paper key={b.project.id} withBorder p="sm" radius="md" className="clickable-row" onClick={() => navigate(`/projects/${b.project.id}`)}>
-                      <Group justify="space-between" wrap="nowrap" align="flex-start">
-                        <div style={{ minWidth: 0 }}>
-                          <Text fw={600} truncate>
-                            {b.project.name}
-                          </Text>
-                          <Text size="xs" c="dimmed" truncate>
-                            {[b.project.code, b.project.client, `${b.sites.length} sites`].filter(Boolean).join(' · ')}
-                          </Text>
-                          <Text size="xs" c="dimmed">
-                            Last sampled {st?.lastSample ? `${formatDate(st.lastSample)} (${relativeDays(daysUntil(st.lastSample.slice(0, 10)))})` : '—'}
-                          </Text>
-                        </div>
-                        {b.rules.length ? (
-                          exceededRules.length ? (
-                            <Tooltip label={<List size="xs">{exceededRules.map((e) => <List.Item key={e.rule.id}>{e.rule.name}</List.Item>)}</List>}>
-                              <Badge color="red" variant="filled" leftSection={<IconAlertTriangle size={12} />} style={{ flexShrink: 0 }}>
-                                {exceededRules.length} exceeded
-                              </Badge>
-                            </Tooltip>
-                          ) : (
-                            <Badge color="green" leftSection={<IconCircleCheck size={12} />} style={{ flexShrink: 0 }}>
-                              Complying
-                            </Badge>
-                          )
-                        ) : (
-                          <Badge color="gray" style={{ flexShrink: 0 }}>
-                            No rules
-                          </Badge>
-                        )}
-                      </Group>
-                    </Paper>
-                  );
-                })}
-              <Button variant="subtle" component={Link} to="/projects" leftSection={<IconPlus size={14} />}>
-                All projects
-              </Button>
-            </Stack>
-          </Card>
-        </Grid.Col>
-      </Grid>
+      {editing && (
+        <Alert variant="light" color="teal" py={8}>
+          {narrow
+            ? 'Move widgets up or down, remove the ones you don’t need, or add others. Your dashboard is your own.'
+            : 'Drag a widget by its title to move it, drag its bottom-right corner to resize it, remove the ones you don’t need, or add others. Your dashboard is your own.'}
+        </Alert>
+      )}
+      <WidgetBoard placed={placed} editing={editing} card={card} onNarrow={setNarrow} onChange={(next) => void save(next)} />
     </Stack>
   );
+}
+
+/** The widgets in a grid that can be rearranged (a column of them on a phone). */
+function WidgetBoard({ placed, editing, card, onNarrow, onChange }: { placed: PlacedWidget[]; editing: boolean; card: (id: WidgetId, fill: boolean) => JSX.Element; onNarrow: (narrow: boolean) => void; onChange: (items: PlacedWidget[]) => void }) {
+  const { width, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true, debounceTimeout: 100 });
+  const narrow = mounted && width < 760;
+  useEffect(() => onNarrow(narrow), [narrow, onNarrow]);
+  return (
+    // min-width 0: in the page's column the grid mustn't widen its own container
+    <div ref={containerRef as React.RefObject<HTMLDivElement>} style={{ minWidth: 0, width: '100%' }}>
+      {!mounted ? null : narrow ? (
+        <Stack gap="lg">
+          {[...placed].sort(byPosition).map((p) => (
+            <div key={p.i}>{card(p.i, false)}</div>
+          ))}
+        </Stack>
+      ) : (
+        <ReactGridLayout
+          layout={placed.map((p) => ({ ...p, minW: WIDGET_MAP.get(p.i)!.size.minW, minH: WIDGET_MAP.get(p.i)!.size.minH }))}
+          width={width}
+          gridConfig={{ cols: 12, rowHeight: 40, margin: [16, 16], containerPadding: [0, 0] }}
+          dragConfig={{ enabled: editing, handle: '.dash-drag', cancel: '.dash-tools' }}
+          resizeConfig={{ enabled: editing, handles: ['se'] }}
+          onLayoutChange={(layout) => {
+            if (!editing) return;
+            const next = layout.map((l) => ({ i: l.i as WidgetId, x: l.x, y: l.y, w: l.w, h: l.h }));
+            if (!sameLayout(next, placed)) onChange(next);
+          }}
+        >
+          {placed.map((p) => (
+            <div key={p.i}>{card(p.i, true)}</div>
+          ))}
+        </ReactGridLayout>
+      )}
+    </div>
+  );
+}
+
+const DASHBOARD_KEY = 'dashboard';
+
+const byPosition = (a: PlacedWidget, b: PlacedWidget) => a.y - b.y || a.x - b.x;
+
+function sameLayout(a: PlacedWidget[], b: PlacedWidget[]): boolean {
+  if (a.length !== b.length) return false;
+  const m = new Map(b.map((x) => [x.i, x]));
+  return a.every((x) => {
+    const y = m.get(x.i);
+    return !!y && y.x === x.x && y.y === x.y && y.w === x.w && y.h === x.h;
+  });
+}
+
+/** The saved dashboard, or the default; widgets this version doesn't have are left out. */
+function validLayout(value: unknown): PlacedWidget[] {
+  const items = (value as { items?: unknown } | undefined)?.items;
+  if (!Array.isArray(items)) return DEFAULT_DASHBOARD;
+  const ok = items.filter(
+    (x): x is PlacedWidget => !!x && typeof x === 'object' && WIDGET_MAP.has((x as PlacedWidget).i) && ['x', 'y', 'w', 'h'].every((k) => Number.isFinite((x as unknown as Record<string, number>)[k])),
+  );
+  return ok.filter((x, i) => ok.findIndex((y) => y.i === x.i) === i);
 }
