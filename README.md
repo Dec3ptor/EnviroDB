@@ -48,6 +48,10 @@ there as they work and show up for the others within seconds.
   statistics, graphs, site and sampling tables, and your own text with `{{placeholders}}`).
   Reports export to **PDF** and **Word**. The preview shows the actual PDF pages, portrait
   and landscape, so what you see is what you download.
+- **Quick check – no project needed.** Drop lab results (Excel, CSV, PDF, or a zip) on *Quick check* and
+  see them straight away against the guideline sets you choose, exceedances highlighted in each set's
+  colour, with a count per set and a list of analytes EnviroDB couldn't match. Nothing is saved: download
+  the table to Excel or a short Word / PDF report, or *Make a project of it* to keep the results.
 - **Templates for every kind of report – your own, easily.** *Report templates* groups them: monitoring
   reports, letters, management plans, site investigations, ecology and others. *New template* starts one
   from a blank page, a starter (a **management plan** with the monitoring programme, trigger–action–response

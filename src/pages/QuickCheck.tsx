@@ -112,7 +112,7 @@ export function QuickCheckPage() {
   const reportTemplate = () => {
     const results: ReportBlock = { ...newBlock('resultsTable'), title: 'Results compared with guideline values', guidelineSetIds: chosen, ruleColumns: 'none', splitBySite: false, layout: 'parametersAsRows' } as ReportBlock;
     const title: ReportBlock = { ...newBlock('title'), title: 'Quick check', subtitle: read?.fileName ?? '', showDetails: false, pageBreakAfter: false } as ReportBlock;
-    return adhocTemplate(`Quick check – ${read?.fileName ?? ''}`, [title, newBlock('summary'), results], 'landscape');
+    return adhocTemplate('Results compared with guidelines', [title, newBlock('summary'), results], 'landscape');
   };
   const dates = q?.bundle.samples.map((s) => s.date.slice(0, 10)) ?? [];
   const period = { start: dates[0] ?? today, end: dates[dates.length - 1] ?? today, label: '' };
