@@ -18,6 +18,7 @@ import { TemplatesPage, TemplateEditorPage } from './pages/Templates';
 import { SettingsPage } from './pages/Settings';
 import { ParametersPage } from './pages/Parameters';
 import { CalendarPage } from './pages/Calendar';
+import { QuickCheckPage } from './pages/QuickCheck';
 
 export function App() {
   const [ready, setReady] = useState(false);
@@ -58,6 +59,7 @@ export function App() {
                     <Route path="calendar" element={<CalendarPage />} />
                     <Route path="projects/:projectId/*" element={<ProjectLayout />} />
                     <Route path="import" element={<ImportPage />} />
+                    <Route path="quick-check" element={<QuickCheckPage />} />
                     <Route path="guidelines" element={<GuidelinesPage />} />
                     <Route path="guidelines/:setId" element={<GuidelinesPage />} />
                     <Route path="templates" element={<TemplatesPage />} />

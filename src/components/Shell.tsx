@@ -15,6 +15,7 @@ import {
   IconDroplet,
   IconFlask,
   IconCalendarMonth,
+  IconTestPipe,
 } from '@tabler/icons-react';
 import { db } from '../db/db';
 import { WorkspaceBadge } from './workspace/Workspace';
@@ -32,6 +33,7 @@ export function Shell() {
     { to: '/projects', label: 'Projects', icon: IconFolders, active: path === '/projects' },
     { to: '/calendar', label: 'Monitoring calendar', icon: IconCalendarMonth, active: path.startsWith('/calendar') },
     { to: '/import', label: 'Import data', icon: IconUpload, active: path.startsWith('/import') },
+    { to: '/quick-check', label: 'Quick check', icon: IconTestPipe, active: path.startsWith('/quick-check') },
   ];
   // reference data shared by every project
   const library = [
