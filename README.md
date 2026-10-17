@@ -160,7 +160,10 @@ there as they work and show up for the others within seconds.
   yet show up in *Actions to take*, with a button to mark it done. Each project's *Schedule* tab shows its
   rows.
 - **Your own dashboard.** The dashboard is made of widgets you arrange yourself (*Customise*): drag them
-  by their title, resize them from the corner, remove the ones you don't need and add others –
+  by their title, resize them from their sides or corners on a fine grid, and make them as small as
+  you like – a widget smaller than its contents need shows everything smaller to fit (the *Tt* button
+  sets a widget's text size yourself, 60–130%). Turn off *Close the gaps* to leave widgets exactly
+  where you put them, gaps and all. Remove the ones you don't need and add others –
   *Actions to take* (reports due, results to send or report – tick them off – sampling still to do,
   exceedances with no follow-up yet), *This month's monitoring*, the *Monitoring calendar*, *Upcoming
   deadlines*, *Reports due*, *Recent exceedances*, *Projects*, *Recent imports*, *My notes* and *Quick

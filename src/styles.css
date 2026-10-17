@@ -489,6 +489,16 @@ body {
   min-height: 0;
   overflow: auto;
 }
+/* the title and contents together, so a small widget can show them smaller (CSS zoom) */
+.dash-zoom {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dash-fill .dash-zoom {
+  flex: 1;
+  min-height: 0;
+}
 .dash-head {
   flex-shrink: 0;
 }

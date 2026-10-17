@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActionIcon, Alert, Button, Card, Group, Menu, SimpleGrid, Stack, Text, ThemeIcon, Title, Anchor, Loader, Center, Tooltip, Paper } from '@mantine/core';
+import { ActionIcon, Alert, Button, Card, Group, Menu, SimpleGrid, Stack, Switch, Text, ThemeIcon, Title, Anchor, Loader, Center, Tooltip, Paper } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import ReactGridLayout, { useContainerWidth } from 'react-grid-layout';
+import ReactGridLayout, { noCompactor, useContainerWidth, verticalCompactor } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import { notifications } from '@mantine/notifications';
-import { IconArrowDown, IconArrowUp, IconCheck, IconDatabaseImport, IconFlask, IconGripVertical, IconLayoutDashboard, IconPlus, IconRestore, IconSparkles, IconUpload, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowUp, IconCheck, IconDatabaseImport, IconFlask, IconGripVertical, IconLayoutDashboard, IconPlus, IconRestore, IconSparkles, IconTextSize, IconUpload, IconX } from '@tabler/icons-react';
+import { useElementSize } from '@mantine/hooks';
 import { useAllBundles } from '../hooks/useAllData';
 import { evaluateAll, type ProjectBundle } from '../lib/analysis';
 import { addDays, daysUntil, formatDate, reportingYear, todayStr } from '../lib/dates';
@@ -19,7 +20,7 @@ import { NewProjectButton } from './Projects';
 import { db } from '../db/db';
 import { useCalendarSheet } from '../hooks/useCalendarSheet';
 import { actionsToTake } from '../lib/actions';
-import { DEFAULT_DASHBOARD, WIDGET_MAP, WIDGETS, type DashboardData, type PlacedWidget, type WidgetCtx, type WidgetId } from './dashboard/widgets';
+import { autoScale, GRID, readLayout, WIDGET_MAP, WIDGETS, type DashboardData, type PlacedWidget, type WidgetCtx, type WidgetId } from './dashboard/widgets';
 import type { Deadline } from './dashboard/widgets';
 import type { RuleEvaluation } from '../lib/compliance';
 
@@ -166,8 +167,10 @@ export function DashboardPage() {
     );
   if (!bundles.length) return <Welcome />;
   const active = bundles.filter((b) => b.project.status === 'active');
-  const placed = validLayout(saved?.value);
-  const save = (items: PlacedWidget[]) => db.meta.put({ key: DASHBOARD_KEY, value: { version: 1, items } });
+  const placed = readLayout(saved?.value);
+  // packed: widgets move up to fill the gaps; otherwise they stay where they're put
+  const packed = (saved?.value as { packed?: boolean } | undefined)?.packed !== false;
+  const save = (items: PlacedWidget[], pack = packed) => db.meta.put({ key: DASHBOARD_KEY, value: { version: GRID.version, items, packed: pack } });
   const unused = WIDGETS.filter((w) => !placed.some((p) => p.i === w.id));
   const ctx: WidgetCtx = { bundles, dash, sheet, actions, today };
   const remove = (id: WidgetId) => save(placed.filter((p) => p.i !== id));
@@ -186,42 +189,20 @@ export function DashboardPage() {
     save(placed.map((p) => (p.i === a.i ? { ...p, x: b.x, y: b.y } : p.i === b.i ? { ...p, x: a.x, y: a.y } : p)));
   };
 
-  const card = (id: WidgetId, fill: boolean) => {
-    const def = WIDGET_MAP.get(id)!;
-    return (
-      <Card className={`dash-widget${editing ? ' dash-editing' : ''}${fill ? ' dash-fill' : ''}`} padding="md">
-        <Group justify="space-between" wrap="nowrap" className={`dash-head${editing && !narrow ? ' dash-drag' : ''}`} mb="sm">
-          <Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
-            {editing && !narrow && <IconGripVertical size={16} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0 }} />}
-            <Title order={4} lineClamp={1}>
-              {def.title}
-            </Title>
-            {def.extra?.(ctx)}
-          </Group>
-          {editing && (
-            <Group gap={2} wrap="nowrap" className="dash-tools">
-              {narrow && (
-                <>
-                  <ActionIcon variant="subtle" size="sm" onClick={() => move(id, -1)} aria-label={`Move ${def.title} up`}>
-                    <IconArrowUp size={14} />
-                  </ActionIcon>
-                  <ActionIcon variant="subtle" size="sm" onClick={() => move(id, 1)} aria-label={`Move ${def.title} down`}>
-                    <IconArrowDown size={14} />
-                  </ActionIcon>
-                </>
-              )}
-              <Tooltip label="Remove from the dashboard">
-                <ActionIcon variant="subtle" color="red" size="sm" onClick={() => remove(id)} aria-label={`Remove ${def.title}`}>
-                  <IconX size={14} />
-                </ActionIcon>
-              </Tooltip>
-            </Group>
-          )}
-        </Group>
-        <div className="dash-body">{def.render(ctx)}</div>
-      </Card>
-    );
-  };
+  const setScale = (id: WidgetId, scale: number | undefined) => save(placed.map((p) => (p.i === id ? { ...p, scale } : p)));
+  const card = (id: WidgetId, fill: boolean) => (
+    <WidgetCard
+      id={id}
+      ctx={ctx}
+      fill={fill}
+      editing={editing}
+      narrow={narrow}
+      scale={placed.find((p) => p.i === id)?.scale}
+      onScale={(v) => void setScale(id, v)}
+      onRemove={() => void remove(id)}
+      onMove={(d) => void move(id, d)}
+    />
+  );
 
   return (
     <Stack gap="lg">
@@ -272,18 +253,91 @@ export function DashboardPage() {
       />
       {editing && (
         <Alert variant="light" color="teal" py={8}>
-          {narrow
-            ? 'Move widgets up or down, remove the ones you don’t need, or add others. Your dashboard is your own.'
-            : 'Drag a widget by its title to move it, drag its bottom-right corner to resize it, remove the ones you don’t need, or add others. Your dashboard is your own.'}
+          <Group justify="space-between" gap="sm" wrap="wrap">
+            <Text size="sm" style={{ flex: '1 1 420px' }}>
+              {narrow
+                ? 'Move widgets up or down, remove the ones you don’t need, or add others. Your dashboard is your own.'
+                : 'Drag a widget by its title to move it and by its edges or corners to resize it – smaller widgets show their contents smaller to fit (Tt sets a widget’s text size yourself). Remove the ones you don’t need, or add others. Your dashboard is your own.'}
+            </Text>
+            {!narrow && (
+              <Switch size="sm" label="Close the gaps" description={packed ? 'Widgets move up to fill gaps' : 'Widgets stay where you put them'} checked={packed} onChange={(e) => void save(placed, e.currentTarget.checked)} />
+            )}
+          </Group>
         </Alert>
       )}
-      <WidgetBoard placed={placed} editing={editing} card={card} onNarrow={setNarrow} onChange={(next) => void save(next)} />
+      <WidgetBoard placed={placed} packed={packed} editing={editing} card={card} onNarrow={setNarrow} onChange={(next) => void save(next)} />
     </Stack>
   );
 }
 
+const TEXT_SIZES = [0.6, 0.7, 0.8, 0.9, 1, 1.15, 1.3];
+
+/** A widget: its title and contents, shown smaller to fit when the widget is smaller than its contents need. */
+function WidgetCard({ id, ctx, fill, editing, narrow, scale, onScale, onRemove, onMove }: { id: WidgetId; ctx: WidgetCtx; fill: boolean; editing: boolean; narrow: boolean; scale?: number; onScale: (v: number | undefined) => void; onRemove: () => void; onMove: (dir: -1 | 1) => void }) {
+  const def = WIDGET_MAP.get(id)!;
+  const { ref, width, height } = useElementSize(); // the card's outside: less its padding (16 px each side)
+  // on a phone each widget has the screen's width: full size unless chosen
+  const auto = narrow || !width ? 1 : autoScale(def.fit, Math.max(1, width - 32), fill ? Math.max(1, height - 32) : 0);
+  const zoom = scale ?? auto;
+  return (
+    <Card ref={ref} className={`dash-widget${editing ? ' dash-editing' : ''}${fill ? ' dash-fill' : ''}`} padding="md">
+      <div className="dash-zoom" style={zoom === 1 ? undefined : { zoom }}>
+        <Group justify="space-between" wrap="nowrap" className={`dash-head${editing && !narrow ? ' dash-drag' : ''}`} mb="sm">
+          <Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
+            {editing && !narrow && <IconGripVertical size={16} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0 }} />}
+            <Title order={4} lineClamp={1}>
+              {def.title}
+            </Title>
+            {def.extra?.(ctx)}
+          </Group>
+          {editing && (
+            <Group gap={2} wrap="nowrap" className="dash-tools">
+              {narrow && (
+                <>
+                  <ActionIcon variant="subtle" size="sm" onClick={() => onMove(-1)} aria-label={`Move ${def.title} up`}>
+                    <IconArrowUp size={14} />
+                  </ActionIcon>
+                  <ActionIcon variant="subtle" size="sm" onClick={() => onMove(1)} aria-label={`Move ${def.title} down`}>
+                    <IconArrowDown size={14} />
+                  </ActionIcon>
+                </>
+              )}
+              <Menu position="bottom-end" width={210}>
+                <Menu.Target>
+                  <Tooltip label={`Text size: ${scale === undefined ? `fits the widget (${Math.round(auto * 100)}%)` : `${Math.round(scale * 100)}%`}`}>
+                    <ActionIcon variant={scale === undefined ? 'subtle' : 'light'} size="sm" aria-label={`Text size of ${def.title}`}>
+                      <IconTextSize size={14} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Label>Text size</Menu.Label>
+                  <Menu.Item onClick={() => onScale(undefined)} rightSection={scale === undefined ? <IconCheck size={14} /> : undefined}>
+                    Fit the widget ({Math.round(auto * 100)}%)
+                  </Menu.Item>
+                  {TEXT_SIZES.map((v) => (
+                    <Menu.Item key={v} onClick={() => onScale(v)} rightSection={scale === v ? <IconCheck size={14} /> : undefined}>
+                      {Math.round(v * 100)}%
+                    </Menu.Item>
+                  ))}
+                </Menu.Dropdown>
+              </Menu>
+              <Tooltip label="Remove from the dashboard">
+                <ActionIcon variant="subtle" color="red" size="sm" onClick={onRemove} aria-label={`Remove ${def.title}`}>
+                  <IconX size={14} />
+                </ActionIcon>
+              </Tooltip>
+            </Group>
+          )}
+        </Group>
+        <div className="dash-body">{def.render(ctx)}</div>
+      </div>
+    </Card>
+  );
+}
+
 /** The widgets in a grid that can be rearranged (a column of them on a phone). */
-function WidgetBoard({ placed, editing, card, onNarrow, onChange }: { placed: PlacedWidget[]; editing: boolean; card: (id: WidgetId, fill: boolean) => JSX.Element; onNarrow: (narrow: boolean) => void; onChange: (items: PlacedWidget[]) => void }) {
+function WidgetBoard({ placed, packed, editing, card, onNarrow, onChange }: { placed: PlacedWidget[]; packed: boolean; editing: boolean; card: (id: WidgetId, fill: boolean) => JSX.Element; onNarrow: (narrow: boolean) => void; onChange: (items: PlacedWidget[]) => void }) {
   const { width, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true, debounceTimeout: 100 });
   const narrow = mounted && width < 760;
   useEffect(() => onNarrow(narrow), [narrow, onNarrow]);
@@ -300,12 +354,13 @@ function WidgetBoard({ placed, editing, card, onNarrow, onChange }: { placed: Pl
         <ReactGridLayout
           layout={placed.map((p) => ({ ...p, minW: WIDGET_MAP.get(p.i)!.size.minW, minH: WIDGET_MAP.get(p.i)!.size.minH }))}
           width={width}
-          gridConfig={{ cols: 12, rowHeight: 40, margin: [16, 16], containerPadding: [0, 0] }}
+          gridConfig={{ cols: GRID.cols, rowHeight: GRID.rowHeight, margin: [GRID.margin, GRID.margin], containerPadding: [0, 0] }}
+          compactor={packed ? verticalCompactor : noCompactor}
           dragConfig={{ enabled: editing, handle: '.dash-drag', cancel: '.dash-tools' }}
-          resizeConfig={{ enabled: editing, handles: ['se'] }}
+          resizeConfig={{ enabled: editing, handles: ['s', 'e', 'w', 'se', 'sw'] }}
           onLayoutChange={(layout) => {
             if (!editing) return;
-            const next = layout.map((l) => ({ i: l.i as WidgetId, x: l.x, y: l.y, w: l.w, h: l.h }));
+            const next = layout.map((l) => ({ i: l.i as WidgetId, x: l.x, y: l.y, w: l.w, h: l.h, scale: placed.find((p) => p.i === l.i)?.scale }));
             if (!sameLayout(next, placed)) onChange(next);
           }}
         >
@@ -331,12 +386,3 @@ function sameLayout(a: PlacedWidget[], b: PlacedWidget[]): boolean {
   });
 }
 
-/** The saved dashboard, or the default; widgets this version doesn't have are left out. */
-function validLayout(value: unknown): PlacedWidget[] {
-  const items = (value as { items?: unknown } | undefined)?.items;
-  if (!Array.isArray(items)) return DEFAULT_DASHBOARD;
-  const ok = items.filter(
-    (x): x is PlacedWidget => !!x && typeof x === 'object' && WIDGET_MAP.has((x as PlacedWidget).i) && ['x', 'y', 'w', 'h'].every((k) => Number.isFinite((x as unknown as Record<string, number>)[k])),
-  );
-  return ok.filter((x, i) => ok.findIndex((y) => y.i === x.i) === i);
-}

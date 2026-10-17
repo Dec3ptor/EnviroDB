@@ -51,8 +51,10 @@ export interface WidgetDef {
   id: WidgetId;
   title: string;
   description: string;
-  /** Size in grid units (12 columns; rows of 40 px). */
+  /** Size in grid units (24 columns; rows of 12 px). */
   size: { w: number; h: number; minW: number; minH: number };
+  /** The space (px, inside the card's padding) its contents need at full size; `h` only for contents that can't scroll. */
+  fit: { w: number; h?: number };
   render: (ctx: WidgetCtx) => ReactNode;
   /** Shown beside the title. */
   extra?: (ctx: WidgetCtx) => ReactNode;
@@ -523,21 +525,21 @@ function CalendarWidget() {
 }
 
 export const WIDGETS: WidgetDef[] = [
-  { id: 'stats', title: 'Key figures', description: 'Projects, samples, rules exceeded and reports due', size: { w: 12, h: 4, minW: 3, minH: 4 }, render: (c) => <KeyFigures {...c} /> },
+  { id: 'stats', title: 'Key figures', description: 'Projects, samples, rules exceeded and reports due', size: { w: 24, h: 8, minW: 4, minH: 3 }, fit: { w: 720, h: 170 }, render: (c) => <KeyFigures {...c} /> },
   {
     id: 'actions',
     title: 'Actions to take',
     description: 'Reports due, results to send or report, sampling still to do, exceedances to follow up',
-    size: { w: 7, h: 8, minW: 3, minH: 4 },
+    size: { w: 14, h: 16, minW: 4, minH: 4 }, fit: { w: 430 },
     render: (c) => <ActionsToTake {...c} />,
     extra: (c) => (c.actions.length ? <Badge variant="light" color={c.actions.some((a) => a.urgency === 0) ? 'red' : 'orange'}>{c.actions.length}</Badge> : null),
   },
-  { id: 'thisMonth', title: 'This month’s monitoring', description: 'The jobs on the monitoring calendar this month and next, to colour as they’re done', size: { w: 5, h: 8, minW: 3, minH: 4 }, render: (c) => <MonthList {...c} /> },
+  { id: 'thisMonth', title: 'This month’s monitoring', description: 'The jobs on the monitoring calendar this month and next, to colour as they’re done', size: { w: 10, h: 16, minW: 4, minH: 4 }, fit: { w: 330 }, render: (c) => <MonthList {...c} /> },
   {
     id: 'calendar',
     title: 'Monitoring calendar',
     description: 'The team’s monitoring schedule for the year, as in the spreadsheet',
-    size: { w: 12, h: 8, minW: 6, minH: 5 },
+    size: { w: 24, h: 16, minW: 4, minH: 4 }, fit: { w: 620 },
     render: () => <CalendarWidget />,
     extra: () => (
       <Anchor component={Link} to="/calendar" size="xs">
@@ -545,13 +547,13 @@ export const WIDGETS: WidgetDef[] = [
       </Anchor>
     ),
   },
-  { id: 'deadlines', title: 'Upcoming deadlines', description: 'Reports and sampling rounds, soonest first', size: { w: 7, h: 8, minW: 4, minH: 4 }, render: (c) => <Deadlines {...c} /> },
-  { id: 'reports', title: 'Reports due', description: 'Reports due by the end of the year, not yet submitted', size: { w: 5, h: 6, minW: 3, minH: 3 }, render: (c) => <ReportsDue {...c} /> },
-  { id: 'exceedances', title: 'Recent exceedances', description: 'Consent limits and triggers exceeded in the last 90 days', size: { w: 12, h: 7, minW: 5, minH: 4 }, render: (c) => <Exceedances {...c} /> },
-  { id: 'projects', title: 'Projects', description: 'Your active projects and whether they comply', size: { w: 5, h: 8, minW: 3, minH: 4 }, render: (c) => <Projects {...c} /> },
-  { id: 'imports', title: 'Recent imports', description: 'The latest lab files imported, by anyone', size: { w: 5, h: 5, minW: 3, minH: 3 }, render: (c) => <RecentImports {...c} /> },
-  { id: 'notes', title: 'My notes', description: 'A notepad only you see', size: { w: 4, h: 5, minW: 2, minH: 3 }, render: () => <MyNotes /> },
-  { id: 'links', title: 'Quick links', description: 'New project, import, calendar, guidelines, settings', size: { w: 5, h: 3, minW: 3, minH: 2 }, render: () => <QuickLinks /> },
+  { id: 'deadlines', title: 'Upcoming deadlines', description: 'Reports and sampling rounds, soonest first', size: { w: 14, h: 16, minW: 4, minH: 4 }, fit: { w: 430 }, render: (c) => <Deadlines {...c} /> },
+  { id: 'reports', title: 'Reports due', description: 'Reports due by the end of the year, not yet submitted', size: { w: 10, h: 12, minW: 4, minH: 4 }, fit: { w: 320 }, render: (c) => <ReportsDue {...c} /> },
+  { id: 'exceedances', title: 'Recent exceedances', description: 'Consent limits and triggers exceeded in the last 90 days', size: { w: 24, h: 14, minW: 4, minH: 4 }, fit: { w: 600 }, render: (c) => <Exceedances {...c} /> },
+  { id: 'projects', title: 'Projects', description: 'Your active projects and whether they comply', size: { w: 10, h: 16, minW: 4, minH: 4 }, fit: { w: 320 }, render: (c) => <Projects {...c} /> },
+  { id: 'imports', title: 'Recent imports', description: 'The latest lab files imported, by anyone', size: { w: 10, h: 10, minW: 4, minH: 4 }, fit: { w: 330 }, render: (c) => <RecentImports {...c} /> },
+  { id: 'notes', title: 'My notes', description: 'A notepad only you see', size: { w: 8, h: 10, minW: 3, minH: 4 }, fit: { w: 240 }, render: () => <MyNotes /> },
+  { id: 'links', title: 'Quick links', description: 'New project, import, calendar, guidelines, settings', size: { w: 10, h: 6, minW: 4, minH: 3 }, fit: { w: 360, h: 115 }, render: () => <QuickLinks /> },
 ];
 
 export const WIDGET_MAP = new Map(WIDGETS.map((w) => [w.id, w]));
@@ -562,16 +564,42 @@ export interface PlacedWidget {
   y: number;
   w: number;
   h: number;
+  /** Text size chosen for the widget (1 = normal); none: it fits the widget's size by itself. */
+  scale?: number;
+}
+
+/** The dashboard grid: 24 columns and 12 px rows (with 16 px gaps, two of these make one of the first version's). */
+export const GRID = { cols: 24, rowHeight: 12, margin: 16, version: 2 };
+
+/** A widget's own size for its contents: smaller than this, everything in it is shown smaller to fit (no smaller than `MIN_SCALE`). */
+export const MIN_SCALE = 0.55;
+export function autoScale(fit: WidgetDef['fit'], width: number, height: number): number {
+  if (!width) return 1;
+  const s = Math.min(width / fit.w, fit.h && height ? height / fit.h : 1, 1);
+  return Math.max(MIN_SCALE, Math.round(s * 100) / 100);
 }
 
 /** The dashboard to start from: what most people want to see first. */
 export const DEFAULT_DASHBOARD: PlacedWidget[] = [
-  { i: 'stats', x: 0, y: 0, w: 12, h: 4 },
-  { i: 'actions', x: 0, y: 4, w: 7, h: 9 },
-  { i: 'thisMonth', x: 7, y: 4, w: 5, h: 9 },
-  { i: 'calendar', x: 0, y: 13, w: 12, h: 8 },
-  { i: 'deadlines', x: 0, y: 21, w: 7, h: 8 },
-  { i: 'projects', x: 7, y: 21, w: 5, h: 8 },
-  { i: 'exceedances', x: 0, y: 29, w: 12, h: 7 },
+  { i: 'stats', x: 0, y: 0, w: 24, h: 8 },
+  { i: 'actions', x: 0, y: 8, w: 14, h: 18 },
+  { i: 'thisMonth', x: 14, y: 8, w: 10, h: 18 },
+  { i: 'calendar', x: 0, y: 26, w: 24, h: 16 },
+  { i: 'deadlines', x: 0, y: 42, w: 14, h: 16 },
+  { i: 'projects', x: 14, y: 42, w: 10, h: 16 },
+  { i: 'exceedances', x: 0, y: 58, w: 24, h: 14 },
 ];
 
+
+/** The saved dashboard, or the default; widgets this version doesn't have are left out. A first-version layout (12 columns,
+ * 40 px rows) is doubled to fit the finer grid. */
+export function readLayout(value: unknown): PlacedWidget[] {
+  const v = value as { items?: unknown; version?: number } | undefined;
+  const items = v?.items;
+  if (!Array.isArray(items)) return DEFAULT_DASHBOARD;
+  const k = (v?.version ?? 1) < 2 ? 2 : 1;
+  const ok = items
+    .filter((x): x is PlacedWidget => !!x && typeof x === 'object' && WIDGET_MAP.has((x as PlacedWidget).i) && ['x', 'y', 'w', 'h'].every((key) => Number.isFinite((x as unknown as Record<string, number>)[key])))
+    .map((x) => ({ i: x.i, x: x.x * k, y: x.y * k, w: x.w * k, h: x.h * k, scale: typeof x.scale === 'number' && x.scale >= 0.4 && x.scale <= 2 ? x.scale : undefined }));
+  return ok.filter((x, i) => ok.findIndex((y) => y.i === x.i) === i);
+}
