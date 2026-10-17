@@ -512,8 +512,14 @@ function QuickLinks() {
   );
 }
 
+const CALENDAR_WIDGET_KEY = 'dashboard.calendar';
+
+/** The calendar on the dashboard, with the columns chosen for it (kept with the dashboard, so they're each person's own). */
 function CalendarWidget() {
-  return <CalendarSheet compact />;
+  const saved = useLiveQuery(() => db.meta.get(CALENDAR_WIDGET_KEY), [], null);
+  if (saved === null) return null;
+  const columns = Array.isArray((saved?.value as { columns?: unknown } | undefined)?.columns) ? ((saved!.value as { columns: string[] }).columns) : [];
+  return <CalendarSheet compact columns={columns} onColumnsChange={(fields) => void db.meta.put({ key: CALENDAR_WIDGET_KEY, value: { columns: fields } })} />;
 }
 
 export const WIDGETS: WidgetDef[] = [

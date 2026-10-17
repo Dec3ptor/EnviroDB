@@ -164,8 +164,10 @@ there as they work and show up for the others within seconds.
   *Actions to take* (reports due, results to send or report – tick them off – sampling still to do,
   exceedances with no follow-up yet), *This month's monitoring*, the *Monitoring calendar*, *Upcoming
   deadlines*, *Reports due*, *Recent exceedances*, *Projects*, *Recent imports*, *My notes* and *Quick
-  links*. Your layout is your own; *Reset* goes back to the standard one. Deadlines can be exported to
-  Outlook (.ics).
+  links*. Your layout is your own; *Reset* goes back to the standard one. The *Monitoring calendar*
+  widget shows the job and the months; its *Columns* button adds any of the calendar's other columns
+  (job code, purchase order, schedule details, notes, report due, consents…) – your choice for the
+  dashboard, separate from the full calendar's. Deadlines can be exported to Outlook (.ics).
 - **Set up from consent documents with AI.** Copy EnviroDB's instructions into your AI tool
   with the consent attached, paste the answer back, then check the sites, limits, triggers,
   sampling schedules and reporting dates it found (with the consent wording beside each) and

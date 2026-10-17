@@ -11,10 +11,10 @@ export type SheetColumn =
 
 export const MONTH_WIDTH = 52;
 
-/** The calendar's columns, as in the spreadsheet: job, job code and PO, the months, then the rest. */
-export function sheetColumns(hidden: Set<string> = new Set(), compact = false): SheetColumn[] {
+/** The calendar's columns, as in the spreadsheet: job, job code and PO, the months, then the rest (the job always). */
+export function sheetColumns(hidden: Set<string> = new Set()): SheetColumn[] {
   const text = (c: CalendarColumn): SheetColumn => ({ kind: 'text', key: c.field, width: c.width, label: c.label, col: c });
-  const shown = CALENDAR_COLUMNS.filter((c) => c.field === 'job' || (!compact && !hidden.has(c.field)));
+  const shown = CALENDAR_COLUMNS.filter((c) => c.field === 'job' || !hidden.has(c.field));
   const months: SheetColumn[] = MONTH_FIELDS.map((f, i) => ({ kind: 'month', key: f, width: MONTH_WIDTH, label: '', month: i }));
   return [...shown.filter((c) => c.lead).map(text), ...months, ...shown.filter((c) => !c.lead).map(text)];
 }

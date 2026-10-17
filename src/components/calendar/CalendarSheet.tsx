@@ -73,11 +73,15 @@ function resultsText(sheet: SheetData, row: CalendarRow, month: string): string 
 export interface CalendarSheetProps {
   /** Only this project's rows (its Schedule tab). */
   projectId?: string;
-  /** The job and months only, for the dashboard. */
+  /** For the dashboard: colouring months only, and the job, the months and the `columns` chosen. */
   compact?: boolean;
+  /** The dashboard's choice of columns besides the job and months. */
+  columns?: string[];
+  /** Lets the dashboard's columns be chosen (the Columns button). */
+  onColumnsChange?: (fields: string[]) => void;
 }
 
-export function CalendarSheet({ projectId, compact = false }: CalendarSheetProps) {
+export function CalendarSheet({ projectId, compact = false, columns, onColumnsChange }: CalendarSheetProps) {
   const today = todayStr();
   const thisYear = Number(today.slice(0, 4));
   const nowMonth = today.slice(0, 7);
@@ -86,7 +90,26 @@ export function CalendarSheet({ projectId, compact = false }: CalendarSheetProps
   const sheet = useCalendarSheet(year, projectId);
   const [search, setSearch] = useState('');
   const [hidden, setHidden] = useState(() => new Set(loadPrefs().hidden ?? []));
-  const cols = useMemo(() => sheetColumns(hidden, compact), [hidden, compact]);
+  // on the dashboard, the columns it chose; otherwise all but those hidden here
+  const shownCompact = useMemo(() => new Set(columns ?? []), [columns]);
+  const hiddenNow = useMemo(() => (compact ? new Set(CALENDAR_COLUMNS.filter((c) => !shownCompact.has(c.field)).map((c) => c.field)) : hidden), [compact, shownCompact, hidden]);
+  const cols = useMemo(() => sheetColumns(hiddenNow), [hiddenNow]);
+  const columnShown = (field: string) => !hiddenNow.has(field);
+  const showColumn = (field: string, on: boolean) => {
+    setSel(null);
+    if (compact) {
+      const next = new Set(shownCompact);
+      if (on) next.add(field);
+      else next.delete(field);
+      onColumnsChange?.(CALENDAR_COLUMNS.filter((c) => next.has(c.field)).map((c) => c.field));
+      return;
+    }
+    const next = new Set(hidden);
+    if (on) next.delete(field);
+    else next.add(field);
+    setHidden(next);
+    savePrefs({ hidden: [...next] });
+  };
   const q = search.trim().toLowerCase();
   const rows = useMemo(() => (sheet ? sheet.rows.filter((r) => !q || rowSearchText(r, projectOf(sheet, r)).includes(q)) : []), [sheet, q]);
   const [sel, setSel] = useState<Sel | null>(null);
@@ -515,31 +538,26 @@ export function CalendarSheet({ projectId, compact = false }: CalendarSheetProps
         {!compact && !projectId && (
           <TextInput size="xs" leftSection={<IconSearch size={14} />} placeholder="Find a job" value={search} onChange={(e) => setSearch(e.currentTarget.value)} w={170} />
         )}
-        {!compact && (
+        {(!compact || onColumnsChange) && (
           <Menu position="bottom-end" closeOnItemClick={false}>
             <Menu.Target>
-              <Tooltip label="Columns to show">
-                <ActionIcon variant="default" size="md" aria-label="Columns to show">
-                  <IconColumns3 size={16} />
-                </ActionIcon>
+              <Tooltip label={compact ? 'Columns to show here, besides the job and months' : 'Columns to show'}>
+                {compact ? (
+                  <Button size="compact-sm" variant="default" leftSection={<IconColumns3 size={14} />} aria-label="Columns to show">
+                    Columns{shownCompact.size ? ` (${shownCompact.size})` : ''}
+                  </Button>
+                ) : (
+                  <ActionIcon variant="default" size="md" aria-label="Columns to show">
+                    <IconColumns3 size={16} />
+                  </ActionIcon>
+                )}
               </Tooltip>
             </Menu.Target>
             <Menu.Dropdown>
+              {compact && <Menu.Label>Besides the job and months</Menu.Label>}
               {CALENDAR_COLUMNS.filter((c) => c.field !== 'job').map((c) => (
                 <Menu.Item key={c.field}>
-                  <Checkbox
-                    size="xs"
-                    label={c.label}
-                    checked={!hidden.has(c.field)}
-                    onChange={(e) => {
-                      const next = new Set(hidden);
-                      if (e.currentTarget.checked) next.delete(c.field);
-                      else next.add(c.field);
-                      setHidden(next);
-                      savePrefs({ hidden: [...next] });
-                      setSel(null);
-                    }}
-                  />
+                  <Checkbox size="xs" label={c.label} checked={columnShown(c.field)} onChange={(e) => showColumn(c.field, e.currentTarget.checked)} />
                 </Menu.Item>
               ))}
             </Menu.Dropdown>
