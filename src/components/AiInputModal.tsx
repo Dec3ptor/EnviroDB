@@ -4,7 +4,7 @@ import { useMediaQuery } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconCheck, IconCopy, IconDownload, IconInfoCircle } from '@tabler/icons-react';
 import { useProject } from '../hooks/useProjectData';
-import { ParamPicker, PeriodPicker, SitePicker, defaultPeriod, type PeriodValue } from './common';
+import { ParamPicker, PeriodPicker, SitePicker, consentPresets, defaultPeriod, type PeriodValue } from './common';
 import { AI_PROMPTS, AI_SECTION_LABELS, DEFAULT_SECTIONS, approxTokens, buildAiInput, withRequest, type AiInputSections } from '../lib/aiInput';
 import { nextDueReport, obligationPresets } from '../lib/schedule';
 import { formatDate } from '../lib/dates';
@@ -86,6 +86,7 @@ function AiInputForm({ start }: { start?: AiInputStart }) {
     return list;
   }, [obligations]);
   const withData = useMemo(() => new Set(index.paramIdsWithData), [index]);
+  const paramPresets = useMemo(() => consentPresets(data, withData), [data, withData]);
 
   const pack = useMemo(
     () => buildAiInput(data, { start: period.start, end: period.end, siteIds, paramIds, sections: prefs.sections, hideNames: prefs.hideNames }),
@@ -131,7 +132,7 @@ function AiInputForm({ start }: { start?: AiInputStart }) {
           <SitePicker compact sites={sites} value={siteIds} onChange={setSiteIds} w="100%" />
         </Grid.Col>
         <Grid.Col span={{ base: 24, sm: 7 }}>
-          <ParamPicker compact params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} w="100%" />
+          <ParamPicker compact params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} presets={paramPresets} w="100%" />
         </Grid.Col>
       </Grid>
 

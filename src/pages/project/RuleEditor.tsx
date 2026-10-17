@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Alert, Button, Group, Modal, MultiSelect, NumberInput, Paper, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text, TextInput, Textarea, Autocomplete } from '@mantine/core';
+import { Alert, Button, Group, Modal, NumberInput, Paper, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text, TextInput, Textarea, Autocomplete } from '@mantine/core';
 import type { ChangeType, GuidelineSet, Operator, Rule, RuleKind, StatName, WindowKind } from '../../db/types';
 import { RULE_LEVELS } from '../../db/types';
 import { useProject } from '../../hooks/useProjectData';
-import { paramOptions, guidelineOptions, ParamPicker, RuleStatusBadge, DateField } from '../../components/common';
+import { paramOptions, guidelineOptions, ParamPicker, SitePicker, RuleStatusBadge, DateField } from '../../components/common';
 import { describeRule, evaluateRule, GUIDELINE_LIMIT_KINDS, guidelineLimitValue, thresholdText, withGuidelineLimit } from '../../lib/compliance';
 import { describeLimit, guidelineFor } from '../../lib/guidelines';
 import { evalContext } from '../../lib/analysis';
@@ -103,7 +103,7 @@ export function RuleEditor({ rule, onClose, period }: { rule: Rule | null; onClo
         {needsParam && (
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <Select label="Parameter" required searchable data={paramOptions(params)} value={r.parameterId ?? null} onChange={(v) => setR({ ...r, parameterId: v ?? undefined, unit: v ? data.paramMap.get(v)?.unit : r.unit })} />
-            <MultiSelect label={r.kind === 'change' ? 'Sites to test (e.g. downstream)' : 'Applies to sites'} data={siteData} value={r.siteIds} onChange={(v) => set('siteIds', v)} placeholder={r.siteIds.length ? undefined : 'All sites'} clearable />
+            <SitePicker label={r.kind === 'change' ? 'Sites to test (e.g. downstream)' : 'Applies to sites'} sites={sites} value={r.siteIds} onChange={(v) => set('siteIds', v)} />
           </SimpleGrid>
         )}
         {r.kind === 'guideline' && (
@@ -119,7 +119,7 @@ export function RuleEditor({ rule, onClose, period }: { rule: Rule | null; onClo
                 setR({ ...r, guidelineSetId: v ?? undefined, parameterIds: r.parameterIds?.filter((id) => values.has(id)) });
               }}
             />
-            <MultiSelect label="Applies to sites" data={siteData} value={r.siteIds} onChange={(v) => set('siteIds', v)} placeholder={r.siteIds.length ? undefined : 'All sites'} clearable />
+            <SitePicker label="Applies to sites" sites={sites} value={r.siteIds} onChange={(v) => set('siteIds', v)} />
             <ParamPicker
               label="Analytes to compare"
               params={params}

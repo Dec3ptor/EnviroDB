@@ -6,7 +6,7 @@ import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
-import { ConsentViewControl, EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
+import { ConsentViewControl, EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, consentPresets, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
 import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResults, pivot, type ConsentView, type PivotRow, type CellFlag } from '../../lib/analysis';
 import { formatDate } from '../../lib/dates';
 import { unitLabel } from '../../lib/units';
@@ -445,6 +445,7 @@ export function DataTab() {
   const [layout, setLayout] = useState<'samplesAsRows' | 'parametersAsRows'>('samplesAsRows');
   const [selected, setSelected] = useState<Sample | null>(null);
   const withData = useMemo(() => new Set(index.paramIdsWithData), [index]);
+  const paramPresets = useMemo(() => consentPresets(data, withData), [data, withData]);
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
   const [filters, setFilters] = useState<ValueFilter[]>([]);
   const [show, setShow] = useState<ShowRows>('all');
@@ -556,7 +557,7 @@ export function DataTab() {
         <Group align="flex-end" gap="sm" wrap="wrap">
           <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} width={{ base: '100%', xs: 220 }} />
           <SitePicker compact sites={sites} value={siteIds} onChange={setSiteIds} w={{ base: '100%', xs: 160 }} />
-          <ParamPicker compact params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} w={{ base: '100%', xs: 190 }} />
+          <ParamPicker compact params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} presets={paramPresets} w={{ base: '100%', xs: 190 }} />
           <ConsentViewControl label="Show" value={consentView} onChange={setConsentView} counts={consentCounts} />
           <GuidelinePicker compact sets={guidelineSets} value={setIds} onChange={setSetIds} w={{ base: '100%', xs: 190 }} label="Compare with" placeholder="No guidelines" />
         </Group>

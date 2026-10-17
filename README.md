@@ -201,7 +201,12 @@ button turns orange and pulses until you click it; closing the page with unsaved
 Everyday controls are on show. Settings most people leave alone are folded away with a summary of
 what they're set to (▸ *Assessment settings* and ▸ *Display units* in Setup, ▸ *Placeholders* in the
 template editor), and rarely used actions sit in ⋯ menus. Filters stay on one line: a picker shows
-"US1, DP1" or "5 parameters" and opens to a searchable checklist.
+"US1, DP1" or "5 parameters" and opens a popup with every choice laid out in groups (field, physical,
+dissolved metals…; sites by type; guideline sets by family) – tick a whole group at once, search by
+any words ("zinc", "dissolved metals"; Enter ticks the first match), or use a quick pick such as
+*In the consent*, *Limits* or *Triggers*. Nothing changes until *Done*; *Cancel* leaves it as it was.
+Parameters, sites and guideline sets are chosen this way everywhere – graphs, data, reports, rules,
+sampling schedules and the calendar.
 
 ## The shared workspace (where the data is stored)
 

@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
-import { ActionIcon, Badge, Button, Card, Group, Menu, Modal, MultiSelect, NumberInput, Progress, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
+import { ActionIcon, Badge, Button, Card, Group, Menu, Modal, NumberInput, Progress, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { IconCalendarPlus, IconCheck, IconDots, IconEdit, IconFileReport, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
-import { DateField, EmptyState, paramOptions } from '../../components/common';
+import { DateField, EmptyState, ParamPicker, SitePicker, consentPresets } from '../../components/common';
 import { addMonths, formatDate, relativeDays, todayStr } from '../../lib/dates';
 import { buildIcs, frequencyLabel, nextObligation, OBLIGATION_STATUS, obligationPeriod, obligationPeriods, scheduleStatus } from '../../lib/schedule';
 import { deleteObligation, deleteSchedule, newObligation, newSchedule, saveObligation, saveSchedule, setSubmitted } from '../../db/repo';
@@ -16,7 +16,8 @@ import { CalendarSheet } from '../../components/calendar/CalendarSheet';
 import { CALENDAR_SYMBOLS, scheduleSymbols } from '../../lib/calendar';
 
 function ScheduleModal({ value, onClose }: { value: MonitoringSchedule; onClose: () => void }) {
-  const { sites, params, schedules } = useProject();
+  const data = useProject();
+  const { sites, params, schedules } = data;
   const [s, setS] = useState(value);
   const defaultSymbol = scheduleSymbols([...schedules.filter((x) => x.id !== value.id), value]).get(value.id) ?? CALENDAR_SYMBOLS[0];
   const set = <K extends keyof MonitoringSchedule>(k: K, v: MonitoringSchedule[K]) => setS({ ...s, [k]: v });
@@ -24,7 +25,7 @@ function ScheduleModal({ value, onClose }: { value: MonitoringSchedule; onClose:
     <Modal opened onClose={onClose} title="Sampling schedule" size="lg">
       <Stack gap="sm">
         <TextInput label="Name" value={s.name} onChange={(e) => set('name', e.currentTarget.value)} data-autofocus />
-        <MultiSelect label="Sites" required data={sites.map((x) => ({ value: x.id, label: x.name ? `${x.code} – ${x.name}` : x.code }))} value={s.siteIds} onChange={(v) => set('siteIds', v)} />
+        <SitePicker label="Sites" required sites={sites} value={s.siteIds} onChange={(v) => set('siteIds', v)} placeholder="Choose the sites" />
         <Group grow align="flex-end">
           <NumberInput label="Every" min={1} value={s.every} onChange={(v) => set('every', Number(v) || 1)} />
           <Select
@@ -47,7 +48,7 @@ function ScheduleModal({ value, onClose }: { value: MonitoringSchedule; onClose:
           <DateField label="Programme start" value={s.startDate} onChange={(v) => v && set('startDate', v)} description="Periods are counted from this date" />
           <DateField label="End (optional)" value={s.endDate} onChange={(v) => set('endDate', v)} clearable />
         </Group>
-        <MultiSelect label="Required parameters (optional)" description="Only samples with at least one of these count. Leave empty to count any sample." data={paramOptions(params)} value={s.parameterIds} onChange={(v) => set('parameterIds', v)} searchable clearable />
+        <ParamPicker label="Required parameters (optional)" description="Only samples with at least one of these count. Leave empty to count any sample." params={params} value={s.parameterIds} onChange={(v) => set('parameterIds', v)} placeholder="Any sample counts" presets={consentPresets(data)} />
         <Group grow align="flex-start">
           <Select
             label="Mark on the calendar"

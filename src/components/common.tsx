@@ -1,12 +1,13 @@
-import { Fragment, type ReactNode, useMemo, useState } from 'react';
-import { Anchor, Badge, Box, Checkbox, CloseButton, Collapse, Combobox, Group, Input, InputBase, ScrollArea, SegmentedControl, Stack, Text, Title, Tooltip, Paper, Select, MultiSelect, ThemeIcon, UnstyledButton, useCombobox, type MultiSelectProps, type StyleProp } from '@mantine/core';
+import { type ReactNode, useMemo, useState } from 'react';
+import { Badge, Box, Collapse, Group, Input, SegmentedControl, Stack, Text, Title, Tooltip, Paper, Select, ThemeIcon, UnstyledButton, type StyleProp } from '@mantine/core';
 import { DatePickerInput, type DatePickerInputProps } from '@mantine/dates';
 import { IconAlertTriangle, IconChevronRight, IconCircleCheck, IconCircleX, IconHelpCircle, IconMinus } from '@tabler/icons-react';
 import type { GuidelineSet, Parameter, Site } from '../db/types';
 import { STATUS_META, LEVEL_COLORS, type RuleStatus } from '../lib/compliance';
 import { formatDate, makeDate, periodPresets, todayStr, type Period } from '../lib/dates';
 import { PARAMETER_GROUPS } from '../data/parameters';
-import type { ConsentView } from '../lib/analysis';
+import { consentParameterIds, type ConsentView, type ProjectBundle } from '../lib/analysis';
+import { PopupPicker, type PickerData, type PickerOption, type PickerPreset, type PopupPickerProps } from './PopupPicker';
 
 export function PageHeader({ title, description, actions, badge }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; badge?: ReactNode }) {
   return (
@@ -186,102 +187,19 @@ export function defaultPeriod(yearStartMonth: number, key = 'last12'): PeriodVal
 
 // ------------------------------------------------------------ pickers
 
-/** An option in a picker; `short` is how it is named in a compact summary (a site's code, a guideline's short name). */
-export interface PickerOption {
-  value: string;
-  label: string;
-  short?: string;
-}
-export type PickerData = Array<{ group: string; items: PickerOption[] }>;
+export type { PickerData, PickerOption, PickerPreset } from './PopupPicker';
+/** The pickers open a popup with every option laid out (see PopupPicker); `compact` is kept for the filter bars' callers. */
+type PickerProps = Omit<PopupPickerProps, 'data' | 'noun' | 'label' | 'placeholder'> & { label?: string; placeholder?: string; compact?: boolean };
 
-/**
- * A multi-select that stays one line high – "US1, DP1" or "5 parameters" – and opens to a checklist, so filter bars
- * line up however much is chosen. Nothing chosen shows the placeholder (e.g. "All sites").
- */
-export function CompactMultiSelect({ label, data, value, onChange, placeholder, noun, w, description }: { label: string; data: PickerData; value: string[]; onChange: (v: string[]) => void; placeholder: string; noun: string; w?: StyleProp<React.CSSProperties['width']>; description?: ReactNode }) {
-  const [search, setSearch] = useState('');
-  const combobox = useCombobox({
-    onDropdownClose: () => {
-      combobox.resetSelectedOption();
-      setSearch('');
-    },
-    onDropdownOpen: () => combobox.focusSearchInput(),
-  });
-  const byValue = useMemo(() => new Map(data.flatMap((g) => g.items).map((o) => [o.value, o])), [data]);
-  const chosen = value.map((v) => byValue.get(v)).filter((o): o is PickerOption => !!o);
-  const summary = chosen.length === 0 ? '' : chosen.length <= 3 ? chosen.map((o) => o.short ?? o.label).join(', ') : `${chosen.length} ${noun}`;
-  const q = search.trim().toLowerCase();
-  const toggle = (v: string) => onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
-  const groups = data
-    .map((g) => ({ ...g, items: g.items.filter((o) => !q || o.label.toLowerCase().includes(q) || o.short?.toLowerCase().includes(q)) }))
-    .filter((g) => g.items.length);
-  const options = groups.map((g) => {
-    const opts = g.items.map((o) => (
-      <Combobox.Option value={o.value} key={o.value} active={value.includes(o.value)}>
-        <Group gap="xs" wrap="nowrap">
-          <Checkbox size="xs" radius={3} checked={value.includes(o.value)} readOnly tabIndex={-1} aria-hidden style={{ pointerEvents: 'none' }} />
-          <span>{o.label}</span>
-        </Group>
-      </Combobox.Option>
-    ));
-    return g.group ? (
-      <Combobox.Group key={g.group} label={g.group}>
-        {opts}
-      </Combobox.Group>
-    ) : (
-      <Fragment key="_">{opts}</Fragment>
-    );
-  });
-  return (
-    <Combobox store={combobox} onOptionSubmit={toggle} width="max-content" position="bottom-start" withinPortal>
-      <Combobox.Target>
-        <InputBase
-          component="button"
-          type="button"
-          pointer
-          label={label}
-          description={description}
-          w={w}
-          title={chosen.map((o) => o.label).join('\n') || undefined}
-          onClick={() => combobox.toggleDropdown()}
-          rightSection={value.length ? <CloseButton size="sm" aria-label={`Clear ${label.toLowerCase()}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onChange([])} /> : <Combobox.Chevron />}
-          rightSectionPointerEvents={value.length ? 'all' : 'none'}
-        >
-          {summary ? (
-            <Text span size="sm" truncate display="block">
-              {summary}
-            </Text>
-          ) : (
-            <Input.Placeholder>{placeholder}</Input.Placeholder>
-          )}
-        </InputBase>
-      </Combobox.Target>
-      <Combobox.Dropdown miw={260} maw="min(92vw, 420px)">
-        <Combobox.Search value={search} onChange={(e) => setSearch(e.currentTarget.value)} placeholder={`Search ${noun}`} />
-        <Combobox.Options>
-          <ScrollArea.Autosize mah={340} type="scroll">
-            {options.length ? options : <Combobox.Empty>Nothing found</Combobox.Empty>}
-          </ScrollArea.Autosize>
-        </Combobox.Options>
-        {value.length > 0 && (
-          <Combobox.Footer>
-            <Anchor component="button" type="button" size="xs" onClick={() => onChange([])}>
-              Clear – {placeholder.toLowerCase()}
-            </Anchor>
-          </Combobox.Footer>
-        )}
-      </Combobox.Dropdown>
-    </Combobox>
-  );
-}
-
-type PickerProps = { value: string[]; onChange: (v: string[]) => void; label?: string; compact?: boolean; placeholder?: string } & Partial<Omit<MultiSelectProps, 'value' | 'onChange' | 'data' | 'label' | 'placeholder'>>;
-
-/** Sites: a one-line picker in filter bars (`compact`), chips in forms. */
-export function SitePicker({ sites, value, onChange, label = 'Sites', compact, placeholder = 'All sites', ...rest }: { sites: Site[] } & PickerProps) {
-  const data = useMemo<PickerData>(() => [{ group: '', items: sites.map((s) => ({ value: s.id, label: s.name ? `${s.code} – ${s.name}` : s.code, short: s.code })) }], [sites]);
-  if (compact) return <CompactMultiSelect label={label} data={data} value={value} onChange={onChange} placeholder={placeholder} noun="sites" w={rest.w} />;
-  return <MultiSelect label={label} data={data[0].items} value={value} onChange={onChange} placeholder={value.length ? undefined : placeholder} searchable clearable maxDropdownHeight={300} {...rest} />;
+/** Sites, grouped by type when there are several types. */
+export function SitePicker({ sites, label = 'Sites', placeholder = 'All sites', compact: _compact, ...rest }: { sites: Site[] } & PickerProps) {
+  const data = useMemo<PickerData>(() => {
+    const item = (s: Site): PickerOption => ({ value: s.id, label: s.name ? `${s.code} – ${s.name}` : s.code, short: s.code });
+    const types = [...new Set(sites.map((s) => s.type))];
+    if (types.length < 2) return [{ group: '', items: sites.map(item) }];
+    return types.map((t) => ({ group: t, items: sites.filter((s) => s.type === t).map(item) }));
+  }, [sites]);
+  return <PopupPicker label={label} data={data} placeholder={placeholder} noun="sites" {...rest} />;
 }
 
 export function paramOptions(params: Parameter[], onlyIds?: Set<string>): PickerData {
@@ -296,10 +214,9 @@ export function paramOptions(params: Parameter[], onlyIds?: Set<string>): Picker
   return PARAMETER_GROUPS.filter((g) => groups.has(g)).map((g) => ({ group: g, items: groups.get(g)! }));
 }
 
-export function ParamPicker({ params, value, onChange, onlyIds, label = 'Parameters', compact, placeholder = 'All parameters', ...rest }: { params: Parameter[]; onlyIds?: Set<string> } & PickerProps) {
+export function ParamPicker({ params, onlyIds, label = 'Parameters', placeholder = 'All parameters', compact: _compact, ...rest }: { params: Parameter[]; onlyIds?: Set<string> } & PickerProps) {
   const data = useMemo(() => paramOptions(params, onlyIds), [params, onlyIds]);
-  if (compact) return <CompactMultiSelect label={label} data={data} value={value} onChange={onChange} placeholder={placeholder} noun="parameters" w={rest.w} />;
-  return <MultiSelect label={label} data={data} value={value} onChange={onChange} searchable clearable placeholder={value.length ? undefined : placeholder} maxDropdownHeight={340} {...rest} />;
+  return <PopupPicker label={label} data={data} placeholder={placeholder} noun="parameters" {...rest} />;
 }
 
 export function guidelineOptions(sets: GuidelineSet[]): PickerData {
@@ -316,10 +233,14 @@ export function guidelineOptions(sets: GuidelineSet[]): PickerData {
     .map(([group, items]) => ({ group, items }));
 }
 
-export function GuidelinePicker({ sets, value, onChange, label = 'Compare with guidelines', compact, placeholder = 'None', ...rest }: { sets: GuidelineSet[] } & PickerProps) {
+export function GuidelinePicker({ sets, label = 'Compare with guidelines', placeholder = 'None', compact: _compact, ...rest }: { sets: GuidelineSet[] } & PickerProps) {
   const data = useMemo(() => guidelineOptions(sets), [sets]);
-  if (compact) return <CompactMultiSelect label={label} data={data} value={value} onChange={onChange} placeholder={placeholder} noun="guideline sets" w={rest.w} />;
-  return <MultiSelect label={label} data={data} value={value} onChange={onChange} searchable clearable placeholder={value.length ? undefined : placeholder} maxDropdownHeight={360} {...rest} />;
+  return <PopupPicker label={label} data={data} placeholder={placeholder} noun="guideline sets" title="Choose guideline sets" {...rest} />;
+}
+
+/** Quick picks for a parameter picker: those in the consent, with a limit, with a trigger – among `withData`. */
+export function consentPresets(b: Pick<ProjectBundle, 'rules' | 'schedules' | 'setMap'>, withData?: Set<string>): PickerPreset[] {
+  return CONSENT_VIEWS.map(([view, label, description]) => ({ label: label === 'In consent' ? 'In the consent' : label, description, ids: [...consentParameterIds(b, view)].filter((id) => !withData || withData.has(id)) }));
 }
 
 const CONSENT_VIEWS: Array<[ConsentView, string, string]> = [

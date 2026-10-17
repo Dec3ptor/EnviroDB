@@ -3,7 +3,7 @@ import { ActionIcon, Button, Card, Group, Select, SimpleGrid, Stack, Switch, Tex
 import { notifications } from '@mantine/notifications';
 import { IconCopy, IconDownload, IconFileTypeDocx, IconPhoto } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
-import { EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, defaultPeriod, type PeriodValue } from '../../components/common';
+import { EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, consentPresets, defaultPeriod, type PeriodValue } from '../../components/common';
 import { buildChartSpec, chartOption, type ChartSpec } from '../../charts/timeSeries';
 import { EChart, type EChartHandle } from '../../charts/EChart';
 import { cmToPx, copyPngToClipboard, renderChartPng } from '../../charts/render';
@@ -75,6 +75,7 @@ export function ChartsTab() {
   const [titles, setTitles] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const withData = useMemo(() => new Set(index.paramIdsWithData), [index]);
+  const presets = useMemo(() => consentPresets(data, withData), [data, withData]);
   const size = SIZE_PRESETS[sizeKey];
   const sets = setIds.map((id) => setMap.get(id)).filter((s): s is NonNullable<typeof s> => !!s);
   const limitRules = useMemo(() => expandRules(rules, setMap), [rules, setMap]);
@@ -115,7 +116,7 @@ export function ChartsTab() {
       <Card padding="md">
         <Stack gap="sm">
           <Group align="flex-end" gap="sm" wrap="wrap">
-            <ParamPicker compact params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} w={{ base: '100%', xs: 230 }} label="Graphs of" placeholder="Choose parameters" />
+            <ParamPicker compact params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} presets={presets} w={{ base: '100%', xs: 230 }} label="Graphs of" placeholder="Choose parameters" title="Choose what to graph" />
             <SitePicker compact sites={sites} value={siteIds} onChange={setSiteIds} w={{ base: '100%', xs: 180 }} />
             <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} width={{ base: '100%', xs: 250 }} />
             <GuidelinePicker compact sets={guidelineSets} value={setIds} onChange={setSetIds} w={{ base: '100%', xs: 210 }} label="Guideline lines" placeholder="No guideline lines" />

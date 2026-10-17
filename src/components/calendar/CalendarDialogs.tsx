@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Badge, Button, Checkbox, Group, Modal, MultiSelect, ScrollArea, Select, Stack, Table, Text } from '@mantine/core';
+import { Alert, Badge, Button, Checkbox, Group, Modal, ScrollArea, Select, Stack, Table, Text } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/db';
 import type { CalendarRow, MonitoringSchedule, Project, ReportObligation, Site } from '../../db/types';
@@ -7,6 +7,7 @@ import { addCalendarRows, type CalendarEdit } from '../../db/repo';
 import { MONTH_FIELDS, planFromProject, rowForProject, scheduleSymbols, type RowPlan } from '../../lib/calendar';
 import { frequencyLabel } from '../../lib/schedule';
 import { MONTH_SHORT } from '../../lib/dates';
+import { SitePicker } from '../common';
 
 // The monitoring calendar's dialogs: linking a row to a project (and the sites whose results count for it), filling
 // a row in from the project's sampling schedules and reports, and adding rows for projects.
@@ -249,14 +250,12 @@ export function LinkRowModal({ row, year, onClose, run }: { row: CalendarRow; ye
           clearable
         />
         {projectId && (
-          <MultiSelect
+          <SitePicker
             label="Sites"
             description="Results from these sites count for this row – for a project with a row per kind of monitoring. None: all its sites."
-            data={sites.map((s) => ({ value: s.id, label: s.name ? `${s.code} – ${s.name}` : s.code }))}
+            sites={sites ?? []}
             value={siteIds}
             onChange={setSiteIds}
-            clearable
-            searchable
           />
         )}
         {projectId && changed && (
