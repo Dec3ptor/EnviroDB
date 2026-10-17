@@ -4,7 +4,7 @@
 import type { Parameter, Result, Sample } from '../db/types';
 import type { ProjectBundle } from './analysis';
 import { resultsFor } from './dataIndex';
-import { formatDate, formatDateLong, MONTH_LONG } from './dates';
+import { formatDate, formatDateLong, MONTH_LONG, MONTH_SHORT, type PeriodChoice } from './dates';
 import { percentile } from './stats';
 import { convert } from './units';
 import { fmtNum } from './values';
@@ -112,13 +112,13 @@ export function reportPeriodLabel(start: string, end: string): string {
 }
 
 /** Period choices for the months with sampling, newest first: "Monitoring round – September 2026". */
-export function roundPeriods(b: Pick<ProjectBundle, 'samples' | 'sites' | 'index'>, months = 12): Array<{ key: string; start: string; end: string; label: string }> {
+export function roundPeriods(b: Pick<ProjectBundle, 'samples' | 'sites' | 'index'>, months = 12): PeriodChoice[] {
   return samplingRounds(b, months)
     .filter((r) => r.key !== 'latest')
     .map((r) => {
       const [y, m] = [+r.key.slice(0, 4), +r.key.slice(5, 7)];
       const end = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-      return { key: `round:${r.key}`, start: `${r.key}-01`, end, label: `Monitoring round – ${MONTH_LONG[m - 1]} ${y}` };
+      return { key: `round:${r.key}`, start: `${r.key}-01`, end, label: `Monitoring round – ${MONTH_LONG[m - 1]} ${y}`, group: 'Monitoring rounds', short: `${MONTH_SHORT[m - 1]} ${y}` };
     });
 }
 

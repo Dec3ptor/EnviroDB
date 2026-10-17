@@ -291,6 +291,26 @@ export interface Period {
   label: string;
 }
 
+/** A period offered in a picker: `group` gathers it with others (a report's periods), `short` names it there, `note` is a status. */
+export interface PeriodChoice extends Period {
+  key: string;
+  group?: string;
+  short?: string;
+  note?: string;
+  noteColor?: string;
+}
+
+/** The last `n` reporting years, newest first: "Reporting year 2025/26" (or "Year 2025" when they're calendar years). */
+export function recentReportingYears(today: string, yearStartMonth: number, n = 6): PeriodChoice[] {
+  const out: PeriodChoice[] = [];
+  let ry = reportingYear(today, yearStartMonth);
+  for (let i = 0; i < n; i++) {
+    out.push({ key: `ry:${ry.start}`, start: ry.start, end: ry.end, label: `${yearStartMonth === 1 ? 'Year' : 'Reporting year'} ${ry.label}${ry.end > today ? ' (to date)' : ''}`, short: ry.label, group: yearStartMonth === 1 ? 'Years' : 'Reporting years' });
+    ry = reportingYear(addDays(ry.start, -1), yearStartMonth);
+  }
+  return out;
+}
+
 /** Reporting year containing `date`, where the year starts in `startMonth` (1-12). */
 export function reportingYear(date: string, startMonth: number): Period {
   const y = +date.slice(0, 4), m = +date.slice(5, 7);

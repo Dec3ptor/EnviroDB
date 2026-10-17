@@ -1,5 +1,5 @@
 import type { MonitoringSchedule, ReportObligation, ReportSubmission, Result, Sample } from '../db/types';
-import { addDays, addMonths, addMonthsEom, daysBetween, formatDate, todayStr } from './dates';
+import { addDays, addMonths, addMonthsEom, daysBetween, formatDate, todayStr, type PeriodChoice } from './dates';
 
 // ------------------------------------------------------------ monitoring schedules
 
@@ -134,10 +134,22 @@ export function nextObligation(ob: ReportObligation, today = todayStr()): Obliga
 
 /** Recent reporting periods of each obligation (newest first), as presets for period pickers. */
 export function obligationPresets(obligations: ReportObligation[], today = todayStr()) {
-  const out: Array<{ key: string; start: string; end: string; label: string; obligationId: string; index: number }> = [];
+  const out: Array<PeriodChoice & { obligationId: string; index: number }> = [];
   for (const o of obligations) {
     for (const p of obligationPeriods(o, today).slice(-4).reverse()) {
-      out.push({ key: `obl:${o.id}:${p.index}`, start: p.periodStart, end: p.periodEnd, label: `${o.name}: ${formatDate(p.periodStart)} – ${formatDate(p.periodEnd)}`, obligationId: o.id, index: p.index });
+      const st = OBLIGATION_STATUS[p.status];
+      out.push({
+        key: `obl:${o.id}:${p.index}`,
+        start: p.periodStart,
+        end: p.periodEnd,
+        label: `${o.name}: ${formatDate(p.periodStart)} – ${formatDate(p.periodEnd)}`,
+        obligationId: o.id,
+        index: p.index,
+        group: o.name,
+        short: `${formatDate(p.periodStart)} – ${formatDate(p.periodEnd)}`,
+        note: p.status === 'submitted' || p.status === 'in-progress' ? st.label : p.status === 'overdue' ? `Overdue – due ${formatDate(p.dueDate)}` : `Due ${formatDate(p.dueDate)}`,
+        noteColor: st.color,
+      });
     }
   }
   return out;

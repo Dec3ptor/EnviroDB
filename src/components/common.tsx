@@ -1,10 +1,11 @@
 import { type ReactNode, useMemo, useState } from 'react';
-import { Badge, Box, Collapse, Group, Input, SegmentedControl, Stack, Text, Title, Tooltip, Paper, Select, ThemeIcon, UnstyledButton, type StyleProp } from '@mantine/core';
+import { Badge, Box, Button, Collapse, Group, Input, InputBase, Modal, SegmentedControl, SimpleGrid, Stack, Text, Title, Tooltip, Paper, ThemeIcon, UnstyledButton, type StyleProp } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
 import { DatePickerInput, type DatePickerInputProps } from '@mantine/dates';
-import { IconAlertTriangle, IconChevronRight, IconCircleCheck, IconCircleX, IconHelpCircle, IconMinus } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCalendar, IconChevronRight, IconCircleCheck, IconCircleX, IconHelpCircle, IconMinus, IconSelector } from '@tabler/icons-react';
 import type { GuidelineSet, Parameter, Site } from '../db/types';
 import { STATUS_META, LEVEL_COLORS, type RuleStatus } from '../lib/compliance';
-import { formatDate, makeDate, periodPresets, todayStr, type Period } from '../lib/dates';
+import { addMonths, formatDate, makeDate, periodPresets, recentReportingYears, todayStr, type PeriodChoice } from '../lib/dates';
 import { PARAMETER_GROUPS } from '../data/parameters';
 import { consentParameterIds, type ConsentView, type ProjectBundle } from '../lib/analysis';
 import { PopupPicker, type PickerData, type PickerOption, type PickerPreset, type PopupPickerProps } from './PopupPicker';
@@ -145,38 +146,122 @@ export interface PeriodValue {
   label: string;
 }
 
-export function usePeriodPresets(yearStartMonth: number, extra: Array<Period & { key: string }> = []) {
+export function usePeriodPresets(yearStartMonth: number, extra: PeriodChoice[] = []) {
   return useMemo(() => [...extra, ...periodPresets(todayStr(), yearStartMonth)], [yearStartMonth, extra]);
 }
 
-export function PeriodPicker({ value, onChange, yearStartMonth, extra = [], width = 300 }: { value: PeriodValue; onChange: (v: PeriodValue) => void; yearStartMonth: number; extra?: Array<Period & { key: string }>; width?: StyleProp<React.CSSProperties['width']> }) {
-  const presets = usePeriodPresets(yearStartMonth, extra);
-  const data = [...presets.map((p) => ({ value: p.key, label: p.label })), { value: 'custom', label: 'Custom range…' }];
+/**
+ * The period: a one-line field that opens a popup with the choices laid out – the reports due (with their status),
+ * monitoring rounds, the usual periods, recent reporting years, and a custom range.
+ */
+export function PeriodPicker({ value, onChange, yearStartMonth, extra = [], width = 300, label = 'Period' }: { value: PeriodValue; onChange: (v: PeriodValue) => void; yearStartMonth: number; extra?: PeriodChoice[]; width?: StyleProp<React.CSSProperties['width']>; label?: string }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Group gap="xs" wrap="wrap" w={{ base: '100%', xs: 'auto' }}>
-      <Select
-        label="Period"
-        data={data}
-        value={value.key}
-        allowDeselect={false}
+    <>
+      <InputBase
+        component="button"
+        type="button"
+        pointer
+        label={label}
         w={width}
-        comboboxProps={{ width: 'max-content' }}
-        onChange={(k) => {
-          if (!k) return;
-          if (k === 'custom') onChange({ ...value, key: 'custom', label: `${formatDate(value.start)} – ${formatDate(value.end)}` });
-          else {
-            const p = presets.find((x) => x.key === k)!;
-            onChange({ key: p.key, start: p.start, end: p.end, label: p.label });
-          }
-        }}
-      />
-      {value.key === 'custom' && (
-        <>
-          <DateField label="From" value={value.start} onChange={(v) => v && onChange({ ...value, start: v, label: `${formatDate(v)} – ${formatDate(value.end)}` })} w={150} />
-          <DateField label="To" value={value.end} onChange={(v) => v && onChange({ ...value, end: v, label: `${formatDate(value.start)} – ${formatDate(v)}` })} w={150} />
-        </>
+        title={value.label}
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        leftSection={<IconCalendar size={16} />}
+        rightSection={<IconSelector size={16} style={{ opacity: 0.6 }} />}
+        rightSectionPointerEvents="none"
+      >
+        <Text span size="sm" truncate display="block">
+          {value.label}
+        </Text>
+      </InputBase>
+      {open && (
+        <PeriodDialog
+          value={value}
+          yearStartMonth={yearStartMonth}
+          extra={extra}
+          onClose={() => setOpen(false)}
+          onPick={(v) => {
+            onChange(v);
+            setOpen(false);
+          }}
+        />
       )}
-    </Group>
+    </>
+  );
+}
+
+function PeriodDialog({ value, yearStartMonth, extra, onClose, onPick }: { value: PeriodValue; yearStartMonth: number; extra: PeriodChoice[]; onClose: () => void; onPick: (v: PeriodValue) => void }) {
+  const phone = useMediaQuery('(max-width: 36em)');
+  const today = todayStr();
+  const [from, setFrom] = useState(value.start > '1900-01-01' ? value.start : addMonths(today, -12));
+  const [to, setTo] = useState(value.end < '2199-12-31' ? value.end : today);
+  // the extra choices in their groups (a report's periods, monitoring rounds), in the order given
+  const groups: Array<{ title: string; items: PeriodChoice[] }> = [];
+  for (const c of extra) {
+    const title = c.group ?? 'For this report';
+    const g = groups.find((x) => x.title === title);
+    if (g) g.items.push(c);
+    else groups.push({ title, items: [c] });
+  }
+  groups.push({ title: 'Usual periods', items: periodPresets(today, yearStartMonth) });
+  groups.push({ title: yearStartMonth === 1 ? 'Years' : 'Reporting years', items: recentReportingYears(today, yearStartMonth) });
+  const pick = (c: PeriodChoice) => onPick({ key: c.key, start: c.start, end: c.end, label: c.label });
+  const isNow = (c: PeriodChoice) => c.key === value.key;
+  const compact = (t: string) => t === 'Monitoring rounds' || t.endsWith('years') || t === 'Years';
+  return (
+    <Modal opened onClose={onClose} title={<Text fw={600}>Choose the period</Text>} size="lg" fullScreen={!!phone}>
+      <Stack gap="md">
+        {groups.map((g) => (
+          <div key={g.title}>
+            <Text size="sm" fw={600} mb={6}>
+              {g.title}
+            </Text>
+            <SimpleGrid cols={compact(g.title) ? { base: 2, xs: 3, sm: 4 } : { base: 1, xs: 2 }} spacing={6} verticalSpacing={6}>
+              {g.items.map((c) => {
+                const now = isNow(c);
+                return (
+                  <UnstyledButton
+                    key={c.key}
+                    onClick={() => pick(c)}
+                    aria-pressed={now}
+                    title={c.label}
+                    p={compact(g.title) ? 6 : 8}
+                    style={{
+                      borderRadius: 'var(--mantine-radius-sm)',
+                      border: `1px solid ${now ? 'var(--mantine-color-teal-6)' : 'var(--mantine-color-default-border)'}`,
+                      background: now ? 'var(--mantine-color-teal-light)' : undefined,
+                      textAlign: compact(g.title) ? 'center' : undefined,
+                    }}
+                  >
+                    <Text size="sm" fw={now ? 600 : 500} lh={1.3}>
+                      {c.short ?? c.label}
+                    </Text>
+                    {c.note && (
+                      <Text size="xs" c={c.noteColor ?? 'dimmed'} lh={1.3}>
+                        {c.note}
+                      </Text>
+                    )}
+                  </UnstyledButton>
+                );
+              })}
+            </SimpleGrid>
+          </div>
+        ))}
+        <div>
+          <Text size="sm" fw={600} mb={6}>
+            Dates of your own
+          </Text>
+          <Group gap="xs" align="flex-end" wrap="wrap">
+            <DateField label="From" value={from} onChange={(v) => v && setFrom(v)} w={150} />
+            <DateField label="To" value={to} onChange={(v) => v && setTo(v)} w={150} />
+            <Button variant={value.key === 'custom' ? 'filled' : 'light'} disabled={!from || !to || from > to} onClick={() => onPick({ key: 'custom', start: from, end: to, label: `${formatDate(from)} – ${formatDate(to)}` })}>
+              Use these dates
+            </Button>
+          </Group>
+        </div>
+      </Stack>
+    </Modal>
   );
 }
 

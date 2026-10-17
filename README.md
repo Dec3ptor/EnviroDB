@@ -206,7 +206,9 @@ dissolved metals…; sites by type; guideline sets by family) – tick a whole g
 any words ("zinc", "dissolved metals"; Enter ticks the first match), or use a quick pick such as
 *In the consent*, *Limits* or *Triggers*. Nothing changes until *Done*; *Cancel* leaves it as it was.
 Parameters, sites and guideline sets are chosen this way everywhere – graphs, data, reports, rules,
-sampling schedules and the calendar.
+sampling schedules and the calendar. The period works the same way: its popup lays out each report's
+recent periods (with whether they're submitted or when they're due), the monitoring rounds, the usual
+periods, the last six reporting years and dates of your own.
 
 ## The shared workspace (where the data is stored)
 
