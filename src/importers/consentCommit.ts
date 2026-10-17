@@ -3,6 +3,7 @@ import type { ExceedanceNote, MonitoringSchedule, Parameter, Project, ReportObli
 import { MONTH_LONG } from '../lib/dates';
 import { nowIso, slugify, uid } from '../lib/ids';
 import { NEW_PARAM, ruleBlockers, type ConsentPlan } from './consent';
+import { withGuidelineLimit } from '../lib/compliance';
 
 /** Everything needed to undo a consent import. */
 export interface ConsentUndo {
@@ -25,6 +26,7 @@ export interface ConsentImportResult {
 
 /** Write the selected parts of a reviewed consent plan to the project. */
 export async function commitConsentPlan(projectId: string, plan: ConsentPlan, opts: { replace: boolean }): Promise<ConsentImportResult> {
+  const sets = new Map((await db.guidelineSets.toArray()).map((g) => [g.id, g]));
   return db.transaction('rw', [db.projects, db.sites, db.rules, db.schedules, db.obligations, db.notes, db.parameters], async () => {
     const project = await db.projects.get(projectId);
     if (!project) throw new Error('Project not found');
@@ -89,6 +91,7 @@ export async function commitConsentPlan(projectId: string, plan: ConsentPlan, op
       if (!pr.include) continue;
       const r: Rule = { ...pr.rule, projectId };
       if (r.parameterId?.startsWith(NEW_PARAM)) r.parameterId = paramIds.get(r.parameterId);
+      Object.assign(r, withGuidelineLimit(r, sets)); // a limit from a guideline set, for the parameter chosen in the review
       if (r.siteIds.length) {
         const kept = r.siteIds.filter((id) => valid.has(id));
         if (!kept.length) {

@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Alert, Button, Group, Modal, MultiSelect, NumberInput, Paper, Select, SimpleGrid, Stack, Switch, Text, TextInput, Textarea, Autocomplete } from '@mantine/core';
-import type { ChangeType, Operator, Rule, RuleKind, StatName, WindowKind } from '../../db/types';
+import { Alert, Button, Group, Modal, MultiSelect, NumberInput, Paper, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text, TextInput, Textarea, Autocomplete } from '@mantine/core';
+import type { ChangeType, GuidelineSet, Operator, Rule, RuleKind, StatName, WindowKind } from '../../db/types';
 import { RULE_LEVELS } from '../../db/types';
 import { useProject } from '../../hooks/useProjectData';
-import { paramOptions, guidelineOptions, RuleStatusBadge, DateField } from '../../components/common';
-import { describeRule, evaluateRule } from '../../lib/compliance';
+import { paramOptions, guidelineOptions, ParamPicker, RuleStatusBadge, DateField } from '../../components/common';
+import { describeRule, evaluateRule, GUIDELINE_LIMIT_KINDS, guidelineLimitValue, thresholdText, withGuidelineLimit } from '../../lib/compliance';
+import { describeLimit, guidelineFor } from '../../lib/guidelines';
 import { evalContext } from '../../lib/analysis';
-import { COMMON_UNITS } from '../../lib/units';
+import { COMMON_UNITS, convert, unitLabel } from '../../lib/units';
+import { fmtNum } from '../../lib/values';
 import { saveRule } from '../../db/repo';
 
 export const KIND_LABELS: Record<RuleKind, string> = {
@@ -14,7 +16,7 @@ export const KIND_LABELS: Record<RuleKind, string> = {
   statistic: 'Statistical limit (median, percentile, mean…)',
   change: 'Change relative to an upstream / background site',
   consecutive: 'Consecutive results exceeding a level',
-  guideline: 'Compare results with a guideline set',
+  guideline: 'Compare results with a guideline set (every analyte or those you choose)',
 };
 
 const OPS: Array<{ value: Operator; label: string }> = [
@@ -24,6 +26,22 @@ const OPS: Array<{ value: Operator; label: string }> = [
   { value: '<=', label: 'is at most (≤)' },
   { value: 'outside', label: 'is outside the range' },
 ];
+
+/** A set's value for a parameter, e.g. "8 µg/L", "6.5–8.5", "≥ 6 mg/L" (in `unit` where it converts). */
+function setValueText(set: GuidelineSet, parameterId: string, unit: string): string {
+  const gv = set.values.find((v) => v.parameterId === parameterId);
+  if (!gv) return '';
+  const lim = guidelineFor(set, parameterId, unit) ?? guidelineFor(set, parameterId, gv.unit);
+  const u = guidelineFor(set, parameterId, unit) ? unit : gv.unit;
+  return lim ? `${describeLimit(lim, u)}${gv.hardness ? ' at 30 mg/L hardness' : ''}`.trim() : '';
+}
+
+/** Sets that have a value for the parameter, grouped like the guideline picker, and each one's value. */
+function setsWithValue(sets: GuidelineSet[], parameterId: string | undefined, unit: string) {
+  const having = parameterId ? sets.filter((s) => s.values.some((v) => v.parameterId === parameterId && (v.min !== undefined || v.max !== undefined))) : [];
+  const values = new Map(having.map((s) => [s.id, setValueText(s, parameterId!, unit)]));
+  return { data: guidelineOptions(having).map((g) => ({ group: g.group, items: g.items.map((o) => ({ value: o.value, label: o.label })) })), values };
+}
 
 export function RuleEditor({ rule, onClose, period }: { rule: Rule | null; onClose: () => void; period: { start: string; end: string } }) {
   const data = useProject();
@@ -40,9 +58,37 @@ export function RuleEditor({ rule, onClose, period }: { rule: Rule | null; onClo
   }, [r, data, period]);
   if (!r) return null;
   const p = r.parameterId ? data.paramMap.get(r.parameterId) : undefined;
+  // the rule as it will be saved: a limit taken from a guideline set filled in
+  const eff = withGuidelineLimit(r, data.setMap);
+  const limitSets = setsWithValue(guidelineSets, r.parameterId, eff.unit || p?.unit || '');
+  const canUseSet = GUIDELINE_LIMIT_KINDS.has(r.kind);
+  const fromSet = canUseSet && r.limitSetId !== undefined;
+  const limitGv = fromSet ? guidelineLimitValue(r, data.setMap) : undefined;
+  const ruleSet = r.kind === 'guideline' && r.guidelineSetId ? data.setMap.get(r.guidelineSetId) : undefined;
+  const setParamIds = new Set(ruleSet?.values.map((v) => v.parameterId) ?? []);
+  /** Changing the type keeps a guideline choice: one analyte from a set ⇄ a limit at that set's value. */
+  const changeKind = (kind: RuleKind) => {
+    const next: Rule = { ...r, kind };
+    if (kind === 'guideline' && !r.guidelineSetId && r.limitSetId) Object.assign(next, { guidelineSetId: r.limitSetId, parameterIds: r.parameterId ? [r.parameterId] : undefined });
+    if (GUIDELINE_LIMIT_KINDS.has(kind) && r.kind === 'guideline' && r.guidelineSetId && r.parameterIds?.length === 1 && !r.parameterId)
+      Object.assign(next, { parameterId: r.parameterIds[0], limitSetId: r.guidelineSetId, unit: data.paramMap.get(r.parameterIds[0])?.unit });
+    setR(next);
+  };
+  /** Take the limit from a guideline set: the project's sets first, then any set with a value for the parameter. */
+  const takeLimitFromSet = (on: boolean) => {
+    if (!on) return setR({ ...eff, limitSetId: undefined, hardnessAdjust: undefined });
+    const having = (id: string) => !!r.parameterId && !!data.setMap.get(id)?.values.some((v) => v.parameterId === r.parameterId);
+    const first = data.project.guidelineSetIds.find(having) ?? guidelineSets.find((s) => having(s.id))?.id ?? '';
+    setR({ ...r, limitSetId: first });
+  };
   const siteData = sites.map((s) => ({ value: s.id, label: s.name ? `${s.code} – ${s.name}` : s.code }));
   const needsParam = r.kind !== 'guideline';
-  const valid = !!r.name.trim() && (r.kind === 'guideline' ? !!r.guidelineSetId : !!r.parameterId && (r.operator === 'outside' ? r.min !== undefined || r.max !== undefined : r.value !== undefined)) && (r.kind !== 'change' || !!r.referenceSiteId);
+  const valid =
+    !!r.name.trim() &&
+    (r.kind === 'guideline'
+      ? !!r.guidelineSetId
+      : !!r.parameterId && (fromSet ? !!limitGv : eff.operator === 'outside' ? eff.min !== undefined || eff.max !== undefined : eff.value !== undefined)) &&
+    (r.kind !== 'change' || !!r.referenceSiteId);
 
   return (
     <Modal opened onClose={onClose} title={rule && data.rules.some((x) => x.id === rule.id) ? 'Edit rule' : 'New consent rule / trigger'} size="xl">
@@ -52,7 +98,7 @@ export function RuleEditor({ rule, onClose, period }: { rule: Rule | null; onClo
           <TextInput label="Consent condition" value={r.condition ?? ''} onChange={(e) => set('condition', e.currentTarget.value)} placeholder="e.g. Condition 8(a)" />
           <Autocomplete label="Level" data={[...RULE_LEVELS]} value={r.level} onChange={(v) => set('level', v)} description="“Limit” levels show red; others amber" />
         </SimpleGrid>
-        <Select label="Type of rule" data={Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label }))} value={r.kind} onChange={(v) => v && set('kind', v as RuleKind)} allowDeselect={false} />
+        <Select label="Type of rule" data={Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label }))} value={r.kind} onChange={(v) => v && changeKind(v as RuleKind)} allowDeselect={false} />
 
         {needsParam && (
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
@@ -62,10 +108,42 @@ export function RuleEditor({ rule, onClose, period }: { rule: Rule | null; onClo
         )}
         {r.kind === 'guideline' && (
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
-            <Select label="Guideline set" required searchable data={guidelineOptions(guidelineSets)} value={r.guidelineSetId ?? null} onChange={(v) => set('guidelineSetId', v ?? undefined)} />
+            <Select
+              label="Guideline set"
+              required
+              searchable
+              data={guidelineOptions(guidelineSets)}
+              value={r.guidelineSetId ?? null}
+              onChange={(v) => {
+                const values = new Set(v ? data.setMap.get(v)?.values.map((x) => x.parameterId) : []);
+                setR({ ...r, guidelineSetId: v ?? undefined, parameterIds: r.parameterIds?.filter((id) => values.has(id)) });
+              }}
+            />
             <MultiSelect label="Applies to sites" data={siteData} value={r.siteIds} onChange={(v) => set('siteIds', v)} placeholder={r.siteIds.length ? undefined : 'All sites'} clearable />
-            <Switch label="Hardness-modify hardness-dependent metals (ANZECC 2000)" checked={!!r.hardnessAdjust} onChange={(e) => set('hardnessAdjust', e.currentTarget.checked)} />
+            <ParamPicker
+              label="Analytes to compare"
+              params={params}
+              onlyIds={setParamIds}
+              value={r.parameterIds ?? []}
+              onChange={(v) => set('parameterIds', v.length ? v : undefined)}
+              placeholder={ruleSet ? `Every analyte in the set (${setParamIds.size})` : 'Choose a guideline set first'}
+              disabled={!ruleSet}
+              description="Only these analytes are compared with the set"
+            />
+            <Switch mt={{ sm: 30 }} label="Hardness-modify hardness-dependent metals (ANZECC 2000)" checked={!!r.hardnessAdjust} onChange={(e) => set('hardnessAdjust', e.currentTarget.checked)} />
           </SimpleGrid>
+        )}
+        {ruleSet && !!r.parameterIds?.length && (
+          <Text size="xs" c="dimmed">
+            {ruleSet.shortName} values:{' '}
+            {r.parameterIds
+              .map((id) => {
+                const pp = data.paramMap.get(id);
+                return pp ? `${pp.name} ${setValueText(ruleSet, id, pp.unit)}` : '';
+              })
+              .filter(Boolean)
+              .join('; ')}
+          </Text>
         )}
 
         {r.kind === 'change' && (
@@ -126,9 +204,67 @@ export function RuleEditor({ rule, onClose, period }: { rule: Rule | null; onClo
 
         {r.kind !== 'guideline' && (
           <Paper withBorder p="sm" radius="md">
-            <Text size="sm" fw={500} mb={6}>
-              Exceeded when the {r.kind === 'change' ? 'change' : r.kind === 'statistic' ? 'statistic' : 'result'}…
-            </Text>
+            <Group justify="space-between" gap="xs" mb={8}>
+              <Text size="sm" fw={500}>
+                {fromSet ? 'The limit' : `Exceeded when the ${r.kind === 'change' ? 'change' : r.kind === 'statistic' ? 'statistic' : 'result'}…`}
+              </Text>
+              {canUseSet && (
+                <SegmentedControl
+                  size="xs"
+                  data={[
+                    { value: 'typed', label: 'A value you enter' },
+                    { value: 'set', label: 'A guideline value' },
+                  ]}
+                  value={fromSet ? 'set' : 'typed'}
+                  onChange={(v) => takeLimitFromSet(v === 'set')}
+                />
+              )}
+            </Group>
+            {fromSet ? (
+              <Stack gap="xs">
+                <Group align="flex-end" gap="sm" wrap="wrap">
+                  <Select
+                    label="Guideline value from"
+                    searchable
+                    w={{ base: '100%', sm: 420 }}
+                    data={limitSets.data}
+                    renderOption={({ option }) => (
+                      <div>
+                        <Text size="sm">{option.label}</Text>
+                        <Text size="xs" c="dimmed">
+                          {limitSets.values.get(option.value)}
+                        </Text>
+                      </div>
+                    )}
+                    maxDropdownHeight={360}
+                    value={r.limitSetId || null}
+                    onChange={(v) => setR({ ...r, limitSetId: v ?? '' })}
+                    placeholder={r.parameterId ? 'Choose a guideline set' : 'Choose the parameter first'}
+                    nothingFoundMessage="No guideline set has a value for this parameter"
+                    disabled={!r.parameterId}
+                  />
+                  <Autocomplete label="Unit" data={COMMON_UNITS} value={eff.unit ?? p?.unit ?? ''} onChange={(v) => set('unit', v)} w={150} />
+                </Group>
+                {limitGv ? (
+                  <Text size="sm">
+                    Exceeded when the {r.kind === 'statistic' ? 'statistic' : 'result'} is <b>{thresholdText(eff, eff.unit ?? '')}</b>
+                    {limitGv.hardness && r.kind !== 'statistic' && eff.hardnessAdjust ? ', modified for each sample’s hardness' : ''}.
+                  </Text>
+                ) : (
+                  <Text size="sm" c="red">
+                    {r.parameterId ? (r.limitSetId ? 'That guideline set has no value for this parameter – choose another.' : 'Choose a guideline set.') : 'Choose the parameter first.'}
+                  </Text>
+                )}
+                {limitGv?.hardness && r.kind !== 'statistic' && (
+                  <Switch
+                    label="Hardness-modify for each sample (ANZECC 2000)"
+                    description={`Off: the value at 30 mg/L hardness, ${fmtNum(limitGv.max !== undefined ? convert(limitGv.max, limitGv.unit, eff.unit ?? limitGv.unit) ?? limitGv.max : undefined)} ${unitLabel(eff.unit ?? limitGv.unit)}, for every sample`}
+                    checked={!!r.hardnessAdjust}
+                    onChange={(e) => set('hardnessAdjust', e.currentTarget.checked)}
+                  />
+                )}
+              </Stack>
+            ) : (
             <Group align="flex-end" gap="sm" wrap="wrap">
               <Select data={OPS.filter((o) => r.kind !== 'change' || o.value !== 'outside')} value={r.operator} onChange={(v) => v && set('operator', v as Operator)} w={230} allowDeselect={false} />
               {r.operator === 'outside' ? (
@@ -143,6 +279,7 @@ export function RuleEditor({ rule, onClose, period }: { rule: Rule | null; onClo
                 <Autocomplete label="Unit" data={COMMON_UNITS} value={r.unit ?? p?.unit ?? ''} onChange={(v) => set('unit', v)} w={150} description={p && r.unit && r.unit !== p.unit ? `Results converted from ${p.unit}` : undefined} />
               )}
             </Group>
+            )}
           </Paper>
         )}
 
@@ -156,7 +293,7 @@ export function RuleEditor({ rule, onClose, period }: { rule: Rule | null; onClo
         {valid && preview && (
           <Alert variant="light" color={preview.status === 'exceeded' ? 'red' : preview.status === 'compliant' ? 'green' : 'gray'} title="Preview for the selected period">
             <Stack gap={4}>
-              <Text size="sm">Tests: {describeRule(r, data.paramMap, sites, data.setMap)}</Text>
+              <Text size="sm">Tests: {describeRule(eff, data.paramMap, sites, data.setMap)}</Text>
               <Group gap="xs">
                 <RuleStatusBadge status={preview.status} size="sm" />
                 <Text size="sm">{preview.summary}</Text>
@@ -171,7 +308,7 @@ export function RuleEditor({ rule, onClose, period }: { rule: Rule | null; onClo
           <Button
             disabled={!valid}
             onClick={async () => {
-              await saveRule(r, rule ?? undefined);
+              await saveRule(eff, rule ?? undefined);
               onClose();
             }}
           >

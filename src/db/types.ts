@@ -180,6 +180,14 @@ export interface Rule {
   consecutive?: number;
   // guideline rules
   guidelineSetId?: ID;
+  /** Guideline rules: only these analytes from the set (none = every analyte in it). */
+  parameterIds?: ID[];
+  /**
+   * Single-parameter rules (limit, statistic, consecutive): the limit is this guideline set's value for the parameter,
+   * filled in from the set rather than typed (see withGuidelineLimit).
+   */
+  limitSetId?: ID;
+  /** Guideline rules, and limits taken from a guideline: hardness-modify hardness-dependent metals for each sample. */
   hardnessAdjust?: boolean;
   action?: string; // required response if triggered
   active: boolean;

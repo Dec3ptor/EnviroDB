@@ -4,7 +4,7 @@
 
 import type { Result, Rule } from '../db/types';
 import { evaluateAll, pivot, statsTable, type ProjectBundle } from './analysis';
-import { exceededWhen, siteLabel, type Exceedance, type RuleStatus } from './compliance';
+import { exceededWhen, ruleParamIds, siteLabel, type Exceedance, type RuleStatus } from './compliance';
 import { formatDate, MONTH_LONG, todayStr } from './dates';
 import { guidelineFor } from './guidelines';
 import { frequencyLabel, nextObligation, OBLIGATION_STATUS } from './schedule';
@@ -162,7 +162,7 @@ function scopeRules(b: ProjectBundle, siteIds: string[], paramIds: string[]) {
     if (paramSel) {
       if (rule.kind === 'guideline') {
         const set = rule.guidelineSetId ? b.setMap.get(rule.guidelineSetId) : undefined;
-        if (!set || !set.values.some((v) => paramSel.has(v.parameterId))) continue;
+        if (!set || !ruleParamIds(rule, b.setMap).some((id) => paramSel.has(id))) continue;
         setMap.set(set.id, { ...set, values: set.values.filter((v) => paramSel.has(v.parameterId)) });
       } else if (!rule.parameterId || !paramSel.has(rule.parameterId)) continue;
     }
@@ -294,7 +294,7 @@ export function buildAiInput(b: ProjectBundle, o: AiInputOptions): AiInput {
   }
 
   if (S.guidelines) {
-    const setIds = Array.from(new Set([...project.guidelineSetIds, ...scope.pairs.flatMap(({ rule }) => (rule.kind === 'guideline' && rule.guidelineSetId ? [rule.guidelineSetId] : []))]));
+    const setIds = Array.from(new Set([...project.guidelineSetIds, ...scope.pairs.flatMap(({ rule }) => (rule.kind === 'guideline' && rule.guidelineSetId ? [rule.guidelineSetId] : rule.limitSetId ? [rule.limitSetId] : []))]));
     const inData = new Set(columns.map((c) => c.id));
     const blocks: string[] = [];
     let hardnessUsed = false;
@@ -323,7 +323,7 @@ export function buildAiInput(b: ProjectBundle, o: AiInputOptions): AiInput {
       section('Guideline values');
       L.push('Converted to the units used in the results.');
       if (hardnessUsed) {
-        const adjusted = project.hardnessAdjust || scope.pairs.some(({ rule }) => rule.kind === 'guideline' && rule.hardnessAdjust);
+        const adjusted = project.hardnessAdjust || scope.pairs.some(({ rule }) => (rule.kind === 'guideline' || !!rule.limitSetId) && rule.hardnessAdjust);
         L.push(
           adjusted
             ? '* Hardness-dependent: the value applies at a hardness of 30 mg/L as CaCO3. EnviroDB adjusts it for each sample where hardness was measured or could be calculated from calcium and magnesium (ANZECC 2000: adjusted value = value × (H/30)^a for H above 30 mg/L, with H capped at 400 mg/L).'

@@ -74,7 +74,41 @@ describe('consent set-up with an AI tool', () => {
     const exStart = t.indexOf('```json', t.indexOf('## Example')) + 7;
     const example = t.slice(exStart, t.indexOf('```', exStart));
     const parsed = parseConsentAnswer(example);
-    expect('data' in parsed && planConsentImport(parsed.data, ctx, TODAY).rules.length).toBe(4);
+    const plan = 'data' in parsed ? planConsentImport(parsed.data, ctx, TODAY) : null;
+    expect(plan?.rules.length).toBe(5);
+    expect(plan?.rules.find((r) => r.rule.kind === 'guideline')?.rule.parameterIds).toEqual(['cu-d', 'zn-d']);
+    expect(t).toContain('parameters (the analytes the consent names');
+  });
+
+  it('reads the analytes a guideline rule names, and limits that are a guideline value', () => {
+    const answer = JSON.stringify({
+      format: 'envirodb-consent-setup',
+      version: 1,
+      sites: [{ code: 'DS1', name: 'Downstream' }],
+      rules: [
+        { name: 'Copper and zinc', kind: 'guideline', guidelineSet: 'anzg-fw-95', parameters: ['Dissolved Copper', 'Dissolved Zinc', 'Unobtainium'], sites: ['DS1'], hardnessAdjust: true },
+        { name: 'Zinc median', kind: 'statistic', parameter: 'Dissolved Zinc', statistic: 'median', window: 'year', guidelineSet: 'anzg-fw-95', sites: ['DS1'] },
+        { name: 'Zinc', kind: 'threshold', parameter: 'Dissolved Zinc', guidelineSet: 'anzg-fw-95', hardnessAdjust: true, sites: ['DS1'] },
+        { name: 'TSS', kind: 'threshold', parameter: 'Total Suspended Solids', guidelineSet: 'anzg-fw-95', sites: ['DS1'] },
+        { name: 'Copper', kind: 'threshold', parameter: 'Dissolved Copper', guidelineSet: 'no such set', sites: ['DS1'] },
+      ],
+    });
+    const { data } = parseConsentAnswer(answer) as { data: ConsentAnswer };
+    const plan = planConsentImport(data, ctx, TODAY);
+    const byName = (n: string) => plan.rules.find((r) => r.rule.name === n)!;
+    const cuzn = byName('Copper and zinc');
+    expect(cuzn.rule.parameterIds).toEqual(['cu-d', 'zn-d']);
+    expect(cuzn.warnings).toEqual([expect.stringMatching(/no value for "Unobtainium" – left out/)]);
+    const med = byName('Zinc median');
+    expect(med.warnings).toEqual([]);
+    expect(med.rule).toMatchObject({ limitSetId: 'anzg-fw-95', operator: '>', hardnessAdjust: false });
+    expect(med.rule.value! * (med.rule.unit === 'µg/L' ? 1 : 1000)).toBeCloseTo(8);
+    expect(ruleBlockers(med.rule)).toEqual([]);
+    expect(byName('Zinc').rule.hardnessAdjust).toBe(true);
+    const tss = byName('TSS');
+    expect(tss.warnings).toEqual([expect.stringMatching(/has no value for Total Suspended Solids – enter the limit/)]);
+    expect(ruleBlockers(tss.rule)).toEqual(['needs a limit value']);
+    expect(byName('Copper').warnings).toEqual([expect.stringMatching(/Guideline set "no such set" not found – enter the limit/)]);
   });
 
   it('reads answers with prose, code fences and trailing commas, and explains failures', () => {

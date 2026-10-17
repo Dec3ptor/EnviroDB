@@ -1,8 +1,8 @@
-import type { GuidelineSet, NdHandling, Operator, Parameter, Project, Qualifier, Result, Rule, Site } from '../db/types';
+import type { GuidelineSet, GuidelineValue, NdHandling, Operator, Parameter, Project, Qualifier, Result, Rule, Site } from '../db/types';
 import type { DataIndex } from './dataIndex';
 import { resultsFor } from './dataIndex';
 import { addDays, dayOf, daysBetween, formatDate, reportingYear } from './dates';
-import { compareResult, describeLimit, toInterval, verdict, verdictOutside, type Verdict } from './guidelines';
+import { compareResult, describeLimit, limitFor, toInterval, verdict, verdictOutside, type Verdict } from './guidelines';
 import { computeStat, statLabel, type PercentileMethod } from './stats';
 import { convert, unitLabel } from './units';
 import { fmtNum, fmtResult, statValue } from './values';
@@ -61,20 +61,89 @@ export function thresholdText(rule: Rule, unit: string): string {
   return `${OP_TEXT[rule.operator]} ${fmtNum(rule.value)}${rule.changeType === 'percent' ? '%' : ` ${u}`}`.trim();
 }
 
+// ------------------------------------------------------------ limits taken from a guideline set
+
+/** Rule kinds whose limit can be a guideline set's value for their parameter. */
+export const GUIDELINE_LIMIT_KINDS: ReadonlySet<Rule['kind']> = new Set(['threshold', 'statistic', 'consecutive']);
+
+/** The guideline value a rule's limit comes from, when it takes it from a set (and the set has one for its parameter). */
+export function guidelineLimitValue(rule: Rule, sets?: Map<string, GuidelineSet>): GuidelineValue | undefined {
+  if (!rule.limitSetId || !rule.parameterId || !GUIDELINE_LIMIT_KINDS.has(rule.kind)) return undefined;
+  const gv = sets?.get(rule.limitSetId)?.values.find((v) => v.parameterId === rule.parameterId);
+  return gv && (gv.min !== undefined || gv.max !== undefined) ? gv : undefined;
+}
+
+/**
+ * A rule that takes its limit from a guideline set, with that value filled in: the operator, value or range, in the
+ * rule's unit (or the guideline's, when they can't be converted). Hardness modification only for each result's own
+ * test (limits and consecutive results) and only for hardness-dependent values. Other rules come back as they are.
+ */
+export function withGuidelineLimit(rule: Rule, sets?: Map<string, GuidelineSet>): Rule {
+  const gv = guidelineLimitValue(rule, sets);
+  if (!gv) return rule;
+  const unit = rule.unit && convert(1, gv.unit, rule.unit) !== null ? rule.unit : gv.unit;
+  const c = (x?: number) => (x === undefined ? undefined : convert(x, gv.unit, unit) ?? undefined);
+  const hardnessAdjust = !!rule.hardnessAdjust && !!gv.hardness && rule.kind !== 'statistic';
+  const base = { ...rule, unit, hardnessAdjust, value: undefined, min: undefined, max: undefined };
+  if (gv.min !== undefined && gv.max !== undefined) return { ...base, operator: 'outside', min: c(gv.min), max: c(gv.max) };
+  if (gv.max !== undefined) return { ...base, operator: gv.op ?? '>', value: c(gv.max) };
+  return { ...base, operator: '<', value: c(gv.min) };
+}
+
+/** " (ANZG FW 95%)" after a limit taken from a guideline set; "" otherwise. */
+export function limitSource(rule: Rule, sets?: Map<string, GuidelineSet>): string {
+  const set = guidelineLimitValue(rule, sets) ? sets?.get(rule.limitSetId!) : undefined;
+  if (!set) return '';
+  return ` (${set.shortName}${rule.hardnessAdjust ? ', hardness-modified' : ''})`;
+}
+
+/** The parameters a rule covers: its parameter, or for a guideline rule the analytes chosen (or every analyte in its set). */
+export function ruleParamIds(rule: Rule, sets?: Map<string, GuidelineSet>): string[] {
+  if (rule.kind !== 'guideline') return rule.parameterId ? [rule.parameterId] : [];
+  const inSet = (rule.guidelineSetId ? sets?.get(rule.guidelineSetId)?.values.map((v) => v.parameterId) : undefined) ?? [];
+  return rule.parameterIds?.length ? rule.parameterIds.filter((id) => inSet.includes(id)) : inSet;
+}
+
+/**
+ * Rules for tables and graphs of limits: a guideline rule that names its analytes becomes a limit for each of them,
+ * at that analyte's value in the set; rules that take a limit from a set have it filled in.
+ */
+export function expandRules(rules: Rule[], sets?: Map<string, GuidelineSet>): Rule[] {
+  const out: Rule[] = [];
+  for (const r of rules) {
+    if (r.kind !== 'guideline') out.push(withGuidelineLimit(r, sets));
+    else if (r.parameterIds?.length && r.guidelineSetId)
+      for (const pid of ruleParamIds(r, sets)) {
+        const one = withGuidelineLimit({ ...r, id: `${r.id}|${pid}`, kind: 'threshold', parameterId: pid, limitSetId: r.guidelineSetId, guidelineSetId: undefined, parameterIds: undefined, unit: undefined }, sets);
+        if (one.limitSetId && guidelineLimitValue(one, sets)) out.push(one);
+      }
+  }
+  return out;
+}
+
+/** "Dissolved copper, Dissolved lead and Dissolved zinc" – up to four names, then "and 3 more". */
+function paramList(ids: string[], params: Map<string, Parameter>, joiner = 'and'): string {
+  const names = ids.map((id) => params.get(id)?.name ?? id);
+  if (names.length > 4) return `${names.slice(0, 3).join(', ')} ${joiner} ${names.length - 3} more`;
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} ${joiner} ${names[names.length - 1]}` : names.join('');
+}
+
 /** Human-readable statement of what a rule tests. */
 export function describeRule(rule: Rule, params: Map<string, Parameter>, sites: Site[], sets?: Map<string, GuidelineSet>): string {
+  rule = withGuidelineLimit(rule, sets);
   const p = rule.parameterId ? params.get(rule.parameterId) : undefined;
   const pname = p?.name ?? rule.parameterId ?? '';
   const unit = ruleUnit(rule, p);
   const where = rule.siteIds.length ? ` at ${rule.siteIds.map((id) => siteLabel(sites, id)).join(', ')}` : ' at all sites';
+  const from = limitSource(rule, sets);
   switch (rule.kind) {
     case 'threshold':
-      return `${pname} ${thresholdText(rule, unit)}${where}`;
+      return `${pname} ${thresholdText(rule, unit)}${from}${where}`;
     case 'statistic': {
       const stat = statLabel(rule.statistic ?? 'mean', rule.percentile);
       const win =
         rule.window === 'rolling-days' ? `rolling ${rule.windowSize ?? 365}-day` : rule.window === 'rolling-samples' ? `rolling ${rule.windowSize ?? 12}-sample` : rule.window === 'year' ? 'annual' : 'period';
-      return `${win} ${stat} of ${pname} ${thresholdText(rule, unit)}${where}`;
+      return `${win} ${stat} of ${pname} ${thresholdText(rule, unit)}${from}${where}`;
     }
     case 'change': {
       const ref = rule.referenceSiteId ? siteLabel(sites, rule.referenceSiteId) : 'reference';
@@ -82,10 +151,11 @@ export function describeRule(rule: Rule, params: Map<string, Parameter>, sites: 
       return `${pname} ${ct} relative to ${ref} ${thresholdText(rule, unit)}${where}`;
     }
     case 'consecutive':
-      return `${rule.consecutive ?? 2} consecutive ${pname} results ${thresholdText(rule, unit)}${where}`;
+      return `${rule.consecutive ?? 2} consecutive ${pname} results ${thresholdText(rule, unit)}${from}${where}`;
     case 'guideline': {
       const set = rule.guidelineSetId ? sets?.get(rule.guidelineSetId) : undefined;
-      return `Results exceeding ${set?.name ?? 'guideline'}${rule.hardnessAdjust ? ' (hardness-modified)' : ''}${where}`;
+      const only = rule.parameterIds?.length ? `${paramList(rule.parameterIds, params)} results` : 'Results';
+      return `${only} exceeding ${set?.name ?? 'guideline'}${rule.hardnessAdjust ? ' (hardness-modified)' : ''}${where}`;
     }
   }
 }
@@ -95,7 +165,8 @@ export function exceededWhen(rule: Rule, params: Map<string, Parameter>, sites: 
   if (rule.kind !== 'guideline') return describeRule(rule, params, sites, sets);
   const set = rule.guidelineSetId ? sets?.get(rule.guidelineSetId) : undefined;
   const where = rule.siteIds.length ? rule.siteIds.map((id) => siteLabel(sites, id)).join(', ') : 'any site';
-  return `a result at ${where} is above its ${set?.name ?? 'guideline'} value${rule.hardnessAdjust ? ' (hardness-modified)' : ''}`;
+  const only = rule.parameterIds?.length ? `${paramList(rule.parameterIds, params, 'or')} ` : '';
+  return `a ${only}result at ${where} is above its ${set?.name ?? 'guideline'} value${rule.hardnessAdjust ? ' (hardness-modified)' : ''}`;
 }
 
 function sitesFor(rule: Rule, ctx: EvalContext): string[] {
@@ -121,6 +192,7 @@ function exKey(...parts: string[]) {
 }
 
 export function evaluateRule(rule: Rule, ctx: EvalContext): RuleEvaluation {
+  rule = withGuidelineLimit(rule, ctx.guidelineSets);
   const description = describeRule(rule, ctx.params, ctx.sites, ctx.guidelineSets);
   const exceedances: Exceedance[] = [];
   const inconclusive: Exceedance[] = [];
@@ -131,7 +203,18 @@ export function evaluateRule(rule: Rule, ctx: EvalContext): RuleEvaluation {
   const nd: NdHandling = ctx.project.ndHandling ?? 'dl';
   const pm: PercentileMethod = ctx.project.percentileMethod ?? 'excel';
   const siteIds = sitesFor(rule, ctx);
-  const limitText = rule.kind === 'guideline' ? '' : thresholdText(rule, unit);
+  const from = limitSource(rule, ctx.guidelineSets);
+  const limitText = rule.kind === 'guideline' ? '' : `${thresholdText(rule, unit)}${from}`;
+  // a hardness-dependent guideline limit, modified for each sample's hardness
+  const hardGv = rule.hardnessAdjust ? guidelineLimitValue(rule, ctx.guidelineSets) : undefined;
+  const ruleAt = (r: Result): { rule: Rule; limitText: string } => {
+    if (!hardGv?.hardness) return { rule, limitText };
+    const lim = limitFor(hardGv, p, { hardness: ctx.index.hardness.get(r.sampleId), adjust: true });
+    const v = lim.adjusted && lim.max !== undefined ? convert(lim.max, hardGv.unit, unit) : null;
+    if (v === null) return { rule, limitText };
+    const at: Rule = rule.operator === 'outside' ? { ...rule, max: v } : { ...rule, value: v };
+    return { rule: at, limitText: `${thresholdText(at, unit)} (${ctx.guidelineSets.get(rule.limitSetId!)?.shortName ?? 'guideline'} HMTV at ${fmtNum(lim.hardness)} mg/L hardness)` };
+  };
 
   const push = (vd: Verdict, ex: Exceedance) => {
     if (vd === 'exceed') exceedances.push(ex);
@@ -143,10 +226,11 @@ export function evaluateRule(rule: Rule, ctx: EvalContext): RuleEvaluation {
       const v = convert(r.value, r.unit, unit);
       if (v === null) continue;
       assessed++;
-      const vd = testValue(rule, toInterval(v, r.qualifier));
+      const at = ruleAt(r);
+      const vd = testValue(at.rule, toInterval(v, r.qualifier));
       push(vd, {
         key: exKey(r.siteId, r.date, r.parameterId),
-        ruleId: rule.id, siteId: r.siteId, parameterId: r.parameterId, date: r.date, value: v, qualifier: r.qualifier, unit, limitText,
+        ruleId: rule.id, siteId: r.siteId, parameterId: r.parameterId, date: r.date, value: v, qualifier: r.qualifier, unit, limitText: at.limitText,
         detail: vd === 'inconclusive' ? `Detection limit (${fmtResult(v, r.qualifier)} ${unitLabel(unit)}) is above the limit` : `${fmtResult(v, r.qualifier)} ${unitLabel(unit)}`,
         resultId: r.id,
       });
@@ -162,15 +246,16 @@ export function evaluateRule(rule: Rule, ctx: EvalContext): RuleEvaluation {
       for (const r of list) {
         const v = convert(r.value, r.unit, unit);
         if (v === null) continue;
-        const vd = testValue(rule, toInterval(v, r.qualifier));
+        const at = ruleAt(r);
+        const vd = testValue(at.rule, toInterval(v, r.qualifier));
         run = vd === 'exceed' ? run + 1 : 0;
         if (dayOf(r.date) < start) continue;
         assessed++;
         if (run >= n) {
           exceedances.push({
             key: exKey(sid, r.date, r.parameterId, 'run'),
-            ruleId: rule.id, siteId: sid, parameterId: r.parameterId, date: r.date, value: v, qualifier: r.qualifier, unit, limitText,
-            detail: `${run} consecutive results ${limitText} (latest ${fmtResult(v, r.qualifier)} ${unitLabel(unit)})`,
+            ruleId: rule.id, siteId: sid, parameterId: r.parameterId, date: r.date, value: v, qualifier: r.qualifier, unit, limitText: at.limitText,
+            detail: `${run} consecutive results ${at.limitText} (latest ${fmtResult(v, r.qualifier)} ${unitLabel(unit)})`,
             resultId: r.id,
           });
         }
@@ -265,7 +350,9 @@ export function evaluateRule(rule: Rule, ctx: EvalContext): RuleEvaluation {
   if (rule.kind === 'guideline' && rule.guidelineSetId) {
     const set = ctx.guidelineSets.get(rule.guidelineSetId);
     if (set) {
+      const only = rule.parameterIds?.length ? new Set(rule.parameterIds) : null;
       for (const gv of set.values) {
+        if (only && !only.has(gv.parameterId)) continue;
         const param = ctx.params.get(gv.parameterId);
         for (const r of resultsFor(ctx.index, gv.parameterId, siteIds, start, end)) {
           const hit = compareResult(r, gv, set, param, ctx.index, !!rule.hardnessAdjust);

@@ -3,7 +3,7 @@ import { RULE_LEVELS } from '../db/types';
 import type { ProjectBundle } from '../lib/analysis';
 import { displayValue, evaluateAll, flagResults, isLimitLevel, keyParameters, limitToSites, statsTable, type CellFlag } from '../lib/analysis';
 import type { RuleEvaluation } from '../lib/compliance';
-import { describeRule, STATUS_META } from '../lib/compliance';
+import { describeRule, expandRules, ruleParamIds, STATUS_META } from '../lib/compliance';
 import { addDays, addMonths, daysBetween, endOfMonth, formatDate, formatDateLong, MONTH_SHORT, todayStr, toUtcMs } from '../lib/dates';
 import { monthLabel, reportPeriodLabel, reviewCell, type ReviewCell } from '../lib/latest';
 import { guidelineFor } from '../lib/guidelines';
@@ -265,6 +265,8 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   };
   // Consent limits / triggers as comparison columns in results tables: one per level (Limit, Trigger 1 …)
   const RULE_COLUMN_KINDS = new Set(['threshold', 'consecutive', 'statistic']);
+  // limits taken from guideline sets filled in; a guideline rule naming its analytes as a limit for each
+  const limitRules = expandRules(b.rules, b.setMap);
   const levelOrder = (l: string) => {
     const i = (RULE_LEVELS as readonly string[]).indexOf(l);
     return i < 0 ? RULE_LEVELS.length : i;
@@ -272,7 +274,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   const tableRules = (mode: ResultsTableBlock['ruleColumns'], params: Parameter[], siteIds: string[]): Rule[] =>
     !mode || mode === 'none'
       ? []
-      : b.rules.filter((r) => r.active && RULE_COLUMN_KINDS.has(r.kind) && params.some((p) => p.id === r.parameterId) && (mode === 'all' || /limit/i.test(r.level)) && (!r.siteIds.length || r.siteIds.some((id) => siteIds.includes(id))));
+      : limitRules.filter((r) => r.active && RULE_COLUMN_KINDS.has(r.kind) && params.some((p) => p.id === r.parameterId) && (mode === 'all' || /limit/i.test(r.level)) && (!r.siteIds.length || r.siteIds.some((id) => siteIds.includes(id))));
   const ruleLevels = (rules: Rule[]) => [...new Set(rules.map((r) => r.level))].sort((x, y) => levelOrder(x) - levelOrder(y) || x.localeCompare(y));
   /** The consent value(s) at one level for a parameter, in the parameter's unit, e.g. "100", "6–9", "2.4\n(median)". */
   const ruleText = (rules: Rule[], level: string, p: Parameter, siteIds: string[]) => {
@@ -286,6 +288,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const q: string[] = [];
       if (r.kind === 'statistic') q.push(statLabel(r.statistic ?? 'mean', r.percentile));
       if (r.kind === 'consecutive') q.push(`${r.consecutive ?? 2} in a row`);
+      if (r.limitSetId && r.hardnessAdjust) q.push('HMTV');
       if (siteIds.length > 1 && r.siteIds.length) q.push(r.siteIds.filter((id) => siteIds.includes(id)).map((id) => b.siteMap.get(id)?.code ?? '').join(', '));
       out.push(q.length ? `${num}\n(${q.join(', ')})` : num); // the bracket on its own line keeps the column narrow
     }
@@ -294,7 +297,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   const linesWidthMm = (text: string, pt: number) => Math.max(0, ...text.split('\n').map((line) => textWidthMm(line, pt)));
   const resultNotes = (sets: GuidelineSet[], highlight: boolean, consentBrackets = false) => {
     const n = ['“<” indicates a result below the laboratory detection limit.'];
-    if (consentBrackets) n.push('Consent values in brackets are assessed on a statistic or consecutive results, or apply only at the sites named.');
+    if (consentBrackets) n.push('Consent values in brackets are assessed on a statistic or consecutive results, or apply only at the sites named. HMTV: hardness-modified for each sample (the value shown is at 30 mg/L hardness).');
     if (highlight && look.highlight === 'text')
       n.push(`Red = consent limit (bold) or trigger level${sets.length ? ` or ${sets.map((s) => s.shortName).join(' / ')} guideline` : ''} exceeded; purple = detection limit above the limit.`);
     else if (highlight) n.push(shadingNote(sets));
@@ -697,7 +700,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         // all of the project's sites for the colours, so a site keeps its colour when others are left out
         const chartSites = (blk.siteIds.length ? blk.siteIds : b.sites.map((s) => s.id)).filter((id) => b.siteMap.has(id));
         if (!chartSites.length) continue;
-        const spec = buildChartSpec({ index: b.index, param: p, sites: opts.bundle.sites, siteIds: chartSites, start: cStart, end, guidelineSets: sets, rules: b.rules, showRules: blk.showRules, log: blk.logScale });
+        const spec = buildChartSpec({ index: b.index, param: p, sites: opts.bundle.sites, siteIds: chartSites, start: cStart, end, guidelineSets: sets, rules: limitRules, setMap: b.setMap, showRules: blk.showRules, log: blk.logScale });
         if (blk.markPeriod && blk.range !== 'period') spec.band = { from: toUtcMs(start), to: toUtcMs(addDays(end, 1)) };
         if (!spec.series.length) continue;
         const caption = figCaption(`${p.name} at ${listText(spec.series.map((s) => s.name))}${blk.range === 'period' ? '' : `, ${formatDate(cStart ?? spec.series[0].points[0].date)} – ${formatDate(end)}`}${spec.band ? '. The shaded band is the reporting period' : ''}${blk.caption ? `. ${fill(blk.caption)}` : ''}`);
@@ -904,7 +907,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         if (!params.length) continue;
         const rules = blk.ruleColumns === 'none' ? [] : tableRules(blk.ruleColumns, params, [site.id]).filter((r) => !r.siteIds.length || r.siteIds.includes(site.id));
         const levels = ruleLevels(rules).filter((l) => params.some((p) => ruleText(rules, l, p, [site.id])));
-        const siteRules = b.rules.filter((r) => r.active && RULE_COLUMN_KINDS.has(r.kind) && (!r.siteIds.length || r.siteIds.includes(site.id)));
+        const siteRules = limitRules.filter((r) => r.active && RULE_COLUMN_KINDS.has(r.kind) && (!r.siteIds.length || r.siteIds.includes(site.id)));
         const rounds = [sample, ...earlier];
         let labels = rounds.map((s) => monthYear(s.date));
         if (new Set(labels).size < labels.length) labels = rounds.map((s) => formatDate(s.date, { format: 'D MMM YYYY' }));
@@ -967,7 +970,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     triggerTable: (blk) => {
       const sites = blk.siteIds.length ? b.sites.filter((s) => blk.siteIds.includes(s.id)) : b.sites.filter((s) => s.active);
       const ofLevel = (l: string) => blk.levels === 'all' || (blk.levels === 'limits' ? isLimitLevel(l) : !isLimitLevel(l));
-      const rules = b.rules.filter((r) => r.active && RULE_COLUMN_KINDS.has(r.kind) && !!r.parameterId && b.paramMap.has(r.parameterId) && ofLevel(r.level) && (!r.siteIds.length || r.siteIds.some((id) => sites.some((s) => s.id === id))));
+      const rules = limitRules.filter((r) => r.active && RULE_COLUMN_KINDS.has(r.kind) && !!r.parameterId && b.paramMap.has(r.parameterId) && ofLevel(r.level) && (!r.siteIds.length || r.siteIds.some((id) => sites.some((s) => s.id === id))));
       const what = blk.levels === 'limits' ? 'Consent limits' : blk.levels === 'triggers' ? 'Trigger levels' : 'Consent limits and trigger levels';
       if (!rules.length) {
         nodes.push({ t: 'p', runs: [{ text: `No ${what.toLowerCase()} have been set up for this project.`, italic: true }] });
@@ -1005,7 +1008,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           body,
           widths: [paramW, unitW, ...(showLevel ? [levelW] : []), ...head.slice(showLevel ? 3 : 2).map(() => Math.min(rest, 40))],
           fontSize: pt,
-          notes: i === parts.length - 1 && bracketed ? ['Values in brackets are assessed on a statistic or consecutive results.'] : undefined,
+          notes: i === parts.length - 1 && bracketed ? [`Values in brackets are assessed on a statistic or consecutive results.${body.some((row) => row.some((c) => c.text.includes('HMTV'))) ? ' HMTV: hardness-modified for each sample (the value shown is at 30 mg/L hardness).' : ''}`] : undefined,
         });
       });
     },
@@ -1318,7 +1321,7 @@ function comparisonNodes(b: ProjectBundle, evals: RuleEvaluation[], samples: Sam
   for (const pid of keyParameters(b, 5)) {
     const p = b.paramMap.get(pid);
     if (!p) continue;
-    const ruleSites = [...new Set(b.rules.filter((r) => r.active && r.parameterId === pid).flatMap((r) => r.siteIds))];
+    const ruleSites = [...new Set(b.rules.filter((r) => r.active && ruleParamIds(r, b.setMap).includes(pid)).flatMap((r) => r.siteIds))];
     const codes = ruleSites.map((id) => b.siteMap.get(id)?.code).filter((c): c is string => !!c);
     const nowV = calcValue(b, { stat: 'median', parameterId: pid, sites: codes }, start, end);
     const wasV = calcValue(b, { stat: 'median', parameterId: pid, sites: codes }, prev.start, prev.end);

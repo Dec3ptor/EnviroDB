@@ -20,10 +20,16 @@ there as they work and show up for the others within seconds.
   - change from an upstream/background site (e.g. turbidity increase > 20 %)
   - statistical limits (annual median, 95th percentile, rolling windows)
   - consecutive exceedances
-  - comparison against whole guideline sets
+  - comparison against a guideline set – every analyte in it, or only the analytes you choose
+    (e.g. dissolved copper and zinc against ANZG 95%)
+
+  A limit, statistical limit or consecutive rule can also take its value from a guideline set
+  instead of a number you type: choose the analyte, then *A guideline value* and the set (e.g. the
+  annual median of dissolved zinc against its ANZG 95% value). The value follows the set, shows on
+  graphs and in report tables, and the consent set-up with AI reads these too.
 
   Non-detects are handled conservatively, and metals guideline values can be
-  hardness-modified using the measured hardness.
+  hardness-modified using the measured hardness (for each sample's own result).
 - **Browse, sort and filter data.** Click a column to sort (e.g. highest TSS first), filter by
   value (TSS > 100, zinc not detected…), show only samples with exceedances, search lab jobs
   and notes, and export exactly what you see to Excel, CSV or Word. Analytes are always listed in

@@ -31,6 +31,16 @@ const PRESETS: Preset[] = [
   { label: 'Consecutive exceedances', description: 'e.g. 2 results in a row above a trigger', make: (pid) => [newRule(pid, { name: 'Consecutive trigger', kind: 'consecutive', consecutive: 2, operator: '>', level: 'Trigger' })] },
   { label: 'Guideline comparison', description: 'e.g. all results vs ANZG 95% (hardness-modified)', make: (pid) => [newRule(pid, { name: 'Dissolved metals vs ANZG 95%', kind: 'guideline', guidelineSetId: 'anzg-fw-95', hardnessAdjust: true, level: 'Trigger' })] },
   {
+    label: 'Chosen analytes vs a guideline',
+    description: 'e.g. dissolved copper and zinc vs ANZG 95%',
+    make: (pid) => [newRule(pid, { name: 'Dissolved copper and zinc vs ANZG 95%', kind: 'guideline', guidelineSetId: 'anzg-fw-95', parameterIds: ['cu-d', 'zn-d'], hardnessAdjust: true, level: 'Trigger' })],
+  },
+  {
+    label: 'Limit at a guideline value',
+    description: 'e.g. annual median zinc above its ANZG 95% value',
+    make: (pid) => [newRule(pid, { name: 'Dissolved zinc – annual median vs ANZG 95%', kind: 'statistic', statistic: 'median', window: 'year', minSamples: 4, parameterId: 'zn-d', limitSetId: 'anzg-fw-95', level: 'Trigger' })],
+  },
+  {
     label: 'NPS-FM nitrate toxicity bottom line',
     description: 'Annual median ≤ 2.4 and 95th percentile ≤ 3.5 mg/L NO3-N',
     make: (pid) => [
@@ -224,7 +234,7 @@ export function ComplianceTab() {
             <Menu.Target>
               <Button leftSection={<IconPlus size={16} />}>Add rule</Button>
             </Menu.Target>
-            <Menu.Dropdown>
+            <Menu.Dropdown mah="min(70vh, 640px)" style={{ overflowY: 'auto' }}>
               <Menu.Item leftSection={<IconSparkles size={16} />} component={Link} to={`/projects/${project.id}/consent-setup`}>
                 <Text size="sm" fw={500}>
                   From consent documents (with AI)

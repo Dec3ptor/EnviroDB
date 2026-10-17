@@ -139,7 +139,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
   const usedParams = new Set(results.map((r) => r.parameterId));
   rules.forEach((r) => r.parameterId && usedParams.add(r.parameterId));
   const parameters = (await db.parameters.toArray()).filter((p) => usedParams.has(p.id));
-  const setIds = new Set([...project.guidelineSetIds, ...rules.map((r) => r.guidelineSetId).filter(Boolean)] as string[]);
+  const setIds = new Set([...project.guidelineSetIds, ...rules.flatMap((r) => [r.guidelineSetId, r.limitSetId]).filter(Boolean)] as string[]);
   const guidelineSets = (await db.guidelineSets.toArray()).filter((g) => !g.builtIn && setIds.has(g.id));
   const tplIds = new Set(obligations.map((o) => o.templateId).filter(Boolean) as string[]);
   const templates = (await db.templates.toArray()).filter((t) => !t.builtIn && tplIds.has(t.id));

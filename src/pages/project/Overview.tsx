@@ -12,6 +12,7 @@ import { byDueDate, nextObligation, OBLIGATION_STATUS } from '../../lib/schedule
 import { buildChartSpec, chartOption } from '../../charts/timeSeries';
 import { EChart } from '../../charts/EChart';
 import { unitLabel } from '../../lib/units';
+import { expandRules } from '../../lib/compliance';
 
 function GettingStarted() {
   const { project, sites, samples, rules, obligations, schedules } = useProject();
@@ -264,7 +265,7 @@ function Trends() {
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         {keys.map((pid) => {
           const p = data.paramMap.get(pid)!;
-          const spec = buildChartSpec({ index: data.index, param: p, sites: data.sites, siteIds: [], start, end: todayStr(), guidelineSets: sets, rules: data.rules, showRules: true });
+          const spec = buildChartSpec({ index: data.index, param: p, sites: data.sites, siteIds: [], start, end: todayStr(), guidelineSets: sets, rules: expandRules(data.rules, data.setMap), setMap: data.setMap, showRules: true });
           return <EChart key={pid} option={(width, hidden) => chartOption(spec, { dark: scheme === 'dark', fontScale: 0.9, width, hidden })} height={240} />;
         })}
       </SimpleGrid>

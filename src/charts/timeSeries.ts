@@ -54,6 +54,8 @@ export interface ChartInput {
   end?: string;
   guidelineSets: GuidelineSet[];
   rules: Rule[];
+  /** Every guideline set, to name the set a limit's value is taken from. */
+  setMap?: Map<string, GuidelineSet>;
   showRules: boolean;
   log?: boolean;
   title?: string;
@@ -110,7 +112,8 @@ export function buildChartSpec(input: ChartInput): ChartSpec {
       const kind = isLimitLevel(r.level) ? 'limit' : 'trigger';
       const name = r.kind === 'statistic' ? `${r.level} (${statLabel(r.statistic ?? 'mean', r.percentile)})` : r.level;
       const at = multiSite && r.siteIds.length ? `at ${r.siteIds.map((id) => sites.find((s) => s.id === id)?.code ?? '').filter(Boolean).join(', ')}` : '';
-      const note = [r.condition, at].filter(Boolean).join(', ');
+      const from = r.limitSetId ? input.setMap?.get(r.limitSetId)?.shortName : '';
+      const note = [r.condition, at, from, r.limitSetId && r.hardnessAdjust ? 'at 30 mg/L hardness' : ''].filter(Boolean).join(', ');
       const inUnit = (v: number | undefined) => (v === undefined ? undefined : convert(v, ru, unit));
       if (r.operator === 'outside') addLine(inUnit(r.min), inUnit(r.max), name, kind, note);
       else addLine(undefined, inUnit(r.value), name, kind, note);
@@ -190,6 +193,22 @@ function textWidth(text: string, px: number): number {
   return measureCtx.measureText(text).width * 1.04; // a little spare in case the web font isn't loaded yet
 }
 
+/** Text broken at spaces into lines no wider than `width` (a word longer than that keeps a line of its own). */
+export function wrapText(text: string, width: number, font: number): string[] {
+  if (width <= 0 || textWidth(text, font) <= width) return [text];
+  const lines: string[] = [];
+  let line = '';
+  for (const word of text.split(' ')) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && textWidth(next, font) > width) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
 /** Pack items into rows no wider than `width`; one per row when the width is unknown. */
 function packRows(widths: number[], width: number | undefined, gap: number): number[][] {
   const rows: number[][] = [];
@@ -249,34 +268,40 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
   const keyItems = [
     ...styles.map((s) => ({ text: s.text, w: swatch, line: s })),
     ...(spec.hasNd ? [{ text: 'Below detection limit (plotted at the limit)', w: 12, line: null }] : []),
-  ];
+  ].map((it) => {
+    // text wider than the chart wraps onto more lines
+    const lines = avail ? wrapText(it.text, avail - 8 - it.w - 6, keyFont) : [it.text];
+    return { ...it, lines, width: it.w + 6 + Math.max(...lines.map((l) => textWidth(l, keyFont))) };
+  });
   const keyRows = packRows(
-    keyItems.map((it) => it.w + 6 + textWidth(it.text, keyFont)),
+    keyItems.map((it) => it.width),
     avail,
     18,
   );
-  const keyH = keyRows.length ? keyRows.length * rowH + 4 : 0;
+  const rowLines = keyRows.map((row) => Math.max(...row.map((i) => keyItems[i].lines.length)));
+  const keyH = keyRows.length ? rowLines.reduce((a, n) => a + n * rowH, 0) + 4 : 0;
   const graphics: unknown[] = [];
   keyRows.forEach((row, r) => {
     let x = 8;
+    const bottom = 4 + rowLines.slice(r + 1).reduce((a, n) => a + n * rowH, 0);
     for (const i of row) {
       const it = keyItems[i];
       const mid = rowH / 2;
-      const w = it.w + 6 + textWidth(it.text, keyFont);
+      const h = rowLines[r] * rowH;
       graphics.push({
         type: 'group',
         left: x,
-        bottom: 4 + (keyRows.length - 1 - r) * rowH,
+        bottom: bottom + h - it.lines.length * rowH,
         silent: true,
         children: [
-          { type: 'rect', shape: { x: 0, y: 0, width: w, height: rowH }, style: { fill: 'transparent' } },
+          { type: 'rect', shape: { x: 0, y: 0, width: it.width, height: it.lines.length * rowH }, style: { fill: 'transparent' } },
           it.line
             ? { type: 'line', shape: { x1: 1, y1: mid, x2: it.w - 1, y2: mid }, style: { stroke: it.line.color, lineWidth: 2, lineDash: it.line.dash ?? undefined, lineCap: 'round' } }
             : { type: 'circle', shape: { cx: 6, cy: mid, r: 3.5 }, style: { fill: ink.surface, stroke: ink.secondary, lineWidth: 2 } },
-          { type: 'text', x: it.w + 6, y: mid, style: { text: it.text, fill: ink.secondary, font: `${keyFont}px ${FONT}`, verticalAlign: 'middle' } },
+          { type: 'text', x: it.w + 6, y: (it.lines.length * rowH) / 2, style: { text: it.lines.join('\n'), lineHeight: rowH, fill: ink.secondary, font: `${keyFont}px ${FONT}`, verticalAlign: 'middle' } },
         ],
       });
-      x += w + 18;
+      x += it.width + 18;
     }
   });
   const series: unknown[] = spec.series.map((s) => {

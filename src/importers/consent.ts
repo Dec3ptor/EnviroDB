@@ -9,6 +9,7 @@ import { PARAMETER_GROUPS, compareParams } from '../data/parameters';
 import { buildParamIndex, matchParameter, matchSite } from '../lib/matching';
 import { addDays, addMonths, formatDate, MONTH_LONG, parseDateString, reportingYear, todayStr } from '../lib/dates';
 import { normUnit, sameDimension, unitLabel } from '../lib/units';
+import { guidelineLimitValue, withGuidelineLimit } from '../lib/compliance';
 import { slugify, uid } from '../lib/ids';
 
 export const CONSENT_FORMAT = 'envirodb-consent-setup';
@@ -27,7 +28,7 @@ const KINDS: Record<RuleKind, string> = {
   statistic: 'a statistic over time (median, mean, percentile…) is compared with a limit',
   change: 'the change at a site compared with an upstream/reference site',
   consecutive: 'a number of results in a row breach a level',
-  guideline: 'results are compared with a whole guideline set (e.g. ANZG 95% species protection)',
+  guideline: 'results are compared with a guideline set (e.g. ANZG 95% species protection) – every analyte in it, or only the analytes the consent names',
 };
 
 function exampleJson(today: string): string {
@@ -94,6 +95,17 @@ function exampleJson(today: string): string {
         unit: 'mg/L',
         quote: 'The annual median nitrate-nitrogen concentration at DS1 shall not exceed 2.4 g/m³.',
         comment: 'Applied to each reporting year (July–June).',
+      },
+      {
+        name: 'Downstream dissolved copper and zinc',
+        condition: 'Condition 12',
+        level: 'Trigger',
+        kind: 'guideline',
+        guidelineSet: 'anzg-fw-95',
+        parameters: ['Dissolved Copper', 'Dissolved Zinc'],
+        sites: ['DS1'],
+        hardnessAdjust: true,
+        quote: 'Dissolved copper and zinc at DS1 shall not exceed the ANZG (2018) 95% species protection guideline values, adjusted for hardness.',
       },
     ],
     schedules: [
@@ -162,7 +174,8 @@ export function buildConsentPrompt(ctx: ConsentContext, opts: { consentText?: st
   L.push('- statistic rules: statistic ("mean", "median", "percentile", "max", "min", "geomean"), percentile (e.g. 95), window ("year" = each reporting year, "period" = each reporting period, "rolling-days", "rolling-samples"), windowSize (days or samples for rolling windows), minSamples.');
   L.push('- change rules: referenceSite (the upstream/control site code), changeType ("percent" = percentage increase, "absolute" = increase in the parameter\'s unit, "abs-diff" = change in either direction), pairingDays (how many days apart the paired samples can be; 0 = same day).');
   L.push('- consecutive rules: consecutive (how many results in a row, e.g. 2).');
-  L.push('- guideline rules: guidelineSet (an id from the list below) and hardnessAdjust (true to hardness-modify hardness-dependent metals).');
+  L.push('- guideline rules: guidelineSet (an id from the list below), parameters (the analytes the consent names, e.g. ["Dissolved Copper", "Dissolved Zinc"]; leave it out to compare every analyte in the set) and hardnessAdjust (true to hardness-modify hardness-dependent metals).');
+  L.push('- a limit that is a guideline value for one parameter (for example "the annual median shall not exceed the ANZG 95% value"): use the threshold, statistic or consecutive kind and give guidelineSet (an id from the list below) instead of operator, value, min and max. hardnessAdjust as above.');
   L.push('- action: what the consent requires if the rule is breached or triggered. effectiveFrom, effectiveTo: dates, if the rule only applies for part of the time.');
   L.push('- quote, comment: as described above.');
   L.push('### schedules');
@@ -187,7 +200,7 @@ export function buildConsentPrompt(ctx: ConsentContext, opts: { consentText?: st
   if (ctx.sites.length) ctx.sites.forEach((s) => L.push(`- ${s.code}${s.name ? ` – ${s.name}` : ''} (${[s.type, s.role].filter(Boolean).join(', ')})`));
   else L.push('None yet.');
   L.push('');
-  L.push('## Guideline sets (ids for "guideline" rules)');
+  L.push('## Guideline sets (ids for "guidelineSet")');
   ctx.guidelineSets.forEach((g) => L.push(`- ${g.id}: ${g.name}`));
   const consent = opts.consentText?.trim();
   if (consent) {
@@ -532,6 +545,7 @@ export function planConsentImport(answer: ConsentAnswer, ctx: ConsentContext, to
     if (!s) return undefined;
     return ctx.guidelineSets.find((g) => g.id.toLowerCase() === s) ?? ctx.guidelineSets.find((g) => g.name.toLowerCase() === s || g.shortName.toLowerCase() === s);
   };
+  const setMap = new Map(ctx.guidelineSets.map((g) => [g.id, g]));
   const plannedRules: PlanRule[] = [];
   arr(answer.rules).forEach((raw, i) => {
     const r = obj(raw);
@@ -573,6 +587,11 @@ export function planConsentImport(answer: ConsentAnswer, ctx: ConsentContext, to
     }
     const param = rule.parameterId ? paramById.get(rule.parameterId) : undefined;
 
+    // a limit taken from a guideline set's value for the parameter
+    const limitSetText = rule.kind !== 'guideline' && rule.kind !== 'change' ? str(r.guidelineSet ?? r.guideline) : '';
+    const limitSet = limitSetText ? setFor(limitSetText) : undefined;
+    if (limitSetText && !limitSet) warnings.push(`Guideline set "${limitSetText}" not found – enter the limit.`);
+
     // operator and values
     const op = operator(str(r.operator));
     const min = num(r.min), max = num(r.max), value = num(r.value);
@@ -585,7 +604,7 @@ export function planConsentImport(answer: ConsentAnswer, ctx: ConsentContext, to
       if (min === undefined && max === undefined) warnings.push('No range given.');
     } else {
       rule.value = value;
-      if (value === undefined && rule.kind !== 'guideline') warnings.push('No limit value given.');
+      if (value === undefined && rule.kind !== 'guideline' && !limitSetText) warnings.push('No limit value given.');
     }
 
     // unit
@@ -621,11 +640,32 @@ export function planConsentImport(answer: ConsentAnswer, ctx: ConsentContext, to
       if (!rule.referenceSiteId) warnings.push('No reference (upstream) site given.');
     }
     if (rule.kind === 'consecutive') rule.consecutive = Math.max(2, Math.round(num(r.consecutive) ?? 2));
+    if (limitSet) {
+      rule.limitSetId = limitSet.id;
+      rule.hardnessAdjust = r.hardnessAdjust === true;
+      const filled = withGuidelineLimit(rule, setMap);
+      if (guidelineLimitValue(rule, setMap)) Object.assign(rule, filled);
+      else if (param) warnings.push(`${limitSet.shortName} has no value for ${param.name} – enter the limit.`);
+    }
     if (rule.kind === 'guideline') {
       const set = setFor(str(r.guidelineSet ?? r.guideline));
       rule.guidelineSetId = set?.id;
       rule.hardnessAdjust = r.hardnessAdjust === true;
       if (!set) warnings.push(`Guideline set "${str(r.guidelineSet ?? r.guideline)}" not found.`);
+      const names = arr(r.parameters ?? r.analytes).map((x) => str(x)).filter(Boolean);
+      if (set && names.length) {
+        const inSet = (id?: string | null): id is string => !!id && set.values.some((v) => v.parameterId === id);
+        const ids: string[] = [];
+        const missing: string[] = [];
+        for (const n of names) {
+          const m = matchParameter(n, paramIndex);
+          const id = inSet(m.parameterId) ? m.parameterId : m.candidates.find(inSet);
+          if (id) ids.push(id);
+          else missing.push(n);
+        }
+        if (ids.length) rule.parameterIds = [...new Set(ids)];
+        if (missing.length) warnings.push(`${set.shortName} has no value for ${missing.map((n) => `"${n}"`).join(', ')}${ids.length ? ' – left out' : ' – every analyte in the set is compared'}.`);
+      }
     }
     rule.action = str(r.action) || undefined;
     rule.effectiveFrom = toDate(r.effectiveFrom);

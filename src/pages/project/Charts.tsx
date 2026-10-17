@@ -8,6 +8,7 @@ import { buildChartSpec, chartOption, type ChartSpec } from '../../charts/timeSe
 import { EChart, type EChartHandle } from '../../charts/EChart';
 import { cmToPx, copyPngToClipboard, renderChartPng } from '../../charts/render';
 import { keyParameters } from '../../lib/analysis';
+import { expandRules } from '../../lib/compliance';
 import { downloadBlob, safeFileName } from '../../db/backup';
 import { dataUrlToBlob } from '../../charts/render';
 import { formatDate } from '../../lib/dates';
@@ -76,6 +77,7 @@ export function ChartsTab() {
   const withData = useMemo(() => new Set(index.paramIdsWithData), [index]);
   const size = SIZE_PRESETS[sizeKey];
   const sets = setIds.map((id) => setMap.get(id)).filter((s): s is NonNullable<typeof s> => !!s);
+  const limitRules = useMemo(() => expandRules(rules, setMap), [rules, setMap]);
 
   const specs = useMemo(
     () =>
@@ -84,9 +86,9 @@ export function ChartsTab() {
         .filter((p): p is NonNullable<typeof p> => !!p)
         .map((p) => ({
           p,
-          spec: buildChartSpec({ index, param: p, sites, siteIds, start: period.start, end: period.end, guidelineSets: sets, rules, showRules, log }),
+          spec: buildChartSpec({ index, param: p, sites, siteIds, start: period.start, end: period.end, guidelineSets: sets, rules: limitRules, setMap, showRules, log }),
         })),
-    [paramIds, data.paramMap, index, sites, siteIds, period, sets, rules, showRules, log],
+    [paramIds, data.paramMap, index, sites, siteIds, period, sets, limitRules, showRules, log],
   );
 
   const exportDocx = async () => {

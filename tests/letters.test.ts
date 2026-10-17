@@ -13,6 +13,7 @@ import { docxBlob } from '../src/reports/docx';
 import { bytesOfDataUrl, readLetterhead } from '../src/reports/wordLetterhead';
 import { captionFromFileName } from '../src/lib/image';
 import { loadBundle, png } from './helpers';
+import { newRule } from '../src/db/repo';
 
 type Table = Extract<DocNode, { t: 'table' }>;
 type Gallery = Extract<DocNode, { t: 'gallery' }>;
@@ -184,6 +185,26 @@ describe('trigger levels table', () => {
     // a name no section has
     const lost: ReportTemplate = { ...annual, blocks: annual.blocks.map((b) => (b.type === 'triggerTable' ? { ...b, ref: undefined } : b)) as ReportBlock[] };
     expect(allText(buildReport({ bundle: await loadBundle(projectId), template: lost, period: year, settings: me }))).toContain('are given in Table ?.');
+  });
+
+  it('gives the guideline values of rules that compare chosen analytes with a guideline set', async () => {
+    const b = await loadBundle(projectId);
+    const ds1 = b.sites.find((s) => s.code === 'DS1')!.id;
+    const extra = [
+      newRule(projectId, { id: 'g1', name: 'Zinc vs ANZG 95%', level: 'Trigger', kind: 'guideline', guidelineSetId: 'anzg-fw-95', parameterIds: ['zn-d'], hardnessAdjust: true, siteIds: [ds1] }),
+      newRule(projectId, { id: 'g2', name: 'Copper at the ANZG 90% value', level: 'Limit', kind: 'threshold', parameterId: 'cu-d', limitSetId: 'anzg-fw-90', siteIds: [ds1] }),
+    ];
+    const doc = buildReport({ bundle: { ...b, rules: [...b.rules, ...extra] }, template: annual, period: year, settings: me });
+    const t = doc.nodes.find((n): n is Table => n.t === 'table' && /Consent limits and trigger levels/.test(n.caption ?? ''))!;
+    const rows = t.body.map((r) => r.map((c) => c.text));
+    const zinc = rows.find((r) => r[0] === 'Dissolved Zinc')!;
+    const copper = rows.find((r) => r[0] === 'Dissolved Copper')!;
+    const at = t.head[0].findIndex((c) => c.text === 'DS1');
+    expect([zinc[2], zinc[at]]).toEqual(['Trigger', zinc[1] === 'µg/L' ? '8\n(HMTV)' : '0.008\n(HMTV)']);
+    expect([copper[2], copper[at]]).toEqual(['Limit', copper[1] === 'µg/L' ? '1.8' : '0.0018']);
+    expect(t.notes?.join(' ')).toMatch(/HMTV: hardness-modified for each sample/);
+    // the rule over the whole set (in the demo) adds no rows of its own
+    expect(rows.some((r) => r[0] === 'Dissolved Cadmium')).toBe(false);
   });
 });
 

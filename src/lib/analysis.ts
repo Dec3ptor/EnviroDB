@@ -1,7 +1,7 @@
 import type { ExceedanceNote, GuidelineSet, MonitoringSchedule, Parameter, Project, ReportObligation, Result, Rule, Sample, Site } from '../db/types';
 import type { DataIndex } from './dataIndex';
 import { buildIndex, resultsFor } from './dataIndex';
-import { evaluateRules, type EvalContext, type RuleEvaluation } from './compliance';
+import { evaluateRules, ruleParamIds, type EvalContext, type RuleEvaluation } from './compliance';
 import { compareAll, describeLimit, type GuidelineHit } from './guidelines';
 import { computeStat, percentile } from './stats';
 import { convert, unitLabel } from './units';
@@ -228,8 +228,7 @@ export function consentParameterIds(b: Pick<ProjectBundle, 'rules' | 'schedules'
     if (!r.active) continue;
     if (view === 'limits' && !isLimitLevel(r.level)) continue;
     if (view === 'triggers' && !isTriggerLevel(r.level)) continue;
-    if (r.kind === 'guideline') b.setMap.get(r.guidelineSetId ?? '')?.values.forEach((v) => out.add(v.parameterId));
-    else if (r.parameterId) out.add(r.parameterId);
+    ruleParamIds(r, b.setMap).forEach((id) => out.add(id));
   }
   if (view === 'consent') for (const s of b.schedules) if (s.active) s.parameterIds.forEach((id) => out.add(id));
   return out;
@@ -245,11 +244,7 @@ export function keyParameters(b: ProjectBundle, max = 8): string[] {
   const ruled: string[] = [];
   for (const r of b.rules) {
     if (!r.active) continue;
-    if (r.parameterId && !ruled.includes(r.parameterId)) ruled.push(r.parameterId);
-    if (r.kind === 'guideline' && r.guidelineSetId) {
-      const set = b.setMap.get(r.guidelineSetId);
-      set?.values.forEach((v) => b.index.byParam.has(v.parameterId) && !ruled.includes(v.parameterId) && ruled.push(v.parameterId));
-    }
+    for (const id of ruleParamIds(r, b.setMap)) if (!ruled.includes(id) && (r.kind !== 'guideline' || b.index.byParam.has(id))) ruled.push(id);
   }
   const withData = ruled.filter((id) => b.index.byParam.has(id));
   if (withData.length) return withData.slice(0, max);
