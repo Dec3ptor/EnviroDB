@@ -48,6 +48,14 @@ there as they work and show up for the others within seconds.
   guideline values (dotted grey) drawn as lines and named in a key below the graph. Graphs export
   as high-resolution PNGs, can be copied straight into Word, or exported all at once to a
   Word document.
+- **Put the sites on a map.** A project's *Map* tab shows its monitoring sites on LINZ aerial
+  imagery (or street or topographic maps), labelled in the colours the graphs use. Choose a site's
+  *Place* and click where it is, or click the map and pick the site for that point (or *New site
+  here*); drag a pin to move it, and undo any change from its notice. Search for a place, or type
+  latitude and longitude or NZTM coordinates. Locations are kept as NZTM2000 easting/northing (the
+  same numbers as in *Setup*), and the sites download as GeoJSON for QGIS/ArcGIS or KML for Google
+  Earth. The map needs the internet for its imagery; only the area you look at is asked for, and a
+  place search sends just what you type to OpenStreetMap's search.
 - **Report** from customisable block-based templates (title page with your logo, automatic
   summary, compliance table, exceedances with your follow-up notes, results tables with
   guideline and consent limit / trigger columns to compare against and highlighting,
@@ -175,7 +183,7 @@ there as they work and show up for the others within seconds.
   exceedances, projects and more. **Monitoring calendar** – the team's monitoring schedule spreadsheet, linked to the projects.
   **Import data** brings in lab results for any project.
 - **A project** has tabs for each job: *Overview* (latest results at a glance), *Data*, *Graphs*,
-  *Compliance*, *Schedule* (reporting dates and sampling rounds), *Reports* and *Setup*. Its main
+  *Map*, *Compliance*, *Schedule* (reporting dates and sampling rounds), *Reports* and *Setup*. Its main
   action, *Import results*, is top right; less common ones (*Copy for AI input* on a phone,
   *Download project file*) are under ⋯.
 - **Library** – reference data shared by every project: *Guidelines*, *Report templates* and

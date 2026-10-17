@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Badge, Button, Group, Menu, Stack, Tabs, Text, ActionIcon } from '@mantine/core';
+import { lazy, Suspense, useState } from 'react';
+import { Badge, Button, Center, Group, Loader, Menu, Stack, Tabs, Text, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles } from '@tabler/icons-react';
+import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap } from '@tabler/icons-react';
 import { ProjectDataProvider, useProject } from '../../hooks/useProjectData';
 import { OverviewTab } from './Overview';
 import { DataTab } from './Data';
@@ -15,10 +15,14 @@ import { ConsentSetupPage } from './ConsentSetup';
 import { downloadProjectPackage } from '../../db/backup';
 import { AiInputModal } from '../../components/AiInputModal';
 
+// the map (and Leaflet) loads only when the tab is opened
+const MapTab = lazy(() => import('./MapTab').then((m) => ({ default: m.MapTab })));
+
 const TABS = [
   { value: 'overview', label: 'Overview', icon: IconLayoutDashboard },
   { value: 'data', label: 'Data', icon: IconTable },
   { value: 'charts', label: 'Graphs', icon: IconChartLine },
+  { value: 'map', label: 'Map', icon: IconMap },
   { value: 'compliance', label: 'Compliance', icon: IconShieldCheck },
   { value: 'schedule', label: 'Schedule', icon: IconCalendarEvent },
   { value: 'reports', label: 'Reports', icon: IconFileReport },
@@ -113,6 +117,20 @@ export function ProjectLayout() {
         <Route index element={<OverviewTab />} />
         <Route path="data" element={<DataTab />} />
         <Route path="charts" element={<ChartsTab />} />
+        <Route
+          path="map"
+          element={
+            <Suspense
+              fallback={
+                <Center h={300}>
+                  <Loader />
+                </Center>
+              }
+            >
+              <MapTab />
+            </Suspense>
+          }
+        />
         <Route path="compliance" element={<ComplianceTab />} />
         <Route path="schedule" element={<ScheduleTab />} />
         <Route path="reports" element={<ReportsTab />} />

@@ -3,7 +3,7 @@ import { ActionIcon, Anchor, Autocomplete, Box, Button, Card, Group, Modal, Numb
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { Link, useNavigate } from 'react-router-dom';
-import { IconArchive, IconArrowDown, IconArrowUp, IconPlus, IconTrash, IconListDetails, IconSparkles } from '@tabler/icons-react';
+import { IconArchive, IconArrowDown, IconArrowUp, IconPlus, IconTrash, IconListDetails, IconSparkles, IconMap } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { useEditable } from '../../hooks/useEditable';
 import { ProjectForm } from '../Projects';
@@ -289,6 +289,9 @@ export function SetupTab() {
             </Text>
           </div>
           <Group gap="xs">
+            <Button variant="default" component={Link} to={`/projects/${project.id}/map`} leftSection={<IconMap size={16} />}>
+              Place on the map
+            </Button>
             <Button variant="default" leftSection={<IconListDetails size={16} />} onClick={() => setBulk(true)}>
               Add several
             </Button>

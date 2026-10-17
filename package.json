@@ -34,6 +34,7 @@
     "echarts": "5.6.0",
     "exceljs": "4.4.0",
     "jszip": "3.10.2",
+    "leaflet": "^1.9.4",
     "pdfjs-dist": "6.3.289",
     "pdfmake": "0.2.20",
     "react": "18.3.1",
@@ -42,13 +43,16 @@
     "react-router-dom": "6.30.1"
   },
   "devDependencies": {
+    "@types/leaflet": "^1.9.12",
     "@types/node": "22.15.30",
     "@types/pdfmake": "0.2.11",
+    "@types/proj4": "^2.5.5",
     "@types/react": "18.3.23",
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "4.7.0",
     "fake-indexeddb": "6.0.1",
     "playwright-core": "1.56.1",
+    "proj4": "^2.12.1",
     "typescript": "5.9.3",
     "vite": "6.4.1",
     "vitest": "3.2.4"
