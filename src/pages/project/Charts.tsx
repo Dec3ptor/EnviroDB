@@ -8,6 +8,7 @@ import { buildChartSpec, chartOption, type ChartSpec } from '../../charts/timeSe
 import { EChart, type EChartHandle } from '../../charts/EChart';
 import { cmToPx, copyPngToClipboard, renderChartPng } from '../../charts/render';
 import { keyParameters } from '../../lib/analysis';
+import { reviveIds, revivePeriod, useViewState } from '../../hooks/useViewState';
 import { expandRules } from '../../lib/compliance';
 import { downloadBlob, safeFileName } from '../../db/backup';
 import { dataUrlToBlob } from '../../charts/render';
@@ -65,14 +66,16 @@ export function ChartsTab() {
   const data = useProject();
   const { project, sites, params, guidelineSets, index, rules, setMap } = data;
   const scheme = useComputedColorScheme('light');
-  const [paramIds, setParamIds] = useState<string[]>(() => keyParameters(data, 4));
-  const [siteIds, setSiteIds] = useState<string[]>([]);
-  const [period, setPeriod] = useState<PeriodValue>(() => defaultPeriod(project.yearStartMonth, 'all'));
-  const [setIds, setSetIds] = useState<string[]>(project.guidelineSetIds);
-  const [showRules, setShowRules] = useState(true);
-  const [log, setLog] = useState(false);
-  const [sizeKey, setSizeKey] = useState('half');
-  const [titles, setTitles] = useState<Record<string, string>>({});
+  // the graphs as set up last time on this project (kept when going to another tab, and for next time)
+  const k = (name: string) => `${project.id}:charts.${name}`;
+  const [paramIds, setParamIds] = useViewState<string[]>(k('params'), () => keyParameters(data, 4), reviveIds((id) => data.paramMap.has(id)));
+  const [siteIds, setSiteIds] = useViewState<string[]>(k('sites'), [], reviveIds((id) => data.siteMap.has(id)));
+  const [period, setPeriod] = useViewState<PeriodValue>(k('period'), () => defaultPeriod(project.yearStartMonth, 'all'), revivePeriod(project.yearStartMonth));
+  const [setIds, setSetIds] = useViewState<string[]>(k('sets'), project.guidelineSetIds, reviveIds((id) => data.setMap.has(id)));
+  const [showRules, setShowRules] = useViewState(k('rules'), true);
+  const [log, setLog] = useViewState(k('log'), false);
+  const [sizeKey, setSizeKey] = useViewState(k('size'), 'half', (v) => (SIZE_PRESETS[v] ? v : undefined));
+  const [titles, setTitles] = useViewState<Record<string, string>>(k('titles'), {});
   const [busy, setBusy] = useState(false);
   const withData = useMemo(() => new Set(index.paramIdsWithData), [index]);
   const presets = useMemo(() => consentPresets(data, withData), [data, withData]);

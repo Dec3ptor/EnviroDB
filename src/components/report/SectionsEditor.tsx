@@ -5,7 +5,7 @@ import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalList
 import { CSS } from '@dnd-kit/utilities';
 import { IconArrowDown, IconArrowUp, IconChevronDown, IconChevronRight, IconCopy, IconDots, IconPageBreak, IconGripVertical, IconLayoutRows, IconPlus, IconTrash } from '@tabler/icons-react';
 import type { ReportBlock, ReportBlockType } from '../../db/types';
-import { BLOCK_GROUPS, BLOCK_LABELS, BlockForm, blockSummary, newBlock } from './blocks';
+import { BLOCK_GROUPS, BLOCK_LABELS, BlockForm, BlockSitesNote, blockSummary, newBlock } from './blocks';
 import { uid } from '../../lib/ids';
 import { insertAt, moveSection, sectionRange, setPages, stepSection, type Orientation } from './sections';
 import { pageOrientations } from '../../reports/build';
@@ -88,6 +88,7 @@ function Row({ block, index, blocks, orient, base, open, readOnly, carrying, dep
                   {block.orientation}
                 </Badge>
               )}
+              <BlockSitesNote block={block} />
               {!isBreak && block.pages && (
                 <Badge size="xs" variant="filled" color={block.pages === 'landscape' ? 'grape' : 'blue'} style={{ flexShrink: 0 }}>
                   {block.pages} pages

@@ -96,7 +96,15 @@ there as they work and show up for the others within seconds.
 - **Choose the sites a report covers.** On the Reports tab, tap sites in or out, or pick *Groundwater
   only* (or any other site type), so a groundwater report has no effluent results. Every table, graph,
   compliance check and summary follows, the title page lists the sites covered, and the choice is
-  remembered for that reporting obligation.
+  remembered for that reporting obligation. A single table, graph or statistics section can show just
+  some sites too: on the Reports tab, *Edit layout*, open the section and choose *Sites in this
+  table* (e.g. only the bores) – duplicate the section for another group of sites. The section shows
+  a badge with its sites.
+- **Pick up where you left off.** Each tab keeps how you set it up – the graphs chosen and their
+  options, the data filters and sort, the report's template, period and layout tab, the compliance
+  and overview periods – when you go to another tab and come back, and next time in this browser.
+  Each project keeps its own; the usual periods (*Last 12 months*, *This reporting year*) move on
+  with the date.
 - **Sign off reports.** A *Signatures* section puts the people signing side by side – role,
   signature, name and the lines under it (job title, company). Click a person's signature box and
   paste: an image, or a whole signature copied from an email or a Word document (the image, name and

@@ -1,11 +1,12 @@
-import { ActionIcon, Button, Checkbox, Group, NumberInput, SegmentedControl, Select, Slider, Stack, Switch, TagsInput, Text, TextInput, Textarea } from '@mantine/core';
+import { ActionIcon, Badge, Button, Checkbox, Group, NumberInput, SegmentedControl, Select, Slider, Stack, Switch, TagsInput, Text, TextInput, Textarea } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { db } from '../../db/db';
-import type { CalcStat, ReportBlock, ReportBlockType } from '../../db/types';
+import type { CalcStat, ReportBlock, ReportBlockType, Site } from '../../db/types';
 import { CALC_STATS } from '../../reports/calc';
 import { InsertCalc } from './InsertCalc';
-import { GuidelinePicker, ParamPicker } from '../common';
+import { GuidelinePicker, ParamPicker, SitePicker } from '../common';
+import { createContext, useContext } from 'react';
 import { uid } from '../../lib/ids';
 import { SignaturesForm } from './Signatures';
 import { FigureImages, FiguresLayout, refName } from './Figures';
@@ -149,11 +150,68 @@ export function blockSummary(b: ReportBlock): string {
   }
 }
 
+/** The project's sites, for choosing a section's sites on a project's Reports tab (none in the template library). */
+export const ReportSitesContext = createContext<Site[] | null>(null);
+
+/** Sections that can show some of the report's sites, and what to call the choice. */
+const SITE_LABELS: Partial<Record<ReportBlockType, string>> = {
+  resultsTable: 'Sites in this table',
+  statsTable: 'Sites in this table',
+  chart: 'Sites on these graphs',
+  roundReview: 'Sites in this table',
+  roundTable: 'Sites in this section',
+  triggerTable: 'Sites in this table',
+};
+
+/** The sites a section is limited to, if it can be (and is). */
+function sectionSiteIds(block: ReportBlock): string[] {
+  return SITE_LABELS[block.type] && 'siteIds' in block ? block.siteIds : [];
+}
+
+/** A badge beside a section's name when it shows only some sites: "BH1, BH2" or "5 sites". */
+export function BlockSitesNote({ block }: { block: ReportBlock }) {
+  const sites = useContext(ReportSitesContext);
+  const ids = sectionSiteIds(block);
+  if (!sites || !ids.length) return null;
+  const codes = sites.filter((s) => ids.includes(s.id)).map((s) => s.code);
+  if (!codes.length) return null;
+  return (
+    <Badge size="xs" variant="light" color="teal" style={{ flexShrink: 0, textTransform: 'none' }} title={`Only ${codes.join(', ')}`}>
+      {codes.length > 3 ? `${codes.length} sites` : codes.join(', ')}
+    </Badge>
+  );
+}
+
+/** A section's sites: all the report's, or the ones chosen for it (e.g. the bores for a groundwater table). */
+function BlockSitesField({ block, onChange }: { block: ReportBlock; onChange: (b: ReportBlock) => void }) {
+  const sites = useContext(ReportSitesContext);
+  const label = SITE_LABELS[block.type];
+  if (!label || !('siteIds' in block)) return null;
+  if (!sites)
+    return (
+      <Text size="xs" c="dimmed">
+        Shows all the report’s sites. To show only some in this section (e.g. just the bores), choose them on a project’s Reports tab under Edit layout.
+      </Text>
+    );
+  const value = block.siteIds.filter((id) => sites.some((s) => s.id === id));
+  return (
+    <SitePicker
+      sites={sites}
+      label={label}
+      description="Only these sites in this section – add the same section again for other sites"
+      placeholder="All the report’s sites"
+      value={value}
+      onChange={(v) => onChange({ ...block, siteIds: v.length >= sites.length ? [] : v } as ReportBlock)}
+    />
+  );
+}
+
 /** A section's settings, and the name to refer to its table or figure in text. */
 export function BlockForm({ block, onChange }: { block: ReportBlock; onChange: (b: ReportBlock) => void }) {
   const kind = REF_KIND[block.type];
   return (
     <Stack gap="xs">
+      <BlockSitesField block={block} onChange={onChange} />
       <BlockSettings block={block} onChange={onChange} />
       {kind && (
         <TextInput

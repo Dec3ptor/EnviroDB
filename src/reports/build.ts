@@ -150,6 +150,16 @@ function listText(items: string[]): string {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
+/**
+ * The sites a section shows: those chosen for it that are in the report – or, when none are chosen (or none of them
+ * are in this report, e.g. a template saved from another project), `fallback`. `from` is where chosen ones are found.
+ */
+export function sectionSites(ids: string[], fallback: Site[], from: Site[] = fallback): Site[] {
+  if (!ids.length) return fallback;
+  const chosen = from.filter((s) => ids.includes(s.id));
+  return chosen.length ? chosen : fallback;
+}
+
 export function buildReport(opts: BuildOptions): ReportDoc {
   const { template: t, period, settings } = opts;
   const subset = !!opts.siteIds?.length && opts.siteIds.length < opts.bundle.sites.length;
@@ -493,7 +503,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       nodes.push({ t: 'table', caption: tableCaption(`Exceedances recorded, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths, fontSize: fs });
     },
     resultsTable: (blk) => {
-      const sites = blk.siteIds.length ? b.sites.filter((s) => blk.siteIds.includes(s.id)) : b.sites;
+      const sites = sectionSites(blk.siteIds, b.sites);
       const only = blk.sampleIds ? new Set(blk.sampleIds) : null;
       const blockSamples = only ? samplesInPeriod.filter((x) => only.has(x.id)) : samplesInPeriod;
       const sets = setsFor(blk.guidelineSetIds);
@@ -644,7 +654,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     },
     statsTable: (blk) => {
       const flags = flagsFor(defaultSets);
-      const rows = statsTable(b, blk.siteIds, blk.parameterIds, start, end, flags);
+      const rows = statsTable(b, sectionSites(blk.siteIds, b.sites).map((s) => s.id), blk.parameterIds, start, end, flags);
       if (!rows.length) {
         nodes.push({ t: 'p', runs: [{ text: 'No results in this period.', italic: true }] });
         return;
@@ -698,7 +708,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const p = b.paramMap.get(pid);
         if (!p) continue;
         // all of the project's sites for the colours, so a site keeps its colour when others are left out
-        const chartSites = (blk.siteIds.length ? blk.siteIds : b.sites.map((s) => s.id)).filter((id) => b.siteMap.has(id));
+        const chartSites = sectionSites(blk.siteIds, b.sites).map((s) => s.id);
         if (!chartSites.length) continue;
         const spec = buildChartSpec({ index: b.index, param: p, sites: opts.bundle.sites, siteIds: chartSites, start: cStart, end, guidelineSets: sets, rules: limitRules, setMap: b.setMap, showRules: blk.showRules, log: blk.logScale });
         if (blk.markPeriod && blk.range !== 'period') spec.band = { from: toUtcMs(start), to: toUtcMs(addDays(end, 1)) };
@@ -712,7 +722,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       else figures.forEach((f) => nodes.push({ t: 'image', ...f }));
     },
     roundReview: (blk) => {
-      const sites = blk.siteIds.length ? b.sites.filter((s) => blk.siteIds.includes(s.id)) : b.sites;
+      const sites = sectionSites(blk.siteIds, b.sites);
       const sets = setsFor(blk.guidelineSetIds);
       const flags = blk.highlight ? flagsFor(sets.map((s) => s.id)) : new Map<string, CellFlag>();
       const since = blk.historyYears ? addMonths(start, -12 * blk.historyYears) : undefined;
@@ -847,7 +857,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       if (greeting) nodes.push({ t: 'p', runs: inline(greeting) });
     },
     roundTable: (blk) => {
-      const chosen = blk.siteIds.length ? b.sites.filter((s) => blk.siteIds.includes(s.id)) : b.sites.filter((s) => s.active);
+      const chosen = sectionSites(blk.siteIds, b.sites.filter((s) => s.active), b.sites);
       const withData = (s: Sample) => (b.index.bySample.get(s.id)?.length ?? 0) > 0;
       const plan = chosen
         .map((site) => {
@@ -968,7 +978,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       }
     },
     triggerTable: (blk) => {
-      const sites = blk.siteIds.length ? b.sites.filter((s) => blk.siteIds.includes(s.id)) : b.sites.filter((s) => s.active);
+      const sites = sectionSites(blk.siteIds, b.sites.filter((s) => s.active), b.sites);
       const ofLevel = (l: string) => blk.levels === 'all' || (blk.levels === 'limits' ? isLimitLevel(l) : !isLimitLevel(l));
       const rules = limitRules.filter((r) => r.active && RULE_COLUMN_KINDS.has(r.kind) && !!r.parameterId && b.paramMap.has(r.parameterId) && ofLevel(r.level) && (!r.siteIds.length || r.siteIds.some((id) => sites.some((s) => s.id === id))));
       const what = blk.levels === 'limits' ? 'Consent limits' : blk.levels === 'triggers' ? 'Trigger levels' : 'Consent limits and trigger levels';

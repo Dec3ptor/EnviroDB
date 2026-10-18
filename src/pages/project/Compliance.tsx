@@ -6,6 +6,7 @@ import { IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlaye
 import { notifications } from '@mantine/notifications';
 import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
+import { revivePeriod, useViewState } from '../../hooks/useViewState';
 import { useProject } from '../../hooks/useProjectData';
 import { DateField, EmptyState, LevelBadge, PeriodPicker, RuleStatusBadge, defaultPeriod, type PeriodValue } from '../../components/common';
 import { evaluateAll, isLimitLevel } from '../../lib/analysis';
@@ -166,7 +167,7 @@ function ExceedanceTable({ ev }: { ev: RuleEvaluation }) {
 export function ComplianceTab() {
   const data = useProject();
   const { project, rules } = data;
-  const [period, setPeriod] = useState<PeriodValue>(() => defaultPeriod(project.yearStartMonth, 'thisRy'));
+  const [period, setPeriod] = useViewState<PeriodValue>(`${project.id}:compliance.period`, () => defaultPeriod(project.yearStartMonth, 'thisRy'), revivePeriod(project.yearStartMonth));
   const [editing, setEditing] = useState<Rule | null>(null);
   const evals = useMemo(() => evaluateAll(data, period.start, period.end, rules.filter((r) => r.active)), [data, period, rules]);
   const evalMap = new Map(evals.map((e) => [e.rule.id, e]));

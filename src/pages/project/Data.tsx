@@ -23,6 +23,7 @@ import { useSettings } from '../../hooks/useSettings';
 import { parseValue } from '../../lib/values';
 import { cellClass, SET_COLOURS, setColourIndex } from '../../lib/highlight';
 import { AiInputModal } from '../../components/AiInputModal';
+import { reviveIds, revivePeriod, useViewState } from '../../hooks/useViewState';
 import { applyView, DEFAULT_SORT, describeFilter, FILTER_OPS, SHOW_ROWS, sortLabel, type FilterOp, type ShowRows, type SortKey, type SortState, type ValueFilter } from '../../lib/tableView';
 import type { Parameter } from '../../db/types';
 import { SaveButton } from '../../components/Unsaved';
@@ -438,20 +439,22 @@ function ImportHistory() {
 export function DataTab() {
   const data = useProject();
   const { project, sites, params, guidelineSets, setMap, index } = data;
-  const [period, setPeriod] = useState<PeriodValue>(() => defaultPeriod(project.yearStartMonth, 'all'));
-  const [siteIds, setSiteIds] = useState<string[]>([]);
-  const [paramIds, setParamIds] = useState<string[]>([]);
-  const [setIds, setSetIds] = useState<string[]>(project.guidelineSetIds);
-  const [layout, setLayout] = useState<'samplesAsRows' | 'parametersAsRows'>('samplesAsRows');
+  // the table as set up last time on this project (kept when going to another tab, and for next time)
+  const k = (name: string) => `${project.id}:data.${name}`;
+  const [period, setPeriod] = useViewState<PeriodValue>(k('period'), () => defaultPeriod(project.yearStartMonth, 'all'), revivePeriod(project.yearStartMonth));
+  const [siteIds, setSiteIds] = useViewState<string[]>(k('sites'), [], reviveIds((id) => data.siteMap.has(id)));
+  const [paramIds, setParamIds] = useViewState<string[]>(k('params'), [], reviveIds((id) => data.paramMap.has(id)));
+  const [setIds, setSetIds] = useViewState<string[]>(k('sets'), project.guidelineSetIds, reviveIds((id) => data.setMap.has(id)));
+  const [layout, setLayout] = useViewState<'samplesAsRows' | 'parametersAsRows'>(k('layout'), 'samplesAsRows');
   const [selected, setSelected] = useState<Sample | null>(null);
   const withData = useMemo(() => new Set(index.paramIdsWithData), [index]);
   const paramPresets = useMemo(() => consentPresets(data, withData), [data, withData]);
-  const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
-  const [filters, setFilters] = useState<ValueFilter[]>([]);
-  const [show, setShow] = useState<ShowRows>('all');
-  const [search, setSearch] = useState('');
+  const [sort, setSort] = useViewState<SortState>(k('sort'), DEFAULT_SORT);
+  const [filters, setFilters] = useViewState<ValueFilter[]>(k('filters'), [], (v) => (Array.isArray(v) ? v.filter((f) => data.paramMap.has(f.paramId)) : undefined));
+  const [show, setShow] = useViewState<ShowRows>(k('show'), 'all');
+  const [search, setSearch] = useViewState(k('search'), '');
   const [draft, setDraft] = useState<ValueFilter | null>(null);
-  const [consentView, setConsentView] = useState<'all' | ConsentView>('all');
+  const [consentView, setConsentView] = useViewState<'all' | ConsentView>(k('consent'), 'all');
   const consent = useMemo(() => ({ consent: consentParameterIds(data, 'consent'), limits: consentParameterIds(data, 'limits'), triggers: consentParameterIds(data, 'triggers') }), [data]);
   // the parameters shown: those picked (or all with data), narrowed to the consent view, in the logical order
   const shownIds = useMemo(() => {

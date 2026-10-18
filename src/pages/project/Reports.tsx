@@ -5,6 +5,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { IconCheck, IconDeviceFloppy, IconFileTypeDocx, IconFileTypePdf, IconLayoutList, IconSettings, IconSparkles, IconTemplate } from '@tabler/icons-react';
 import { db, saveReportWork } from '../../db/db';
+import { hasViewState, revivePeriod, seedViewState, useViewState } from '../../hooks/useViewState';
 import { useProject } from '../../hooks/useProjectData';
 import { useSharedWork } from '../../hooks/useSharedWork';
 import { same as sameValue } from '../../sync/model';
@@ -23,6 +24,7 @@ import { saveTemplate, setSubmitted } from '../../db/repo';
 import type { FigureImage, FiguresBlock, LetterBlock, Project, ReportTemplate, TextBlock } from '../../db/types';
 import { FigureImages, FiguresLayout } from '../../components/report/Figures';
 import { SectionsEditor } from '../../components/report/SectionsEditor';
+import { ReportSitesContext } from '../../components/report/blocks';
 import { InsertCalc } from '../../components/report/InsertCalc';
 import { summaryText } from '../../reports/build';
 import { PagesControl } from '../../components/report/PagesControl';
@@ -87,12 +89,24 @@ export function ReportsTab() {
   const { project, obligations } = data;
   const settings = useSettings();
   const templates = useLiveQuery(() => db.templates.toArray(), []);
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
 
   const oblPresets = useMemo(() => obligationPresets(obligations), [obligations]);
   const rounds = useMemo(() => roundPeriods(data, 12), [data]); // "Monitoring round – September 2026", newest first
 
+  // the report as left last time on this project – unless a link (e.g. from the Schedule tab) opens a particular one
+  const k = (name: string) => `${project.id}:reports.${name}`;
+  // a template kept from last time stays on its period (the latest-round jump below is for a template just chosen)
+  const [keptTemplate] = useState(() => hasViewState(k('template')) && !params.toString());
   const [initial] = useState(() => {
+    const opened = linkedReport();
+    if (opened) {
+      seedViewState(k('period'), opened.period);
+      seedViewState(k('template'), opened.templateId ?? settings.defaultTemplateId ?? 'tpl-annual');
+    }
+    return opened ?? defaultReport();
+  });
+  function linkedReport(): { period: PeriodValue; templateId?: string } | null {
     const oId = params.get('obligation');
     const idx = params.get('period');
     const ob = oId ? obligations.find((o) => o.id === oId) : undefined;
@@ -102,23 +116,31 @@ export function ReportsTab() {
     }
     const s = params.get('start'), e = params.get('end');
     if (s && e) return { period: { key: 'custom', start: s, end: e, label: `${formatDate(s)} – ${formatDate(e)}` }, templateId: params.get('template') ?? undefined };
-    // default: the report that is due next (unsubmitted and whose period has ended)
+    return params.get('template') ? { period: defaultReport().period, templateId: params.get('template')! } : null;
+  }
+  function defaultReport(): { period: PeriodValue; templateId?: string } {
+    // the report that is due next (unsubmitted and whose period has ended)
     const next = nextDueReport(obligations);
     if (next) {
       const { obligation: o, period: p } = next;
       return { period: { key: `obl:${o.id}:${p.index}`, start: p.periodStart, end: p.periodEnd, label: `${o.name}: ${formatDate(p.periodStart)} – ${formatDate(p.periodEnd)}` }, templateId: o.templateId ?? params.get('template') ?? undefined };
     }
-    return { period: defaultPeriod(project.yearStartMonth, 'lastRy'), templateId: params.get('template') ?? undefined };
-  });
+    return { period: defaultPeriod(project.yearStartMonth, 'lastRy') };
+  }
 
-  const [period, setPeriod] = useState<PeriodValue>(initial.period);
-  const [templateId, setTemplateId] = useState<string | null>(initial.templateId ?? settings.defaultTemplateId ?? 'tpl-annual');
+  const [period, setPeriod] = useViewState<PeriodValue>(k('period'), initial.period, revivePeriod(project.yearStartMonth));
+  const [templateId, setTemplateId] = useViewState<string | null>(k('template'), initial.templateId ?? settings.defaultTemplateId ?? 'tpl-annual');
   // the template chosen – or, when it has been deleted, the default, the annual report or the first there is
   const stored = templates?.find((t) => t.id === templateId) ?? templates?.find((t) => t.id === settings.defaultTemplateId) ?? templates?.find((t) => t.id === 'tpl-annual') ?? templates?.[0];
 
   // A template for one monitoring round starts on the latest round, unless the period is already a round or
   // belongs to a reporting obligation that uses this template.
-  const seenTemplate = useRef<string | null>(null);
+  const seenTemplate = useRef<string | null>(keptTemplate ? templateId : null);
+  // a link's report is opened once: coming back to the tab keeps what's been chosen since
+  useEffect(() => {
+    if (params.toString()) setParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (!stored || seenTemplate.current === stored.id) return;
     seenTemplate.current = stored.id;
@@ -174,7 +196,7 @@ export function ReportsTab() {
     void saveReportWork(sitesKey, all ? undefined : ids);
   };
 
-  const [tab, setTab] = useState<string | null>('report');
+  const [tab, setTab] = useViewState<string | null>(k('tab'), 'report');
   const settingsCard = useRef<HTMLDivElement>(null);
   const previewCard = useRef<HTMLDivElement>(null);
   const pane = usePreviewPane(previewCard, 'lg');
@@ -387,7 +409,9 @@ export function ReportsTab() {
                   <Text size="xs" c="dimmed">
                     Tap a section to change it. Drag ⋮⋮ to move it – a heading brings its content – or use the arrows; ⋯ has more.
                   </Text>
-                  <SectionsEditor blocks={template.blocks} onChange={(blocks) => changeTemplate({ ...template, blocks })} orientation={template.orientation} open={open} onOpen={setOpen} paletteOpen={false} />
+                  <ReportSitesContext.Provider value={chosenSites ? data.sites.filter((x) => chosenSites.includes(x.id)) : data.sites}>
+                    <SectionsEditor blocks={template.blocks} onChange={(blocks) => changeTemplate({ ...template, blocks })} orientation={template.orientation} open={open} onOpen={setOpen} paletteOpen={false} />
+                  </ReportSitesContext.Provider>
                   <Anchor component={Link} to={`/templates/${stored.id}`} size="xs">
                     <Group gap={4}>
                       <IconTemplate size={13} />

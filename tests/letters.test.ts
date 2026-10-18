@@ -166,6 +166,22 @@ describe('results vs previous rounds', () => {
   });
 });
 
+describe('a section for some sites only', () => {
+  it('shows only the sites chosen for a results table, and all of them when the choice is from elsewhere', async () => {
+    const b = await loadBundle(projectId);
+    const gw1 = b.sites.find((s) => s.code === 'GW1')!.id;
+    const only = (ids: string[]): ReportTemplate => ({ ...annual, blocks: annual.blocks.map((x) => (x.type === 'resultsTable' || x.type === 'roundTable' ? { ...x, siteIds: ids } : x)) as ReportBlock[] });
+    const captions = (t: ReportTemplate) =>
+      buildReport({ bundle: b, template: t, period: year, settings: me })
+        .nodes.filter((n): n is Table => n.t === 'table' && /Results – /.test(n.caption ?? ''))
+        .map((n) => n.caption!.replace(/^Table \d+\. /, ''));
+    expect(captions(only([gw1])).every((c) => c.includes('GW1'))).toBe(true);
+    expect(captions(only([gw1])).length).toBeGreaterThan(0);
+    const everySite = captions(only(['site-from-another-project']));
+    expect(everySite.some((c) => c.includes('DP1')) && everySite.some((c) => c.includes('GW1'))).toBe(true);
+  });
+});
+
 describe('trigger levels table', () => {
   it('lists each parameter and level with a column per site, and text can refer to it by name', async () => {
     const doc = buildReport({ bundle: await loadBundle(projectId), template: annual, period: year, settings: me });

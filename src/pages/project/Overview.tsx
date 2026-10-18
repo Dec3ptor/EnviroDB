@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Anchor, Badge, Button, Card, Checkbox, Grid, Group, Select, SimpleGrid, Stack, Switch, Table, Text, Title, Tooltip, useComputedColorScheme } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconArrowRight, IconCalendarDue, IconFlask, IconShieldCheck } from '@tabler/icons-react';
+import { revivePeriod, useViewState } from '../../hooks/useViewState';
 import { useProject } from '../../hooks/useProjectData';
 import { ConsentViewControl, defaultPeriod, LevelBadge, PeriodPicker, RuleStatusBadge, StatTile, type PeriodValue } from '../../components/common';
 import { cellClass } from '../../lib/highlight';
@@ -120,9 +121,9 @@ function LatestResultsReview() {
   const data = useProject();
   const { sites, project, siteMap } = data;
   const rounds = useMemo(() => samplingRounds(data), [data]);
-  const [roundKey, setRoundKey] = useState('latest');
-  const [scope, setScope] = useState<'all' | ConsentView>('all');
-  const [issuesOnly, setIssuesOnly] = useState(false);
+  const [roundKey, setRoundKey] = useViewState(`${project.id}:overview.round`, 'latest');
+  const [scope, setScope] = useViewState<'all' | ConsentView>(`${project.id}:overview.scope`, 'all');
+  const [issuesOnly, setIssuesOnly] = useViewState(`${project.id}:overview.issues`, false);
   const round = rounds.find((r) => r.key === roundKey) ?? rounds[0];
   const flags = useMemo(() => {
     if (!round) return new Map<string, CellFlag>();
@@ -277,7 +278,7 @@ export function OverviewTab() {
   const data = useProject();
   const { project, samples, obligations, rules } = data;
   const navigate = useNavigate();
-  const [period, setPeriod] = useState<PeriodValue>(() => defaultPeriod(project.yearStartMonth, 'thisRy'));
+  const [period, setPeriod] = useViewState<PeriodValue>(`${project.id}:overview.period`, () => defaultPeriod(project.yearStartMonth, 'thisRy'), revivePeriod(project.yearStartMonth));
   const evals = useMemo(() => evaluateAll(data, period.start, period.end), [data, period]);
   const inPeriod = samples.filter((s) => s.date.slice(0, 10) >= period.start && s.date.slice(0, 10) <= period.end);
   const last = samples[samples.length - 1];
