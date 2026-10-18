@@ -93,6 +93,8 @@ export interface ReportDoc {
   /** The letterhead from Settings, for templates that use it. */
   letterhead?: Letterhead;
   commentary: CommentaryField[];
+  /** Each table section's usual notes (before any of your own), to start your own from. */
+  autoNotes?: Record<string, string[]>;
 }
 
 /** Red for exceedances shown as text, and purple for a detection limit above the limit. */

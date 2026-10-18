@@ -1,12 +1,16 @@
-import { ActionIcon, Badge, Button, Checkbox, Group, NumberInput, Popover, ScrollArea, SegmentedControl, Select, Slider, Stack, Switch, TagsInput, Text, TextInput, Textarea, UnstyledButton } from '@mantine/core';
+import { ActionIcon, Anchor, Badge, Button, Checkbox, Group, MultiSelect, NumberInput, Popover, ScrollArea, SegmentedControl, Select, Slider, Stack, Switch, TagsInput, Text, TextInput, Textarea, UnstyledButton } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { IconLink, IconPlus, IconTrash } from '@tabler/icons-react';
 import { db } from '../../db/db';
-import type { CalcStat, Parameter, ReportBlock, ReportBlockType, Site } from '../../db/types';
+import type { CalcStat, Parameter, ReportBlock, ReportBlockType, RoundTableBlock, Sample, Site } from '../../db/types';
 import { CALC_STATS } from '../../reports/calc';
 import { InsertCalc } from './InsertCalc';
+import { FillInInput } from './FillInInput';
+import { NOTE_FILL_INS, captionFillIns, defaultCaption, earlierCaption, tidyCaption, withCaption } from '../../reports/captions';
+import { formatDate } from '../../lib/dates';
+import type { ReportDoc } from '../../reports/model';
 import { GuidelinePicker, ParamPicker, SitePicker } from '../common';
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useMemo, useState } from 'react';
 import { uid } from '../../lib/ids';
 import { SignaturesForm } from './Signatures';
 import { FigureImages, FiguresLayout, refName } from './Figures';
@@ -122,13 +126,13 @@ export function blockSummary(b: ReportBlock): string {
     case 'text':
       return `${b.prompt ? '[filled in per report] ' : ''}${b.text.slice(0, 80)}`;
     case 'resultsTable':
-      return `${b.title ?? ''} · ${b.layout === 'parametersAsRows' ? 'parameters down' : 'dates down'}${b.splitBySite ? ' · one table per site' : ''}${b.ruleColumns === 'all' ? ' · with consent limits & triggers' : b.ruleColumns === 'limits' ? ' · with consent limits' : ''}`;
+      return `${b.captionText || b.title || 'Results'} · ${b.layout === 'parametersAsRows' ? 'parameters down' : 'dates down'}${b.splitBySite ? ' · one table per site' : ''}${b.ruleColumns === 'all' ? ' · with consent limits & triggers' : b.ruleColumns === 'limits' ? ' · with consent limits' : ''}`;
     case 'chart':
       return `${b.parameterIds.length ? `${b.parameterIds.length} parameters` : 'Key parameters (those with consent rules)'} · ${b.range === 'years' ? `last ${b.years} years` : b.range === 'all' ? 'all data' : 'report period'} · ${(b.size ?? 'full') === 'full' ? 'full width' : b.size === 'half' ? 'two per row' : `${b.widthCm} × ${b.heightCm} cm`}`;
     case 'roundReview':
-      return `${b.title ?? ''} · ${b.historyYears ? `last ${b.historyYears} years` : 'all earlier results'}`;
+      return `${b.captionText || b.title || 'Results'} · ${b.historyYears ? `last ${b.historyYears} years` : 'all earlier results'}`;
     case 'roundTable':
-      return [b.previous ? `this round and ${b.previous} before` : 'this round', b.comment && 'comments', b.summaries && 'a summary per site'].filter(Boolean).join(' · ');
+      return [b.previousDates?.length ? `this round and ${b.previousDates.length} chosen` : b.previous ? `this round and ${b.previous} before` : 'this round', b.comment && 'comments', b.summaries && 'a summary per site'].filter(Boolean).join(' · ');
     case 'triggerTable':
       return b.levels === 'limits' ? 'Consent limits' : b.levels === 'triggers' ? 'Trigger levels' : 'Consent limits and trigger levels';
     case 'letter':
@@ -155,7 +159,7 @@ export const ReportBlocksContext = createContext<{ blocks: ReportBlock[]; setBlo
 
 /** A table's or figure's name in the list: "Results table: Monitoring results". */
 function refLabel(b: ReportBlock): string {
-  const title = 'title' in b && typeof b.title === 'string' ? b.title : 'caption' in b && typeof b.caption === 'string' ? b.caption : '';
+  const title = b.captionText ? tidyCaption(b.captionText.replace(/\[[^\]]*\]/g, '')) : 'title' in b && typeof b.title === 'string' ? b.title : 'caption' in b && typeof b.caption === 'string' ? b.caption : '';
   return `${BLOCK_LABELS[b.type].label}${title ? `: ${title}` : ''}`;
 }
 
@@ -421,6 +425,8 @@ export function BlockForm({ block, onChange }: { block: ReportBlock; onChange: (
           )}
         </div>
       )}
+      {kind && block.type !== 'figures' && <CaptionField block={block} onChange={onChange} />}
+      {kind === 'table' && <TableNotesField block={block} onChange={onChange} />}
       {kind && (
         <TextInput
           size="xs"
@@ -433,6 +439,140 @@ export function BlockForm({ block, onChange }: { block: ReportBlock; onChange: (
         />
       )}
     </Stack>
+  );
+}
+
+/** The report being made, on the Reports tab and in the template editor's preview (its usual table notes …). */
+export const ReportDocContext = createContext<ReportDoc | null>(null);
+
+const headed = (b: ReportBlock) => b.captionStyle === 'heading' || (b.type === 'roundTable' && b.siteLabel === 'heading');
+
+/** A table's or graph's caption – the usual wording to start from, with fill-ins such as [site name] and [date]. */
+function CaptionField({ block, onChange }: { block: ReportBlock; onChange: (b: ReportBlock) => void }) {
+  const usual = defaultCaption(block);
+  const value = block.captionText ?? earlierCaption(block) ?? usual;
+  const perSite = block.type === 'roundTable' || block.type === 'roundReview' || (block.type === 'resultsTable' && block.splitBySite);
+  const kind = REF_KIND[block.type];
+  const asHeading = headed(block);
+  return (
+    <div>
+      <FillInInput
+        label={asHeading ? 'Heading' : 'Caption'}
+        description={perSite ? `Each site's ${kind === 'fig' ? 'graph' : 'table'} has its own – use [site name], [date] … to fill in each one's.` : undefined}
+        value={value}
+        placeholder={usual}
+        fillIns={captionFillIns(block)}
+        onChange={(v) => onChange(withCaption(block, v.trim() === usual ? undefined : v))}
+        example={asHeading ? '' : `${kind === 'fig' ? 'Figure' : 'Table'} 3. `}
+      />
+      {value !== usual && (
+        <Anchor component="button" type="button" size="xs" onClick={() => onChange(withCaption(block, undefined))}>
+          Back to the usual wording
+        </Anchor>
+      )}
+    </div>
+  );
+}
+
+/** The project's samples up to the report's end, on a project's Reports tab – to choose earlier rounds from. */
+export const ReportSamplesContext = createContext<Sample[] | null>(null);
+
+/** The rounds beside this one: the last few, or chosen sampling rounds. */
+function EarlierRoundsField({ block, onChange }: { block: RoundTableBlock; onChange: (b: ReportBlock) => void }) {
+  const samples = useContext(ReportSamplesContext);
+  const sites = useContext(ReportSitesContext);
+  const chosen = block.previousDates ?? [];
+  const [mode, setMode] = useState<'last' | 'dates'>(chosen.length ? 'dates' : 'last');
+  const dates = useMemo(() => {
+    const code = new Map((sites ?? []).map((x) => [x.id, x.code]));
+    const by = new Map<string, Set<string>>();
+    for (const x of samples ?? []) {
+      const d = x.date.slice(0, 10);
+      if (!by.has(d)) by.set(d, new Set());
+      const c = code.get(x.siteId);
+      if (c) by.get(d)!.add(c);
+    }
+    for (const d of chosen) if (!by.has(d)) by.set(d, new Set());
+    return [...by]
+      .sort((a, z) => (a[0] < z[0] ? 1 : -1))
+      .map(([d, codes]) => ({ value: d, label: `${formatDate(d, { format: 'D MMM YYYY' })}${codes.size ? ` – ${[...codes].join(', ')}` : ''}` }));
+  }, [samples, sites, chosen]);
+  const many = (mode === 'dates' ? chosen.length : block.previous) > 6;
+  return (
+    <div>
+      <Text size="sm" fw={500} mb={4}>
+        Earlier rounds beside it
+      </Text>
+      <Group gap="xs" align="center">
+        <SegmentedControl
+          size="xs"
+          value={mode}
+          onChange={(v) => {
+            setMode(v as 'last' | 'dates');
+            if (v === 'last') onChange({ ...block, previousDates: undefined });
+          }}
+          data={[
+            { value: 'last', label: 'The last' },
+            { value: 'dates', label: 'Chosen dates', disabled: !samples && !chosen.length },
+          ]}
+        />
+        {mode === 'last' && (
+          <>
+            <NumberInput size="xs" w={72} min={0} max={24} value={block.previous} onChange={(v) => onChange({ ...block, previous: Math.max(0, Math.min(24, Math.round(Number(v) || 0))) })} aria-label="How many earlier rounds" />
+            <Text size="xs">{block.previous === 1 ? 'round' : 'rounds'}</Text>
+          </>
+        )}
+      </Group>
+      {mode === 'dates' && (
+        <MultiSelect
+          size="xs"
+          mt={6}
+          data={dates}
+          value={chosen}
+          onChange={(v) => onChange({ ...block, previousDates: v.length ? v : undefined })}
+          searchable
+          clearable
+          placeholder={chosen.length ? '' : 'Pick sampling rounds'}
+          description="Each site's sample on that day, or the nearest within two weeks; a site not sampled then shows –."
+          comboboxProps={{ withinPortal: true }}
+          maxDropdownHeight={260}
+        />
+      )}
+      {mode === 'dates' && !samples && (
+        <Text size="xs" c="dimmed" mt={4}>
+          Choose dates on a project's Reports tab.
+        </Text>
+      )}
+      {many && (
+        <Text size="xs" c="dimmed" mt={4}>
+          With many rounds the table's text gets smaller to fit; landscape pages for this section give them more room.
+        </Text>
+      )}
+    </div>
+  );
+}
+
+/** The notes under a table: the usual ones, or your own (a line each). */
+function TableNotesField({ block, onChange }: { block: ReportBlock; onChange: (b: ReportBlock) => void }) {
+  const doc = useContext(ReportDocContext);
+  const usual = doc?.autoNotes?.[block.id];
+  const own = block.tableNotes !== undefined;
+  return (
+    <div>
+      <Switch
+        size="xs"
+        label="Write my own notes under the table"
+        checked={own}
+        onChange={(e) => onChange({ ...block, tableNotes: e.currentTarget.checked ? (usual ?? []).join('\n') : undefined })}
+      />
+      {own ? (
+        <FillInInput multiline label="Notes under the table" description="A line each – change, add or delete them. Empty: no notes." value={block.tableNotes ?? ''} fillIns={NOTE_FILL_INS} onChange={(v) => onChange({ ...block, tableNotes: v })} chips={2} />
+      ) : usual?.length ? (
+        <Text size="xs" c="dimmed" mt={2} lineClamp={2} title={usual.join('\n')}>
+          Now: {usual.join(' ')}
+        </Text>
+      ) : null}
+    </div>
   );
 }
 
@@ -502,7 +642,6 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
     case 'resultsTable':
       return (
         <Stack gap="xs">
-          <TextInput label="Table title" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} />
           <SegmentedControl fullWidth value={block.layout} onChange={(v) => set({ layout: v as typeof block.layout })} data={[{ value: 'parametersAsRows', label: 'Parameters down' }, { value: 'parametersAsColumns', label: 'Samples down' }]} />
           <Group>
             <Switch label="One table per site" checked={block.splitBySite} onChange={(e) => set({ splitBySite: e.currentTarget.checked })} />
@@ -534,7 +673,6 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
     case 'statsTable':
       return (
         <Stack gap="xs">
-          <TextInput label="Table title" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} />
           <Checkbox.Group label="Statistics" value={block.stats} onChange={(v) => set({ stats: v as typeof block.stats })}>
             <Group mt={4}>
               {(['n', 'nd', 'min', 'median', 'mean', 'p95', 'max', 'exceed'] as const).map((s) => (
@@ -599,13 +737,14 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
             <Switch label="Log scale" checked={block.logScale} onChange={(e) => set({ logScale: e.currentTarget.checked })} />
             {block.range !== 'period' && <Switch label="Shade the report period" checked={!!block.markPeriod} onChange={(e) => set({ markPeriod: e.currentTarget.checked })} />}
           </Group>
-          <TextInput label="Extra caption text (optional)" value={block.caption ?? ''} onChange={(e) => set({ caption: e.currentTarget.value })} />
         </Stack>
       );
     case 'roundReview':
       return (
         <Stack gap="xs">
-          <TextInput label="Table title" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} description="One table per site, for its latest sample in the report period" />
+          <Text size="xs" c="dimmed">
+            One table per site, for its latest sample in the report period.
+          </Text>
           <Checkbox.Group label="Compare each result with" value={block.compare} onChange={(v) => set({ compare: v as typeof block.compare })}>
             <Group gap="sm" mt={4}>
               <Checkbox value="previous" label="Previous result" />
@@ -656,14 +795,11 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
     case 'roundTable':
       return (
         <Stack gap="xs">
-          <TextInput label="Table title (optional)" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} description="One table per site, for its latest sample in the report period" />
+          <Text size="xs" c="dimmed">
+            One table per site, for its latest sample in the report period.
+          </Text>
+          <EarlierRoundsField block={block} onChange={onChange} />
           <Group align="flex-end" gap="md">
-            <div>
-              <Text size="sm" fw={500} mb={4}>
-                Earlier rounds beside it
-              </Text>
-              <SegmentedControl size="xs" value={String(block.previous)} onChange={(v) => set({ previous: Number(v) })} data={['0', '1', '2', '3']} />
-            </div>
             <div>
               <Text size="sm" fw={500} mb={4}>
                 Each site's table under
@@ -694,7 +830,7 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
               ]}
             />
           </div>
-          <Switch label="A comment on each result: the change since last round and whether it complies (e.g. “Increase – Compliant”)" checked={block.comment} onChange={(e) => set({ comment: e.currentTarget.checked })} />
+          <Switch label="A comment on each result: the change since the last result shown and whether it complies (e.g. “Increase – Compliant”, or “No earlier result – Compliant”)" checked={block.comment} onChange={(e) => set({ comment: e.currentTarget.checked })} />
           <Switch label="A summary under each site's table – drafted from the results, yours to edit in the report's commentary" checked={block.summaries} onChange={(e) => set({ summaries: e.currentTarget.checked })} />
           <BlockParamsField block={block} params={params} onChange={onChange} all="All measured" />
         </Stack>
@@ -702,7 +838,6 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
     case 'triggerTable':
       return (
         <Stack gap="xs">
-          <TextInput label="Table title (optional)" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} placeholder="Consent limits and trigger levels" />
           <div>
             <Text size="sm" fw={500} mb={4}>
               Show
@@ -765,7 +900,6 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
     case 'reportingTable':
       return (
         <Stack gap="xs">
-          <TextInput label="Table title (optional)" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} placeholder={block.type === 'programmeTable' ? 'Monitoring programme' : 'Reporting requirements'} />
           <Text size="xs" c="dimmed">
             {block.type === 'programmeTable' ? 'From the project’s sampling schedules (Schedule tab): sites, frequency, parameters and notes.' : 'From the project’s reporting obligations (Schedule tab): frequency, when the next one is due and who it goes to.'}
           </Text>
@@ -774,7 +908,6 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
     case 'tarpTable':
       return (
         <Stack gap="xs">
-          <TextInput label="Table title (optional)" value={block.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} placeholder="Trigger levels, limits and responses" />
           <div>
             <Text size="sm" fw={500} mb={4}>
               Show
@@ -830,7 +963,6 @@ function CalcForm({ block, onChange }: { block: Extract<ReportBlock, { type: 'ca
   const setRow = (i: number, patch: Partial<(typeof rows)[number]>) => onChange({ ...block, rows: rows.map((r, k) => (k === i ? { ...r, ...patch } : r)) });
   return (
     <Stack gap="xs">
-      <TextInput label="Title (optional)" value={block.title ?? ''} onChange={(e) => onChange({ ...block, title: e.currentTarget.value })} placeholder="Calculated values, {{period.label}}" />
       {rows.map((r, i) => (
         <Group key={r.id} gap={6} align="flex-end" wrap="wrap">
           <Select size="xs" label={i === 0 ? 'Value' : undefined} w={170} data={Object.entries(CALC_STATS).map(([value, label]) => ({ value, label }))} value={r.stat} onChange={(v) => v && setRow(i, { stat: v as CalcStat })} allowDeselect={false} />

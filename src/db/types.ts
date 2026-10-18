@@ -365,6 +365,10 @@ export interface ReportBlockBase {
   pages?: 'portrait' | 'landscape';
   /** Tables and graphs: under a numbered caption ("Table 3. …", the default) or a heading of their own (not numbered). */
   captionStyle?: 'caption' | 'heading';
+  /** Tables and graphs: the caption's wording, with fill-ins such as [site name] and [date] (none = the usual wording). */
+  captionText?: string;
+  /** Tables: your own notes under the table, a line each ('' = none; none = the usual notes). */
+  tableNotes?: string;
   /** Sections with parameters: leave these out (e.g. water levels, given a table of their own). */
   excludeParameterIds?: ID[];
   /** Sections with sites: leave these out. */
@@ -475,8 +479,10 @@ export interface RoundTableBlock extends ReportBlockBase {
   title?: string;
   siteIds: ID[]; // [] = all
   parameterIds: ID[]; // [] = all measured
-  /** Earlier rounds beside this one (0–3). */
+  /** Earlier rounds beside this one: the last this many. */
   previous: number;
+  /** …or these sampling rounds (dates, YYYY-MM-DD): each site's sample on the day, or the nearest within two weeks. */
+  previousDates?: string[];
   /** Consent values to compare with: limits only, or limits and triggers. */
   ruleColumns: 'none' | 'limits' | 'all';
   /** A comment per result: the change since the previous round and whether it complies. */

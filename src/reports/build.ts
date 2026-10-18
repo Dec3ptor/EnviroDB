@@ -17,6 +17,7 @@ import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
 import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type ReportDoc, type ReportLook, type Run } from './model';
 import { CELL_PAD_MM, fontWidthFactor, longestWordMm as longestWord, textWidthMm as textWidth } from './measure';
 import { calcValue, fillCalcs } from './calc';
+import { captionOf, fillCaption, tidyCaption } from './captions';
 
 export interface BuildOptions {
   bundle: ProjectBundle;
@@ -277,8 +278,26 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     mark(caption, anchor);
     return caption;
   };
-  /** After a section: its captions get their anchors, or – for a section under headings – become headings. */
+  const autoNotes: Record<string, string[]> = {};
+  /**
+   * After a section: its captions get their anchors, or – for a section under headings – become headings; and your
+   * own notes go where its usual ones were (under its last table when it had none).
+   */
   const finishSection = (blk: ReportBlock, from: number) => {
+    const tables = nodes.slice(from).filter((n): n is Extract<DocNode, { t: 'table' }> => n.t === 'table');
+    if (tables.length) {
+      autoNotes[blk.id] = [...new Set(tables.flatMap((n) => n.notes ?? []))];
+      if (blk.tableNotes !== undefined) {
+        // a line with fill-ins is tidied of what an empty one leaves; others are kept as written
+        const own = blk.tableNotes
+          .split('\n')
+          .map((line) => (/\[|\{\{/.test(line) ? tidyCaption(fill(fillCaption(line, capBase))) : line.trim()))
+          .filter(Boolean);
+        const noted = tables.filter((n) => n.notes?.length);
+        for (const n of tables) n.notes = undefined;
+        if (own.length) for (const n of noted.length ? noted : [tables[tables.length - 1]]) n.notes = own;
+      }
+    }
     const asHeading = blk.captionStyle === 'heading';
     for (let i = from; i < nodes.length; i++) {
       const n = nodes[i];
@@ -296,6 +315,16 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       }
     }
   };
+  // A section's caption: its wording, with this table's fill-ins ([site name], [date] …) and the report's own
+  const capBase: Record<string, string> = {
+    period: `${formatDate(start)} – ${formatDate(end)}`,
+    periodname: ctx['period.label'],
+    project: project.name,
+    projectcode: project.code ?? '',
+    consent: project.consents ?? '',
+  };
+  const siteFill = (s: Site | undefined): Record<string, string> => (s ? { site: s.name ? `${s.code} – ${s.name}` : s.code, sitecode: s.code, sitename: s.name ?? '', sitetype: s.type ?? '' } : { site: '', sitecode: '', sitename: '', sitetype: '' });
+  const capText = (blk: ReportBlock, values: Record<string, string> = {}) => tidyCaption(fill(fillCaption(captionOf(blk), { ...capBase, ...values })));
   const tableCaption = (s: string) => numbered('Table', 'table', s);
   const figCaption = (s: string) => numbered('Figure', 'fig', s);
   /** How an exceedance stands out in a table cell: shading, or red text. */
@@ -375,7 +404,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       }
       const head: Cell[][] = [[{ text: 'Calculation' }, { text: 'Value', align: 'right' }, { text: 'Results', align: 'right' }]];
       const body: Cell[][] = rows.map((r) => [{ text: r.label }, { text: r.text, align: 'right', bold: true }, { text: String(r.n), align: 'right' }]);
-      nodes.push({ t: 'table', caption: tableCaption(fill(blk.title) || `Calculated values, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths: ['*', width * 0.22, width * 0.12], fontSize: t.fontSize - 1 });
+      nodes.push({ t: 'table', caption: tableCaption(capText(blk)), head, body, widths: ['*', width * 0.22, width * 0.12], fontSize: t.fontSize - 1 });
     },
     programmeTable: (blk) => {
       const list = b.schedules.filter((x) => x.active);
@@ -391,7 +420,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         { text: x.parameterIds.length ? x.parameterIds.map((id) => b.paramMap.get(id)?.name ?? id).join(', ') : 'As required' },
         { text: x.notes ?? '' },
       ]);
-      nodes.push({ t: 'table', caption: tableCaption(fill(blk.title) || 'Monitoring programme'), head, body, widths: [width * 0.2, width * 0.18, width * 0.14, '*', width * 0.2], fontSize: t.fontSize - 1 });
+      nodes.push({ t: 'table', caption: tableCaption(capText(blk)), head, body, widths: [width * 0.2, width * 0.18, width * 0.14, '*', width * 0.2], fontSize: t.fontSize - 1 });
     },
     tarpTable: (blk) => {
       const ofLevel = (l: string) => blk.levels === 'all' || (blk.levels === 'limits' ? isLimitLevel(l) : !isLimitLevel(l));
@@ -411,8 +440,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         { text: describeRule(r, b.paramMap, b.sites, b.setMap) },
         { text: r.action || 'Record and review at the next monitoring round.' },
       ]);
-      const what = blk.levels === 'limits' ? 'Consent limits and responses' : blk.levels === 'triggers' ? 'Trigger levels and responses' : 'Trigger levels, limits and responses';
-      nodes.push({ t: 'table', caption: tableCaption(fill(blk.title) || what), head, body, widths: [width * 0.12, width * 0.24, width * 0.3, '*'], fontSize: t.fontSize - 1 });
+      nodes.push({ t: 'table', caption: tableCaption(capText(blk)), head, body, widths: [width * 0.12, width * 0.24, width * 0.3, '*'], fontSize: t.fontSize - 1 });
     },
     reportingTable: (blk) => {
       const list = b.obligations.filter((o) => o.active);
@@ -432,7 +460,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           { text: o.notes ?? '' },
         ];
       });
-      nodes.push({ t: 'table', caption: tableCaption(fill(blk.title) || 'Reporting requirements'), head, body, widths: [width * 0.22, width * 0.13, width * 0.25, width * 0.17, '*'], fontSize: t.fontSize - 1 });
+      nodes.push({ t: 'table', caption: tableCaption(capText(blk)), head, body, widths: [width * 0.22, width * 0.13, width * 0.25, width * 0.17, '*'], fontSize: t.fontSize - 1 });
     },
     title: (blk) => {
       const details: Array<[string, string]> = (
@@ -492,7 +520,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         fit(['Exceedances'], true),
         fit(['Outcome', ...list.map((e) => STATUS_META[e.status].label)], true),
       ];
-      nodes.push({ t: 'table', caption: tableCaption(`Compliance with consent conditions, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths, fontSize: fs });
+      nodes.push({ t: 'table', caption: tableCaption(capText(blk)), head, body, widths, fontSize: fs });
     },
     exceedances: (blk) => {
       const list = blk.ruleIds.length ? evals.filter((e) => blk.ruleIds.includes(e.rule.id)) : evals;
@@ -545,7 +573,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const resultW = Math.min(30, Math.max(14, ...rows.map((r) => textWidthMm(r.value, fs, true)))) + CELL_PAD_MM;
       const ruleW = Math.min(32, Math.max(16, ...rows.map((r) => textWidthMm(r.rule, fs)))) + CELL_PAD_MM;
       const widths: Array<number | '*'> = blk.includeNotes ? [dateW, siteW, width * 0.16, resultW, width * 0.17, ruleW, '*'] : [dateW, siteW, width * 0.2, resultW, '*', ruleW];
-      nodes.push({ t: 'table', caption: tableCaption(`Exceedances recorded, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths, fontSize: fs });
+      nodes.push({ t: 'table', caption: tableCaption(capText(blk)), head, body, widths, fontSize: fs });
     },
     resultsTable: (blk) => {
       const sites = sectionSites(blk, b.sites);
@@ -553,15 +581,14 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const blockSamples = only ? samplesInPeriod.filter((x) => only.has(x.id)) : samplesInPeriod;
       const sets = setsFor(blk.guidelineSetIds);
       const flags = blk.highlight ? flagsFor(sets.map((s) => s.id)) : new Map<string, CellFlag>();
-      const groups: Array<{ label: string; samples: Sample[] }> = blk.splitBySite
-        ? sites.map((s) => ({ label: s.name ? `${s.code} (${s.name})` : s.code, samples: blockSamples.filter((x) => x.siteId === s.id) })).filter((g) => g.samples.length)
-        : [{ label: '', samples: blockSamples.filter((x) => sites.some((s) => s.id === x.siteId)) }];
+      const groups: Array<{ site?: Site; samples: Sample[] }> = blk.splitBySite
+        ? sites.map((s) => ({ site: s, samples: blockSamples.filter((x) => x.siteId === s.id) })).filter((g) => g.samples.length)
+        : [{ samples: blockSamples.filter((x) => sites.some((s) => s.id === x.siteId)) }];
       if (!groups.length || groups.every((g) => !g.samples.length)) {
         nodes.push({ t: 'p', runs: [{ text: 'No results for the selected sites in this period.', italic: true }] });
         return;
       }
       const siteCode = (id: string) => b.siteMap.get(id)?.code ?? '';
-      const title = fill(blk.title) || 'Monitoring results';
       const pt = big;
       const PAD = CELL_PAD_MM;
       const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -574,7 +601,9 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       for (const g of groups) {
         const params = leaveOut(paramList(blk.parameterIds, g.samples), blk);
         if (!params.length) continue;
-        const label = (i: number, n: number) => [title, g.label].filter(Boolean).join(' – ') + (n > 1 ? ` (${i + 1} of ${n})` : '');
+        const tableSiteIds = new Set(g.samples.map((s) => s.siteId));
+        const wording = capText(blk, g.site ? siteFill(g.site) : { sites: listText(sites.filter((s) => tableSiteIds.has(s.id)).map((s) => s.code)) });
+        const label = (i: number, n: number) => wording + (n > 1 ? ` (${i + 1} of ${n})` : '');
         // consent values for the sites in this table
         const tableSites = [...new Set(g.samples.map((s) => s.siteId))];
         const rules = tableRules(blk.ruleColumns, params, tableSites);
@@ -736,7 +765,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       });
       nodes.push({
         t: 'table',
-        caption: tableCaption(fill(blk.title) || 'Summary statistics'),
+        caption: tableCaption(capText(blk)),
         head,
         body,
         widths: (() => {
@@ -765,7 +794,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const spec = buildChartSpec({ index: b.index, param: p, sites: opts.bundle.sites, siteIds: chartSites, start: cStart, end, guidelineSets: sets, rules: limitRules, setMap: b.setMap, showRules: blk.showRules, log: blk.logScale });
         if (blk.markPeriod && blk.range !== 'period') spec.band = { from: toUtcMs(start), to: toUtcMs(addDays(end, 1)) };
         if (!spec.series.length) continue;
-        const caption = figCaption(`${p.name} at ${listText(spec.series.map((s) => s.name))}${blk.range === 'period' ? '' : `, ${formatDate(cStart ?? spec.series[0].points[0].date)} – ${formatDate(end)}`}${spec.band ? '. The shaded band is the reporting period' : ''}${blk.caption ? `. ${fill(blk.caption)}` : ''}`);
+        const caption = figCaption(capText(blk, { parameter: p.name, unit: unitLabel(p.unit), sites: listText(spec.series.map((s) => s.name)), dates: `${formatDate(cStart ?? spec.series[0].points[0].date)} – ${formatDate(end)}` }));
         const option = chartOption({ ...spec, subtitle: undefined, title: `${p.name} (${unitLabel(p.unit)})` }, { forExport: true, width: Math.round((size.widthCm / 2.54) * 96) });
         const dataUrl = opts.renderChart ? opts.renderChart(option, size.widthCm, size.heightCm) : '';
         figures.push({ dataUrl, ...size, caption });
@@ -783,7 +812,6 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const PAD = CELL_PAD_MM;
       const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
       const linesW = (s: string, bold = false) => Math.max(0, ...s.split('\n').map((line) => textWidthMm(line, pt, bold)));
-      const title = fill(blk.title) || 'Results compared with earlier monitoring';
       const made: Array<Extract<DocNode, { t: 'table' }>> = [];
       for (const site of sites) {
         // the site's latest sample in the period
@@ -834,7 +862,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         });
         const table: Extract<DocNode, { t: 'table' }> = {
           t: 'table',
-          caption: tableCaption(`${title} – ${site.code}${site.name ? ` (${site.name})` : ''}, ${formatDate(sample.date, { format: 'D MMM YYYY' })}`),
+          caption: tableCaption(capText(blk, { ...siteFill(site), date: formatDate(sample.date, { format: 'D MMM YYYY' }) })),
           head: [head],
           body,
           widths,
@@ -854,7 +882,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         notes.push(`Earlier median and usual range (5th–95th percentile) use the site's results ${history} before this sample; the usual range needs at least 6 earlier results. Notes flag results outside the usual range or the highest / lowest on record.`);
       made[made.length - 1].notes = notes;
     },
-    siteTable: () => {
+    siteTable: (blk) => {
       if (!b.sites.length) return;
       const head: Cell[][] = [[{ text: 'Site' }, { text: 'Description' }, { text: 'Type' }, { text: 'Role' }, { text: 'Easting', align: 'right' }, { text: 'Northing', align: 'right' }]];
       const body: Cell[][] = b.sites.filter((s) => s.active).map((s: Site) => [
@@ -865,9 +893,9 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         { text: s.easting ? String(s.easting) : '', align: 'right' },
         { text: s.northing ? String(s.northing) : '', align: 'right' },
       ]);
-      nodes.push({ t: 'table', caption: tableCaption('Monitoring sites'), head, body, widths: [width * 0.1, '*', width * 0.14, width * 0.18, width * 0.12, width * 0.12], fontSize: t.fontSize - 1, notes: b.sites.some((s) => s.easting) ? ['Coordinates are NZTM2000.'] : undefined });
+      nodes.push({ t: 'table', caption: tableCaption(capText(blk)), head, body, widths: [width * 0.1, '*', width * 0.14, width * 0.18, width * 0.12, width * 0.12], fontSize: t.fontSize - 1, notes: b.sites.some((s) => s.easting) ? ['Coordinates are NZTM2000.'] : undefined });
     },
-    samplingTable: () => {
+    samplingTable: (blk) => {
       const required = requiredRounds(b, start, end);
       const head: Cell[][] = [[{ text: 'Site' }, { text: 'Samples', align: 'right' }, ...(required.size ? [{ text: 'Required', align: 'right' as const }, { text: 'Missed', align: 'right' as const }] : []), { text: 'Dates sampled' }]];
       const body: Cell[][] = b.sites
@@ -887,7 +915,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         nodes.push({ t: 'p', runs: [{ text: 'No samples were collected during the period.', italic: true }] });
         return;
       }
-      nodes.push({ t: 'table', caption: tableCaption(`Samples collected, ${formatDate(start)} – ${formatDate(end)}`), head, body, widths: required.size ? [width * 0.1, width * 0.1, width * 0.1, width * 0.1, '*'] : [width * 0.12, width * 0.12, '*'], fontSize: t.fontSize - 1 });
+      nodes.push({ t: 'table', caption: tableCaption(capText(blk)), head, body, widths: required.size ? [width * 0.1, width * 0.1, width * 0.1, width * 0.1, '*'] : [width * 0.12, width * 0.12, '*'], fontSize: t.fontSize - 1 });
     },
     letter: (blk) => {
       const lines = (x?: string) =>
@@ -911,15 +939,25 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     roundTable: (blk) => {
       const chosen = sectionSites(blk, b.sites.filter((s) => s.active), b.sites);
       const withData = (s: Sample) => (b.index.bySample.get(s.id)?.length ?? 0) > 0;
+      // the earlier rounds: the last few, or the rounds chosen (each site's sample on the day, or the nearest within two weeks)
+      const wanted = [...new Set((blk.previousDates ?? []).map((d) => d.slice(0, 10)))].sort().reverse();
+      const day = (s: Sample) => s.date.slice(0, 10);
       const plan = chosen
         .map((site) => {
           const sample = samplesInPeriod.filter((s) => s.siteId === site.id && withData(s)).reduce<Sample | undefined>((best, s) => (!best || s.date > best.date ? s : best), undefined);
-          const earlier = sample
-            ? b.samples
-                .filter((s) => s.siteId === site.id && s.date < sample.date && withData(s))
-                .sort((x, y) => (x.date < y.date ? 1 : -1))
-                .slice(0, Math.max(0, Math.min(3, blk.previous)))
-            : [];
+          const before = sample ? b.samples.filter((s) => s.siteId === site.id && s.date < sample.date && withData(s)).sort((x, y) => (x.date < y.date ? 1 : -1)) : [];
+          let earlier: Array<{ date: string; sample?: Sample }>;
+          if (wanted.length) {
+            const used = new Set<string>();
+            earlier = wanted
+              .filter((d) => sample && d < day(sample))
+              .map((d) => {
+                const gap = (s: Sample) => Math.abs(daysBetween(day(s), d));
+                const near = before.filter((s) => !used.has(s.id) && gap(s) <= 14).sort((x, y) => gap(x) - gap(y))[0];
+                if (near) used.add(near.id);
+                return { date: near ? day(near) : d, sample: near };
+              });
+          } else earlier = before.slice(0, Math.max(0, Math.min(24, blk.previous))).map((s) => ({ date: day(s), sample: s }));
           return { site, sample, earlier };
         })
         .filter((x) => x.sample || b.samples.some((s) => s.siteId === x.site.id)); // a site never sampled is left out
@@ -928,7 +966,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         return;
       }
       // consent exceedances of this round's and the earlier rounds' results (the period's own evaluation covers only the period)
-      const from = plan.flatMap((x) => x.earlier.map((s) => s.date.slice(0, 10))).sort()[0] ?? start;
+      const from = plan.flatMap((x) => x.earlier.flatMap((e) => (e.sample ? [day(e.sample)] : []))).sort()[0] ?? start;
       const wide = from < start ? evaluateAll(b, from, end) : evals;
       const ruleFlags = flagResults(b, wide, [], from < start ? from : start, end);
       const broken = new Map<string, Array<{ level: string; limit: string }>>();
@@ -955,7 +993,12 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       for (const { site, sample, earlier } of plan) {
         const name = site.name ? `${site.code} – ${site.name}` : site.code;
         const key = `${blk.id}:${site.id}`;
-        if (asHeading) nodes.push({ t: 'h', level: 3, text: name });
+        const label = capText(blk, { ...siteFill(site), date: sample ? formatDate(sample.date, { format: 'D MMM YYYY' }) : '' });
+        if (asHeading) {
+          const anchor = newAnchor();
+          if (blk.ref && !refs.has(`table:${blk.ref}`)) refs.set(`table:${blk.ref}`, { text: label, anchor });
+          nodes.push({ t: 'h', level: 3, text: label, anchor });
+        }
         if (!sample) {
           const auto = 'Not sampled in this round.';
           if (blk.summaries) {
@@ -970,9 +1013,9 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const rules = blk.ruleColumns === 'none' ? [] : tableRules(blk.ruleColumns, params, [site.id]).filter((r) => !r.siteIds.length || r.siteIds.includes(site.id));
         const levels = ruleLevels(rules).filter((l) => params.some((p) => ruleText(rules, l, p, [site.id])));
         const siteRules = limitRules.filter((r) => r.active && RULE_COLUMN_KINDS.has(r.kind) && (!r.siteIds.length || r.siteIds.includes(site.id)));
-        const rounds = [sample, ...earlier];
-        let labels = rounds.map((s) => monthYear(s.date));
-        if (new Set(labels).size < labels.length) labels = rounds.map((s) => formatDate(s.date, { format: 'D MMM YYYY' }));
+        const rounds = [day(sample), ...earlier.map((e) => e.date)];
+        let labels = rounds.map(monthYear);
+        if (new Set(labels).size < labels.length) labels = rounds.map((d) => formatDate(d, { format: 'D MMM YYYY' }));
         const head: Cell[] = [
           { text: 'Parameter' },
           { text: 'Unit' },
@@ -984,7 +1027,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const facts: Fact[] = [];
         const body: Cell[][] = params.map((p) => {
           const cur = resultOf(sample, p.id);
-          const prev = earlier.map((s) => resultOf(s, p.id));
+          const prev = earlier.map((e) => (e.sample ? resultOf(e.sample, p.id) : undefined));
           const row: Cell[] = [{ text: p.name }, { text: unitLabel(p.unit) }];
           for (const r of [cur, ...prev]) {
             const f = r ? ruleFlags.get(r.id) : undefined;
@@ -995,7 +1038,12 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           const f = cur ? ruleFlags.get(cur.id) : undefined;
           const status: Fact['status'] = !cur ? 'none' : f?.kind === 'limit' || f?.kind === 'guideline' ? 'exceed' : f?.kind === 'check' ? 'check' : siteRules.some((r) => r.parameterId === p.id) ? 'ok' : 'none';
           const trend = cur ? trendOf(cur, prev[0], p) : '';
-          const comment = [trend, status === 'exceed' ? 'Exceedance' : status === 'check' ? 'Detection limit above the trigger' : status === 'ok' ? 'Compliant' : ''].filter(Boolean).join(' – ');
+          // the change since the last earlier result shown (and when, if not the round before); still a compliance
+          // comment when there is none
+          const at = prev.findIndex(Boolean);
+          const since = cur && at > 0 ? trendOf(cur, prev[at], p) : '';
+          const change = !cur || !earlier.length ? '' : at < 0 ? 'No earlier result' : at === 0 ? trend : since && `${since} since ${labels[at + 1]}`;
+          const comment = [change, status === 'exceed' ? 'Exceedance' : status === 'check' ? 'Detection limit above the trigger' : status === 'ok' ? 'Compliant' : ''].filter(Boolean).join(' – ');
           if (blk.comment) row.push({ text: comment, ...(status === 'exceed' || status === 'check' ? flagged(f) : {}) });
           if (cur) {
             const c = reviewCell(b, sample, p);
@@ -1009,13 +1057,17 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           const need = Math.max(Math.max(...h.text.split(' ').map((w) => textWidthMm(w, pt, true))), content) + PAD + 0.8;
           return k === 0 ? clamp(need, 26, 46) : k === 1 ? clamp(need, 9, 20) : clamp(need, 11, 26);
         });
+        // many rounds: the columns and the text shrink together to fit the page (the comment keeps room to read)
+        const room = width - (blk.comment ? 30 : 0);
+        const used = widths.reduce<number>((a, w) => a + (typeof w === 'number' ? w : 0), 0);
+        const k = used > room ? Math.max(0.6, room / used) : 1;
         const table: Extract<DocNode, { t: 'table' }> = {
           t: 'table',
-          caption: asHeading ? undefined : tableCaption(`${title ? `${title} – ` : ''}${name}, ${formatDate(sample.date, { format: 'D MMM YYYY' })}`),
+          caption: asHeading ? undefined : tableCaption(label),
           head: [head],
           body,
-          widths,
-          fontSize: pt,
+          widths: widths.map((w) => (typeof w === 'number' ? w * k : w)),
+          fontSize: Math.max(5, pt * k),
         };
         nodes.push(table);
         lastTable = table;
@@ -1025,7 +1077,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       if (lastTable) {
         const notes = ['“<” indicates a result below the laboratory detection limit.'];
         if (anyFlag) notes.push(look.highlight === 'text' ? 'Red = a consent limit (bold) or trigger level exceeded.' : 'Shading: red = consent limit exceeded; amber = trigger level exceeded; purple = detection limit above the limit.');
-        if (blk.comment) notes.push("Comment: the change since the previous round, and whether the result complies with the site's consent limits and trigger levels.");
+        if (blk.comment) notes.push("Comment: the change since the previous result shown, and whether the result complies with the site's consent limits and trigger levels.");
         lastTable.notes = notes;
       }
     },
@@ -1065,7 +1117,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const bracketed = body.some((row) => row.some((c) => c.text.includes('(')));
         nodes.push({
           t: 'table',
-          caption: tableCaption(`${fill(blk.title) || what}${parts.length > 1 ? ` (${i + 1} of ${parts.length})` : ''}`),
+          caption: tableCaption(`${capText(blk)}${parts.length > 1 ? ` (${i + 1} of ${parts.length})` : ''}`),
           head: [head],
           body,
           widths: [paramW, unitW, ...(showLevel ? [levelW] : []), ...head.slice(showLevel ? 3 : 2).map(() => Math.min(rest, 40))],
@@ -1187,6 +1239,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     look,
     letterhead: shownLetterhead,
     commentary,
+    autoNotes,
     header: fill(t.headerText),
     footer: fill(t.footerText),
     title: `${project.name} – ${t.name}`,

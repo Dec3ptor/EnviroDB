@@ -145,6 +145,21 @@ there as they work and show up for the others within seconds.
   number goes in where you're typing ("see Table 3"), naming the table if it hasn't a name yet. In the
   PDF and Word files each reference is a link – click it to go to the table or figure – and a
   reference to a section under a heading gives the heading.
+- **Write your own captions and notes.** Every table and graph has a *Caption* box (on the Reports tab,
+  *Edit layout*, open the section) holding the wording it uses now, e.g. "Monitoring results – [site
+  code] ([site name])". Change any of it; the words in square brackets are filled in for each table:
+  [site], [site code], [site name], [site type], [date] (the site's sample), [period], [period name],
+  [project], [project code], [consent] – and on graphs [parameter], [unit], [sites] and [dates]. Type
+  "[" for a list of them, or click one under the box; an example underneath shows what the caption
+  will say. *Back to the usual wording* undoes it. Under any table, *Write my own notes* starts from the
+  notes it has now ("“<” indicates a result below the laboratory detection limit." …) for you to
+  change, add to or delete – a line each.
+- **Choose the earlier rounds.** A *Results vs previous rounds* table shows the last 1, 2 … up to 24
+  rounds beside this one, or the rounds you choose by date (each site's sample on the day, or the
+  nearest within two weeks; "–" where a site wasn't sampled). Many rounds shrink the table to fit – a
+  landscape page gives them more room. Each result's comment still says whether it complies when
+  there's no earlier result ("No earlier result – Compliant"), and gives the change since the last
+  result shown when the round before has none ("Increase since Apr-26 – Compliant").
 - **Choose the look.** Templates are written as a report or a letter, with table headers in the accent
   colour or grey, exceedances shaded or in red text, and headings numbered or not, separately from
   tables and figures.

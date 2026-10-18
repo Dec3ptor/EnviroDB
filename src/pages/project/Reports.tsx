@@ -24,7 +24,7 @@ import { saveTemplate, setSubmitted } from '../../db/repo';
 import type { FigureImage, FiguresBlock, LetterBlock, Project, ReportTemplate, TextBlock } from '../../db/types';
 import { FigureImages, FiguresLayout } from '../../components/report/Figures';
 import { SectionsEditor } from '../../components/report/SectionsEditor';
-import { InsertRef, ReportSitesContext } from '../../components/report/blocks';
+import { InsertRef, ReportDocContext, ReportSamplesContext, ReportSitesContext } from '../../components/report/blocks';
 import { InsertCalc } from '../../components/report/InsertCalc';
 import { summaryText } from '../../reports/build';
 import { PagesControl } from '../../components/report/PagesControl';
@@ -216,6 +216,8 @@ export function ReportsTab() {
 
   // Build the report for the preview (debounced; graphs at a lower resolution than the export)
   const [doc, setDoc] = useState<ReportDoc | null>(null);
+  // the sampling rounds up to the report's end, to choose a rounds table's earlier rounds from
+  const roundSamples = useMemo(() => data.samples.filter((x) => x.date.slice(0, 10) <= period.end), [data.samples, period.end]);
   const [building, setBuilding] = useState(false);
   useEffect(() => {
     if (!template) return;
@@ -410,7 +412,11 @@ export function ReportsTab() {
                     Tap a section to change it. Drag ⋮⋮ to move it – a heading brings its content – or use the arrows; ⋯ has more.
                   </Text>
                   <ReportSitesContext.Provider value={chosenSites ? data.sites.filter((x) => chosenSites.includes(x.id)) : data.sites}>
-                    <SectionsEditor blocks={template.blocks} onChange={(blocks) => changeTemplate({ ...template, blocks })} orientation={template.orientation} open={open} onOpen={setOpen} paletteOpen={false} />
+                    <ReportSamplesContext.Provider value={roundSamples}>
+                      <ReportDocContext.Provider value={doc}>
+                        <SectionsEditor blocks={template.blocks} onChange={(blocks) => changeTemplate({ ...template, blocks })} orientation={template.orientation} open={open} onOpen={setOpen} paletteOpen={false} />
+                      </ReportDocContext.Provider>
+                    </ReportSamplesContext.Provider>
                   </ReportSitesContext.Provider>
                   <Anchor component={Link} to={`/templates/${stored.id}`} size="xs">
                     <Group gap={4}>

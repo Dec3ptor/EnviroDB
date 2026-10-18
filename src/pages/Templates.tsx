@@ -17,6 +17,7 @@ import { useSettings } from '../hooks/useSettings';
 import { buildReport, DEFAULT_LOGO_MM } from '../reports/build';
 import { PdfPreview } from '../reports/PdfPreview';
 import { SectionsEditor } from '../components/report/SectionsEditor';
+import { ReportDocContext } from '../components/report/blocks';
 import { readImageFile } from '../lib/image';
 import { roundPeriods } from '../lib/latest';
 import { JumpToPreview, usePreviewPane } from '../components/report/JumpToPreview';
@@ -25,7 +26,7 @@ import { cmToPx, renderChartPng } from '../charts/render';
 import { exportReport, type ExportKind } from '../reports/export';
 import { SaveButton } from '../components/Unsaved';
 
-function Preview({ template, fill }: { template: ReportTemplate; fill?: boolean }) {
+function Preview({ template, fill, onDoc }: { template: ReportTemplate; fill?: boolean; onDoc?: (d: ReportDoc) => void }) {
   const data = useProject();
   const settings = useSettings();
   const rounds = useMemo(() => roundPeriods(data, 12), [data]);
@@ -36,7 +37,9 @@ function Preview({ template, fill }: { template: ReportTemplate; fill?: boolean 
     setBusy(true);
     const h = setTimeout(() => {
       try {
-        setDoc(buildReport({ bundle: data, template, period, settings, preview: true, renderChart: (o, w, hh) => renderChartPng(o, cmToPx(w), cmToPx(hh), 1.5) }));
+        const made = buildReport({ bundle: data, template, period, settings, preview: true, renderChart: (o, w, hh) => renderChartPng(o, cmToPx(w), cmToPx(hh), 1.5) });
+        setDoc(made);
+        onDoc?.(made);
       } finally {
         setBusy(false);
       }
@@ -79,6 +82,8 @@ export function TemplateEditorPage() {
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const settings = useSettings();
   const [t, setT] = useState<ReportTemplate | null>(null);
+  // the preview's report: its usual table notes, to start your own from
+  const [previewDoc, setPreviewDoc] = useState<ReportDoc | null>(null);
   // the template as loaded (or last saved here): saving changes only what was changed since
   const [base, setBase] = useState<ReportTemplate | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -291,7 +296,9 @@ export function TemplateEditorPage() {
               <Text size="xs" c="dimmed" mb="xs">
                 Drag a section in from the palette, or click one to add it. Tap a section to edit it; drag ⋮⋮ to move it – a heading brings its content – or use the arrows; ⋯ has more.
               </Text>
-              <SectionsEditor blocks={t.blocks} onChange={setBlocks} orientation={t.orientation} open={open} onOpen={setOpen} readOnly={readOnly} />
+              <ReportDocContext.Provider value={previewDoc}>
+                <SectionsEditor blocks={t.blocks} onChange={setBlocks} orientation={t.orientation} open={open} onOpen={setOpen} readOnly={readOnly} />
+              </ReportDocContext.Provider>
             </Card>
             <Card padding="md">
               <MoreOptions label="Placeholders" summary="{{project.name}}, {{period.label}} … for titles, text, header and footer">
@@ -319,7 +326,7 @@ export function TemplateEditorPage() {
             </Group>
             {previewProject ? (
               <ProjectDataProvider key={previewProject} projectId={previewProject}>
-                <Preview template={t} fill={pane.fill} />
+                <Preview template={t} fill={pane.fill} onDoc={setPreviewDoc} />
               </ProjectDataProvider>
             ) : (
               <Alert>Create a project (or load the demo) to preview templates with real data.</Alert>

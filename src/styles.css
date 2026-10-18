@@ -610,3 +610,20 @@ body {
 .edb-site-row.sel {
   background: var(--mantine-color-teal-light);
 }
+
+/* a fill-in to click under a caption box: [site name] */
+.edb-fillin {
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: 4px;
+  color: var(--mantine-color-teal-8);
+  background: var(--mantine-color-teal-0);
+}
+.edb-fillin:hover {
+  background: var(--mantine-color-teal-1);
+}
+[data-mantine-color-scheme='dark'] .edb-fillin {
+  color: var(--mantine-color-teal-2);
+  background: rgba(56, 178, 172, 0.15);
+}
