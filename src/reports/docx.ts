@@ -32,6 +32,7 @@ import type { LetterheadItem } from '../db/types';
 import type { Cell, DocNode, ReportDoc, Run } from './model';
 import { dataUrlToBytes } from '../charts/render';
 import { CHART_GAP_MM, SIGN_GAP_MM, pageSizeMm, type Orientation } from './build';
+import { fitCellSize, fontWidthFactor } from './measure';
 
 const hex = (c?: string) => (c ? c.replace('#', '').toUpperCase() : undefined);
 const TWIP_PER_MM = 56.6929;
@@ -100,11 +101,21 @@ function docCell(c: Cell, header: boolean, x: Ctx, size: number): TableCell {
   });
 }
 
-function docRow(row: Cell[], header: boolean, x: Ctx, size: number): TableRow {
+/**
+ * A row; with the columns' widths (mm), a number (or word) wider than its column gets smaller rather than breaking.
+ * Cell margins are 60 twips a side; a wider body font (a letterhead's) needs more room.
+ */
+function docRow(row: Cell[], header: boolean, x: Ctx, size: number, colsMm?: number[]): TableRow {
   const cells: TableCell[] = [];
+  const wide = fontWidthFactor(x.doc.look.font ?? 'Calibri');
+  let col = 0;
   for (let i = 0; i < row.length; i++) {
-    cells.push(docCell(row[i], header, x, size));
-    i += (row[i].colSpan ?? 1) - 1;
+    const span = Math.max(1, row[i].colSpan ?? 1);
+    const widthMm = colsMm ? colsMm.slice(col, col + span).reduce((a, w) => a + w, 0) - (120 / TWIP_PER_MM + 0.3) : 0;
+    col += span;
+    const fitted = colsMm ? Math.round(fitCellSize(row[i].text, size / 2, widthMm / wide, header || row[i].bold) * 2) : size;
+    cells.push(docCell(row[i], header, x, Math.min(size, fitted)));
+    i += span - 1;
   }
   return new TableRow({ children: cells, tableHeader: header, cantSplit: true });
 }
@@ -283,13 +294,14 @@ function nodeToDocx(n: DocNode, x: Ctx, contentWidthMm: number): Array<Paragraph
       const colsMm = n.widths.map((w) => (typeof w === 'number' ? w * k : flex));
       const totalMm = colsMm.reduce((s, v) => s + v, 0);
       const scale = Math.min(1, contentWidthMm / totalMm);
+      const scaled = colsMm.map((mm) => mm * scale);
       out.push(
         new Table({
           layout: TableLayoutType.FIXED,
           indent: tableIndent,
           width: { size: Math.round(Math.min(contentWidthMm, totalMm) * TWIP_PER_MM), type: WidthType.DXA },
           columnWidths: colsMm.map((mm) => Math.round(mm * scale * TWIP_PER_MM)),
-          rows: [...n.head.map((r) => docRow(r, true, x, size)), ...n.body.map((r) => docRow(r, false, x, size))],
+          rows: [...n.head.map((r) => docRow(r, true, x, size, scaled)), ...n.body.map((r) => docRow(r, false, x, size, scaled))],
         }),
       );
       for (const note of n.notes ?? []) out.push(new Paragraph({ spacing: { after: 0 }, indent: ind, children: [new TextRun({ text: note, size: size - 2, color: '555555' })] }));

@@ -3,6 +3,7 @@ import type { LetterheadItem } from '../db/types';
 import type { Cell, DocNode, ReportDoc, Run } from './model';
 import { CHART_GAP_MM, SIGN_GAP_MM, pageSizeMm, type Orientation } from './build';
 import { downloadBlob } from '../db/backup';
+import { fitCellSize } from './measure';
 
 const MM = 2.834645669; // points per mm
 
@@ -47,7 +48,9 @@ function headerLook(doc: ReportDoc): { fill: string; color: string } {
   }
 }
 
-function cell(c: Cell, header: boolean, look: { fill: string; color: string }): TableCell {
+function cell(c: Cell, header: boolean, look: { fill: string; color: string }, fit?: { pt: number; widthPt: number }): TableCell {
+  // a number (or word) wider than its column gets smaller, rather than breaking or spilling over
+  const size = fit ? fitCellSize(c.text, fit.pt, fit.widthPt / MM, header || c.bold) : undefined;
   return {
     text: c.text,
     bold: header || c.bold,
@@ -56,14 +59,20 @@ function cell(c: Cell, header: boolean, look: { fill: string; color: string }): 
     color: header ? look.color : c.color,
     alignment: c.align,
     colSpan: c.colSpan,
+    ...(fit && size !== undefined && size < fit.pt ? { fontSize: size } : {}),
   } as TableCell;
 }
 
-function rowCells(row: Cell[], header: boolean, look: { fill: string; color: string }): TableCell[] {
+/** A row's cells; with the columns' text widths (pt), each cell's text fits its column. */
+function rowCells(row: Cell[], header: boolean, look: { fill: string; color: string }, fit?: { pt: number; widths: Array<number | '*' | 'auto'> }): TableCell[] {
   const out: TableCell[] = [];
+  let col = 0;
   for (let i = 0; i < row.length; i++) {
-    out.push(cell(row[i], header, look));
-    const span = row[i].colSpan ?? 1;
+    const span = Math.max(1, row[i].colSpan ?? 1);
+    const ws = fit?.widths.slice(col, col + span) ?? [];
+    const widthPt = ws.length === span && ws.every((w) => typeof w === 'number') ? (ws as number[]).reduce((a, w) => a + w, 0) + (span - 1) * (2 * CELL_PAD_PT + RULE_PT) : undefined;
+    col += span;
+    out.push(cell(row[i], header, look, fit && widthPt ? { pt: fit.pt, widthPt } : undefined));
     for (let k = 1; k < span; k++) out.push({} as TableCell);
     i += span - 1;
   }
@@ -208,15 +217,18 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
       const head = headerLook(doc);
       const rule = letter ? '#404040' : '#b9b9b9';
       if (n.caption) out.push({ text: n.caption, style: 'tableCaption', headlineLevel: 9, ...dest(n.anchor) } as Content); // 9 = table caption (kept with its table)
+      const colWidths = fitWidths(n.widths, contentWidthPt);
+      const pt = n.fontSize ?? t.fontSize - 1;
+      const fit = { pt, widths: colWidths };
       out.push({
         table: {
           headerRows: n.head.length,
           keepWithHeaderRows: n.keepRows ?? 1,
           dontBreakRows: true,
-          widths: fitWidths(n.widths, contentWidthPt),
-          body: [...n.head.map((r) => rowCells(r, true, head)), ...n.body.map((r) => rowCells(r, false, head))],
+          widths: colWidths,
+          body: [...n.head.map((r) => rowCells(r, true, head, fit)), ...n.body.map((r) => rowCells(r, false, head, fit))],
         },
-        fontSize: n.fontSize ?? t.fontSize - 1,
+        fontSize: pt,
         layout: {
           hLineWidth: () => RULE_PT,
           vLineWidth: () => RULE_PT,

@@ -168,6 +168,9 @@ there as they work and show up for the others within seconds.
   landscape page gives them more room. Each result's comment still says whether it complies when
   there's no earlier result ("No earlier result – Compliant"), and gives the change since the last
   result shown when the round before has none ("Increase since Apr-26 – Compliant").
+- **Numbers in full.** Results are written out in full everywhere – 0.00005, never 5e-5 – in the
+  app, the reports and the Excel download. In PDF and Word tables a number too wide for its column is set
+  a little smaller so it stays whole on one line, rather than breaking or spilling out.
 - **Choose the look.** Templates are written as a report or a letter, with table headers in the accent
   colour or grey, exceedances shaded or in red text, and headings numbered or not, separately from
   tables and figures.

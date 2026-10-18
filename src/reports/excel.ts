@@ -29,6 +29,11 @@ export async function exportPivotXlsx(x: PivotExport): Promise<void> {
     if (!r) return;
     const dv = displayValue(r, p);
     cell.value = r.qualifier || dv.value === null ? dv.text : dv.value;
+    // a very small number shown in full, as in the app – Excel would otherwise show 5E-05 in a narrow column
+    if (typeof cell.value === 'number' && cell.value !== 0 && Math.abs(cell.value) < 0.001) {
+      const places = dv.text.split('.')[1]?.length ?? 0;
+      if (places) cell.numFmt = `0.${'0'.repeat(places)}`;
+    }
     cell.alignment = { horizontal: 'right' };
     const f = x.flags.get(r.id);
     if (f) {

@@ -72,10 +72,16 @@ export function fmtNum(v: number | null | undefined, decimals?: number): string 
   if (a === 0) return '0';
   if (a >= 10000) return Math.round(v).toLocaleString('en-NZ');
   if (a >= 100) return String(Math.round(v * 10) / 10);
-  // 3 significant figures, trailing zeros trimmed
-  const s = Number(v.toPrecision(3));
-  if (a < 0.0001) return s.toExponential(2);
-  return String(s);
+  // 3 significant figures, trailing zeros trimmed – written out in full, never "5e-5"
+  return plainDecimal(Number(v.toPrecision(3)));
+}
+
+/** A number written out in full: 0.00005, not 5e-5. */
+export function plainDecimal(x: number): string {
+  const s = String(x);
+  if (!/e/i.test(s)) return s;
+  const places = Math.min(100, Math.max(0, Math.ceil(-Math.log10(Math.abs(x))) + 3));
+  return x.toFixed(places).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
 }
 
 export function fmtResult(value: number | null, qualifier: Qualifier, text?: string, decimals?: number): string {
