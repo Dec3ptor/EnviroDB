@@ -421,6 +421,22 @@ export interface ResultsTableBlock extends ReportBlockBase {
   sampleIds?: string[];
   /** Consent values to compare with, as columns beside the guideline columns: one per level (Limit, Trigger 1 …). */
   ruleColumns?: 'none' | 'limits' | 'all';
+  /** Calculation columns after the results (rows at the foot, with samples down): the mean, 95th percentile … */
+  calcColumns?: TableCalc[];
+}
+
+/** A statistic of each parameter's results, for a calculation column in a table. */
+export type TableStat = 'mean' | 'median' | 'min' | 'max' | 'p95' | 'percentile' | 'sum' | 'count' | 'geomean';
+export interface TableCalc {
+  id: string;
+  stat: TableStat;
+  /** 'percentile': which one (e.g. 80). */
+  percentile?: number;
+  /** Worked out from the results in the table (unset), the report period's, the last `years` years', or all of them – at the table's sites. */
+  over?: 'shown' | 'period' | 'years' | 'all';
+  years?: number;
+  /** Its heading (blank: "Mean", "95th %ile" …). */
+  label?: string;
 }
 export interface StatsTableBlock extends ReportBlockBase {
   type: 'statsTable';
@@ -483,6 +499,8 @@ export interface RoundTableBlock extends ReportBlockBase {
   previous: number;
   /** …or these sampling rounds (dates, YYYY-MM-DD): each site's sample on the day, or the nearest within two weeks. */
   previousDates?: string[];
+  /** Calculation columns after the rounds: the mean, 95th percentile … of each parameter's results. */
+  calcColumns?: TableCalc[];
   /** Consent values to compare with: limits only, or limits and triggers. */
   ruleColumns: 'none' | 'limits' | 'all';
   /** A comment per result: the change since the previous round and whether it complies. */

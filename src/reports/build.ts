@@ -1,4 +1,4 @@
-import type { ChartBlock, FigureImage, GuidelineSet, Letterhead, LetterheadItem, Parameter, ReportBlock, ReportTemplate, Result, ResultsTableBlock, Rule, Sample, Settings, Site } from '../db/types';
+import type { ChartBlock, FigureImage, GuidelineSet, Letterhead, LetterheadItem, Parameter, ReportBlock, ReportTemplate, Result, ResultsTableBlock, Rule, Sample, Settings, Site, TableCalc } from '../db/types';
 import { RULE_LEVELS } from '../db/types';
 import type { ProjectBundle } from '../lib/analysis';
 import { displayValue, evaluateAll, flagResults, isLimitLevel, keyParameters, limitToSites, statsTable, type CellFlag } from '../lib/analysis';
@@ -15,7 +15,8 @@ import { buildChartSpec, chartOption } from '../charts/timeSeries';
 import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
 import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type ReportDoc, type ReportLook, type Run } from './model';
 import { CELL_PAD_MM, fontWidthFactor, longestWordMm as longestWord, textWidthMm as textWidth } from './measure';
-import { calcValue, fillCalcs } from './calc';
+import { calcHead, calcNotes, calcValue, fillCalcs, tableCalcValue } from './calc';
+import { resultsFor } from '../lib/dataIndex';
 import { captionOf, fillCaption, tidyCaption, usualFooterRight } from './captions';
 import { limitsTable, ruleValueText } from '../lib/limitsTable';
 
@@ -329,6 +330,12 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   const pageValues: Record<string, string> = { ...capBase, page: '{page}', pages: '{pages}', report: t.name, client: project.client ?? '', company: settings.company ?? '', author: settings.author ?? '', date: formatDate(todayStr()) };
   const pageText = (s: string | undefined) => (s ? tidyCaption(fill(fillCaption(s, pageValues))) : '');
   const tableCaption = (s: string) => numbered('Table', 'table', s);
+  /** The results a table's calculation is worked out from: those in the table, or the sites' over a span to the report's end. */
+  const calcFrom = (c: TableCalc, pid: string, siteIds: string[], shown: Sample[]): Result[] => {
+    if (!c.over || c.over === 'shown') return shown.map((s) => resultOf(s, pid)).filter((r): r is Result => !!r);
+    const from = c.over === 'period' ? start : c.over === 'years' ? addDays(addMonths(end, -12 * Math.max(1, c.years ?? 5)), 1) : undefined;
+    return resultsFor(b.index, pid, siteIds, from, end);
+  };
   const figCaption = (s: string) => numbered('Figure', 'fig', s);
   /** How an exceedance stands out in a table cell: shading, or red text. */
   const flagged = (f?: CellFlag): Partial<Cell> => {
@@ -605,6 +612,12 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const levels = ruleLevels(rules).filter((l) => params.some((p) => ruleText(rules, l, p, tableSites)));
         const consent = (l: string, p: Parameter) => ruleText(rules, l, p, tableSites);
         const bracketed = levels.some((l) => params.some((p) => consent(l, p).includes('(')));
+        // calculation columns (rows, with samples down): each parameter's mean, 95th percentile … of the results in
+        // the table, or of the table's sites' results over the period, the last few years, or all of them
+        const calcs = blk.calcColumns ?? [];
+        const calcText = new Map(params.map((p) => [p.id, calcs.map((c) => tableCalcValue(b, p, calcFrom(c, p.id, tableSites, g.samples), c))]));
+        const calcCell = (p: Parameter, k: number): Cell => ({ text: calcText.get(p.id)![k], align: 'right', fill: FILLS.guidelineRow });
+        const notesHere = () => [...resultNotes(sets, blk.highlight, bracketed), ...calcNotes(b, calcs, 'the results in the table', formatDate(end))];
         if (blk.layout === 'parametersAsRows') {
           // Fixed columns sized to their content, then as many sample columns as fit.
           let paramW = clamp(Math.max(...params.map((p) => textWidthMm(p.name, pt))) + PAD, 26, 44);
@@ -612,16 +625,18 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           const setW = sets.map((s) => clamp(Math.max(longestWordMm(s.shortName, pt, true), ...params.map((p) => textWidthMm(guidelineText(s, p), pt))) + PAD, 11, 22));
           const levelW = levels.map((l) => clamp(Math.max(longestWordMm(l, pt, true), ...params.map((p) => linesWidthMm(consent(l, p), pt))) + PAD, 11, 26));
           const compareW = [...levelW, ...setW]; // consent columns first, then the guideline columns
+          const calcW = calcs.map((c, k) => clamp(Math.max(longestWordMm(calcHead(c), pt, true), ...params.map((p) => textWidthMm(calcText.get(p.id)![k], pt))) + PAD, 11, 24));
+          const calcSum = calcW.reduce((a, x) => a + x, 0);
           const sampleNeed = Math.max(
             11,
             longestWordMm(dateHead(g.samples[0]), pt, true) + PAD,
             ...g.samples.map((s) => textWidthMm(siteCode(s.siteId), pt, true) + PAD),
             ...g.samples.flatMap((s) => params.map((p) => textWidthMm(valueCell(s, p).text, pt, true) + PAD)),
           );
-          let fixed = paramW + unitW + compareW.reduce((a, x) => a + x, 0);
+          let fixed = paramW + unitW + compareW.reduce((a, x) => a + x, 0) + calcSum;
           if (width - fixed < sampleNeed * 2) {
             paramW = 26;
-            fixed = paramW + unitW + compareW.reduce((a, x) => a + x, 0);
+            fixed = paramW + unitW + compareW.reduce((a, x) => a + x, 0) + calcSum;
           }
           const maxPer = Math.max(1, Math.floor((width - fixed) / sampleNeed));
           // spread samples evenly over the tables (e.g. 6 + 6 rather than 8 + 4)
@@ -630,11 +645,12 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           parts.forEach((part, i) => {
             const sampleW = (width - fixed) / part.length > sampleNeed * 1.6 ? sampleNeed * 1.6 : (width - fixed) / part.length;
             const compareHeads = [...levels, ...sets.map((s) => s.shortName)].map((text) => ({ text, align: 'center' as const }));
+            const calcHeads = calcs.map((c) => ({ text: calcHead(c), align: 'center' as const }));
             const head: Cell[][] = blk.splitBySite
-              ? [[{ text: 'Parameter' }, { text: 'Unit' }, ...compareHeads, ...part.map((s) => ({ text: dateHead(s), align: 'center' as const }))]]
+              ? [[{ text: 'Parameter' }, { text: 'Unit' }, ...compareHeads, ...part.map((s) => ({ text: dateHead(s), align: 'center' as const })), ...calcHeads]]
               : [
-                  [{ text: 'Parameter' }, { text: 'Unit' }, ...compareHeads, ...part.map((s) => ({ text: siteCode(s.siteId), align: 'center' as const }))],
-                  [{ text: '' }, { text: '' }, ...compareHeads.map(() => ({ text: '' })), ...part.map((s) => ({ text: dateHead(s), align: 'center' as const }))],
+                  [{ text: 'Parameter' }, { text: 'Unit' }, ...compareHeads, ...part.map((s) => ({ text: siteCode(s.siteId), align: 'center' as const })), ...calcHeads],
+                  [{ text: '' }, { text: '' }, ...compareHeads.map(() => ({ text: '' })), ...part.map((s) => ({ text: dateHead(s), align: 'center' as const })), ...calcHeads.map(() => ({ text: '' }))],
                 ];
             const body: Cell[][] = params.map((p) => [
               { text: p.name },
@@ -642,15 +658,16 @@ export function buildReport(opts: BuildOptions): ReportDoc {
               ...levels.map((l) => ({ text: consent(l, p), align: 'center' as const, fill: FILLS.guidelineRow })),
               ...sets.map((s) => ({ text: guidelineText(s, p), align: 'center' as const, fill: FILLS.guidelineRow })),
               ...part.map((s) => valueCell(s, p)),
+              ...calcs.map((_, k) => calcCell(p, k)),
             ]);
             nodes.push({
               t: 'table',
               caption: tableCaption(label(i, parts.length)),
               head,
               body,
-              widths: [paramW, unitW, ...compareW, ...part.map(() => sampleW)],
+              widths: [paramW, unitW, ...compareW, ...part.map(() => sampleW), ...calcW],
               fontSize: pt,
-              notes: i === parts.length - 1 ? resultNotes(sets, blk.highlight, bracketed) : undefined,
+              notes: i === parts.length - 1 ? notesHere() : undefined,
             });
           });
         } else {
@@ -666,6 +683,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
               ...levels.map((l) => linesWidthMm(consent(l, p), pt) + PAD),
               ...sets.map((s) => textWidthMm(guidelineText(s, p), pt) + PAD),
               ...g.samples.map((s) => textWidthMm(valueCell(s, p).text, pt, true) + PAD),
+              ...(calcText.get(p.id) ?? []).map((t) => textWidthMm(t, pt) + PAD),
             ),
           );
           const pack = (maxCount: number) => {
@@ -707,6 +725,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
             }
             const guidelineRows = body.length;
             for (const s of g.samples) body.push([{ text: formatDate(s.date, { format: 'DD/MM/YYYY' }) }, { text: siteCode(s.siteId) }, ...part.map((p) => valueCell(s, p))]);
+            calcs.forEach((c, k) => body.push([{ text: calcHead(c), colSpan: 2, italic: true, fill: FILLS.guidelineRow }, { text: '' }, ...part.map((p) => ({ ...calcCell(p, k), align: 'center' as const }))]));
             nodes.push({
               t: 'table',
               caption: tableCaption(label(i, parts.length)),
@@ -715,7 +734,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
               widths: [dateW, siteW, ...idx.map((k) => need[k] + extra)],
               fontSize: pt,
               keepRows: guidelineRows + 2,
-              notes: i === parts.length - 1 ? resultNotes(sets, blk.highlight, bracketed) : undefined,
+              notes: i === parts.length - 1 ? notesHere() : undefined,
             });
           });
         }
@@ -1011,10 +1030,14 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const rounds = [day(sample), ...earlier.map((e) => e.date)];
         let labels = rounds.map(monthYear);
         if (new Set(labels).size < labels.length) labels = rounds.map((d) => formatDate(d, { format: 'D MMM YYYY' }));
+        // calculation columns after the rounds: of the rounds shown, or the site's results over a span
+        const calcs = blk.calcColumns ?? [];
+        const shownSamples = [sample, ...earlier.flatMap((e) => (e.sample ? [e.sample] : []))];
         const head: Cell[] = [
           { text: 'Parameter' },
           { text: 'Unit' },
           ...labels.map((text) => ({ text, align: 'center' as const })),
+          ...calcs.map((c) => ({ text: calcHead(c), align: 'center' as const })),
           ...levels.map((text) => ({ text, align: 'center' as const })),
           ...(blk.comment ? [{ text: 'Comment' }] : []),
         ];
@@ -1029,6 +1052,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
             if (f) anyFlag = true;
             row.push(r ? { text: displayValue(r, p).text, align: 'right', ...flagged(f) } : { text: '–', align: 'center', color: '#999999' });
           }
+          for (const c of calcs) row.push({ text: tableCalcValue(b, p, calcFrom(c, p.id, [site.id], shownSamples), c), align: 'right', fill: FILLS.guidelineRow });
           for (const l of levels) row.push({ text: ruleText(rules, l, p, [site.id]), align: 'center', fill: FILLS.guidelineRow });
           const f = cur ? ruleFlags.get(cur.id) : undefined;
           const status: Fact['status'] = !cur ? 'none' : f?.kind === 'limit' || f?.kind === 'guideline' ? 'exceed' : f?.kind === 'check' ? 'check' : siteRules.some((r) => r.parameterId === p.id) ? 'ok' : 'none';
@@ -1073,6 +1097,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const notes = ['“<” indicates a result below the laboratory detection limit.'];
         if (anyFlag) notes.push(look.highlight === 'text' ? 'Red = a consent limit (bold) or trigger level exceeded.' : 'Shading: red = consent limit exceeded; amber = trigger level exceeded; purple = detection limit above the limit.');
         if (blk.comment) notes.push("Comment: the change since the previous result shown, and whether the result complies with the site's consent limits and trigger levels.");
+        notes.push(...calcNotes(b, blk.calcColumns ?? [], "the site's rounds shown", formatDate(end)));
         lastTable.notes = notes;
       }
     },

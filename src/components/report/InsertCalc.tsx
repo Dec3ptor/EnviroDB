@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import { Button, Code, Group, Popover, Select, Stack, TagsInput, Text } from '@mantine/core';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { IconCalculator } from '@tabler/icons-react';
-import { db } from '../../db/db';
-import type { CalcStat } from '../../db/types';
+import type { CalcStat, Parameter } from '../../db/types';
+import { useCalcChoices } from './projectChoices';
 import { CALC_STATS, calcToken } from '../../reports/calc';
+
+/** Parameters to pick from: a project's by group (field, physical, chemistry …), or all by name. */
+export function paramOptions(params: Parameter[], grouped: boolean) {
+  if (!grouped) return params.map((x) => ({ value: x.id, label: x.name }));
+  const groups = new Map<string, Array<{ value: string; label: string }>>();
+  for (const p of params) groups.set(p.group, [...(groups.get(p.group) ?? []), { value: p.id, label: p.name }]);
+  return [...groups].map(([group, items]) => ({ group, items }));
+}
 
 /**
  * "Insert a calculation": puts a value worked out from the results – {{calc:median:no3-n:DS1}} – where the caret is
@@ -15,8 +22,8 @@ export function InsertCalc({ target, value, onChange }: { target: string; value:
   const [stat, setStat] = useState<CalcStat>('median');
   const [param, setParam] = useState<string | null>(null);
   const [sites, setSites] = useState<string[]>([]);
-  const params = useLiveQuery(() => db.parameters.toArray(), [], []);
-  const codes = useLiveQuery(async () => [...new Set((await db.sites.toArray()).map((x) => x.code))].sort(), [], []);
+  // the project's own sites and parameters (all of them in the template library, with no project to go by)
+  const { params, codes, project } = useCalcChoices();
   const p = params.find((x) => x.id === param);
   const token = param ? calcToken(stat, param, sites) : '';
   const insert = () => {
@@ -48,13 +55,16 @@ export function InsertCalc({ target, value, onChange }: { target: string; value:
             size="xs"
             label="Of"
             placeholder="Parameter"
-            data={[...params].sort((a, b) => a.name.localeCompare(b.name)).map((x) => ({ value: x.id, label: x.name }))}
+            data={paramOptions(params, !!project)}
             value={param}
             onChange={setParam}
             searchable
             comboboxProps={{ withinPortal: false }}
           />
           <TagsInput size="xs" label="At sites (codes)" placeholder={sites.length ? '' : 'All sites'} data={codes} value={sites} onChange={setSites} comboboxProps={{ withinPortal: false }} />
+          <Text size="xs" c="dimmed">
+            {project ? `${project}’s parameters and sites.` : 'Every parameter and site – open a project’s Reports tab (or preview with a project) for just its own.'}
+          </Text>
           {token && (
             <Text size="xs">
               <Code>{token}</Code> – the {CALC_STATS[stat].toLowerCase()} {p ? (stat === 'count' || stat === 'exceed' ? `for ${p.name}` : p.name) : ''}

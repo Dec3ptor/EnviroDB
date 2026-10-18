@@ -94,7 +94,9 @@ there as they work and show up for the others within seconds.
   median nitrate-N at DS1, the highest TSS, how many results were over a limit), **Monitoring
   programme**, **Trigger–action–response plan** and **Reporting requirements** (from the project's
   schedules, consent rules and reporting obligations). *Insert a calculation* puts a value into text –
-  `{{calc:median:no3-n:DS1}}` – so a sentence reads "the median nitrate-N at DS1 was 0.82 mg/L".
+  `{{calc:median:no3-n:DS1}}` – so a sentence reads "the median nitrate-N at DS1 was 0.82 mg/L". On a
+  project's Reports tab (or previewing a template with a project), *Insert a calculation* and the
+  Calculations section offer only that project's sites and the parameters it has results for, by group.
 - **An automatic summary, and a draft to edit.** The *Automatic summary* section describes the sampling,
   the monitoring programme, compliance and guideline exceedances, and now compares the period with the
   one before (samples, limits exceeded, and whether the key parameters' medians were higher, lower or
@@ -166,6 +168,13 @@ there as they work and show up for the others within seconds.
   will say. *Back to the usual wording* undoes it. Under any table, *Write my own notes* starts from the
   notes it has now ("“<” indicates a result below the laboratory detection limit." …) for you to
   change, add to or delete – a line each.
+- **Calculation columns in tables.** A results table or a *Results vs previous rounds* table can add
+  columns after the results – *Add a calculation column* – for each parameter's mean, median, minimum,
+  maximum, 95th or any other percentile, total, number of results or geometric mean. Each is worked out
+  from the results in the table (or the rounds shown), the report period, the last few years, or all
+  results to the report's end, at the table's sites; give it your own heading or keep "Mean", "95th
+  %ile (5 yr)" …. In a table with samples down they're rows at the foot. A note under the table says
+  what each is worked out from, with non-detects and percentiles treated as set for the project.
 - **Choose the earlier rounds.** A *Results vs previous rounds* table shows the last 1, 2 … up to 24
   rounds beside this one, or the rounds you choose by date (each site's sample on the day, or the
   nearest within two weeks; "–" where a site wasn't sampled). Many rounds shrink the table to fit – a

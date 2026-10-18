@@ -19,6 +19,7 @@ import { PdfPreview } from '../reports/PdfPreview';
 import { SectionsEditor } from '../components/report/SectionsEditor';
 import { ReportDocContext } from '../components/report/blocks';
 import { PageTextEditor } from '../components/report/PageText';
+import { ReportProjectContext, projectParamIds, type ReportProject } from '../components/report/projectChoices';
 import { readImageFile } from '../lib/image';
 import { roundPeriods } from '../lib/latest';
 import { JumpToPreview, usePreviewPane } from '../components/report/JumpToPreview';
@@ -27,8 +28,13 @@ import { cmToPx, renderChartPng } from '../charts/render';
 import { exportReport, type ExportKind } from '../reports/export';
 import { SaveButton } from '../components/Unsaved';
 
-function Preview({ template, fill, onDoc }: { template: ReportTemplate; fill?: boolean; onDoc?: (d: ReportDoc) => void }) {
+function Preview({ template, fill, onDoc, onProject }: { template: ReportTemplate; fill?: boolean; onDoc?: (d: ReportDoc) => void; onProject?: (p: ReportProject) => void }) {
   const data = useProject();
+  // the preview's project: its sites and parameters for the calculation pickers
+  useEffect(() => {
+    onProject?.({ name: data.project.name, sites: data.sites, paramIds: projectParamIds(data) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
   const settings = useSettings();
   const rounds = useMemo(() => roundPeriods(data, 12), [data]);
   const [period, setPeriod] = useState<PeriodValue>(() => (template.period === 'latestRound' && rounds[0]) || defaultPeriod(data.project.yearStartMonth, 'lastRy'));
@@ -85,6 +91,7 @@ export function TemplateEditorPage() {
   const [t, setT] = useState<ReportTemplate | null>(null);
   // the preview's report: its usual table notes, to start your own from
   const [previewDoc, setPreviewDoc] = useState<ReportDoc | null>(null);
+  const [previewChoices, setPreviewChoices] = useState<ReportProject | null>(null);
   // the template as loaded (or last saved here): saving changes only what was changed since
   const [base, setBase] = useState<ReportTemplate | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -293,7 +300,9 @@ export function TemplateEditorPage() {
                 Drag a section in from the palette, or click one to add it. Tap a section to edit it; drag ⋮⋮ to move it – a heading brings its content – or use the arrows; ⋯ has more.
               </Text>
               <ReportDocContext.Provider value={previewDoc}>
-                <SectionsEditor blocks={t.blocks} onChange={setBlocks} orientation={t.orientation} open={open} onOpen={setOpen} readOnly={readOnly} />
+                <ReportProjectContext.Provider value={previewProject ? previewChoices : null}>
+                  <SectionsEditor blocks={t.blocks} onChange={setBlocks} orientation={t.orientation} open={open} onOpen={setOpen} readOnly={readOnly} />
+                </ReportProjectContext.Provider>
               </ReportDocContext.Provider>
             </Card>
             <Card padding="md">
@@ -322,7 +331,7 @@ export function TemplateEditorPage() {
             </Group>
             {previewProject ? (
               <ProjectDataProvider key={previewProject} projectId={previewProject}>
-                <Preview template={t} fill={pane.fill} onDoc={setPreviewDoc} />
+                <Preview template={t} fill={pane.fill} onDoc={setPreviewDoc} onProject={setPreviewChoices} />
               </ProjectDataProvider>
             ) : (
               <Alert>Create a project (or load the demo) to preview templates with real data.</Alert>

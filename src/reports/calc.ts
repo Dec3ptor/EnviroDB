@@ -2,10 +2,10 @@
 // at DS1, the highest TSS anywhere, how many results were over a limit – for a Calculations section, or written
 // into text with {{calc:median:no3-n:DS1}}.
 
-import type { CalcRow, CalcStat, Parameter } from '../db/types';
+import type { CalcRow, CalcStat, Parameter, Result, TableCalc, TableStat } from '../db/types';
 import type { CellFlag, ProjectBundle } from '../lib/analysis';
 import { resultsFor } from '../lib/dataIndex';
-import { computeStat, percentile } from '../lib/stats';
+import { computeStat, ordinal, percentile } from '../lib/stats';
 import { convert, unitLabel } from '../lib/units';
 import { fmtNum, statValue } from '../lib/values';
 
@@ -105,4 +105,68 @@ export function fillCalcs(text: string, b: ProjectBundle, start: string, end: st
 /** The placeholder for a calculation, to put in text. */
 export function calcToken(stat: CalcStat, parameterId: string, siteCodes: string[]): string {
   return `{{calc:${stat}:${parameterId}${siteCodes.length ? `:${siteCodes.join(',')}` : ''}}}`;
+}
+
+// ---------------------------------------------------------------- calculation columns in tables
+
+export const TABLE_STATS: Record<TableStat, string> = {
+  mean: 'Mean',
+  median: 'Median',
+  min: 'Minimum',
+  max: 'Maximum',
+  p95: '95th percentile',
+  percentile: 'Another percentile',
+  sum: 'Total',
+  count: 'Number of results',
+  geomean: 'Geometric mean',
+};
+
+const SHORT: Record<TableStat, string> = { mean: 'Mean', median: 'Median', min: 'Min', max: 'Max', p95: '95th %ile', percentile: '', sum: 'Total', count: 'No.', geomean: 'Geomean' };
+
+/** What a calculation is worked out from, in a heading: "", "period", "5 yr", "all". */
+export function calcOverShort(c: TableCalc): string {
+  return c.over === 'period' ? 'period' : c.over === 'years' ? `${c.years ?? 5} yr` : c.over === 'all' ? 'all' : '';
+}
+
+/** A calculation column's heading: its own label, or "Mean", "80th %ile", "Mean (5 yr)" … */
+export function calcHead(c: TableCalc): string {
+  if (c.label?.trim()) return c.label.trim();
+  const name = c.stat === 'percentile' ? `${ordinal(c.percentile ?? 90)} %ile` : SHORT[c.stat];
+  const over = calcOverShort(c);
+  return over ? `${name} (${over})` : name;
+}
+
+/** A statistic of a parameter's results, as written in a table cell (no unit: the table has a unit column). */
+export function tableCalcValue(b: ProjectBundle, p: Parameter, rs: Result[], c: TableCalc): string {
+  const conv = rs.map((r) => ({ r, v: convert(r.value, r.unit, p.unit) })).filter((x): x is { r: Result; v: number } => x.v !== null);
+  if (c.stat === 'count') return String(conv.length);
+  if (!conv.length) return '–';
+  if (c.stat === 'min' || c.stat === 'max') {
+    const pick = conv.reduce((m, x) => ((c.stat === 'min' ? x.v < m.v : x.v > m.v) ? x : m));
+    return `${pick.r.qualifier === '<' ? '<' : pick.r.qualifier === '>' ? '>' : ''}${fmtNum(pick.v, p.decimals)}`;
+  }
+  const vals = conv.map((x) => statValue(x.v, x.r.qualifier, b.project.ndHandling)).filter((x): x is number => x !== null);
+  const v =
+    c.stat === 'sum'
+      ? vals.reduce((a, x) => a + x, 0)
+      : c.stat === 'p95'
+        ? percentile(vals, 95, b.project.percentileMethod)
+        : c.stat === 'percentile'
+          ? percentile(vals, c.percentile ?? 90, b.project.percentileMethod)
+          : computeStat(c.stat, vals, 50, b.project.percentileMethod);
+  if (v === null || !Number.isFinite(v)) return '–';
+  // every result below the detection limit: the statistic is "below" too
+  return `${conv.every((x) => x.r.qualifier === '<') ? '<' : ''}${fmtNum(v, p.decimals)}`;
+}
+
+/** The note under a table with calculation columns: what they're worked out from, and how. */
+export function calcNotes(b: ProjectBundle, calcs: TableCalc[], shown: string, end: string): string[] {
+  if (!calcs.length) return [];
+  const from = (c: TableCalc) =>
+    c.over === 'period' ? 'the results in the report period' : c.over === 'years' ? `the results in the ${c.years ?? 5} years to ${end}` : c.over === 'all' ? `all the results to ${end}` : shown;
+  const groups = new Map<string, string[]>();
+  for (const c of calcs) groups.set(from(c), [...(groups.get(from(c)) ?? []), calcHead(c)]);
+  const nd = b.project.ndHandling === 'half' ? 'half the detection limit' : b.project.ndHandling === 'zero' ? 'zero' : 'the detection limit';
+  const pct = calcs.some((c) => c.stat === 'p95' || c.stat === 'percentile' || c.stat === 'median') ? `; percentiles by the ${b.project.percentileMethod === 'hazen' ? 'Hazen' : 'Excel PERCENTILE.INC'} method` : '';
+  return [`${[...groups].map(([f, heads]) => `${heads.join(', ')}: worked out from ${f}`).join('; ')} – results below the detection limit as ${nd}${pct}.`];
 }

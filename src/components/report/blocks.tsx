@@ -1,10 +1,11 @@
-import { ActionIcon, Anchor, Badge, Button, Checkbox, Group, MultiSelect, NumberInput, Popover, ScrollArea, SegmentedControl, Select, Slider, Stack, Switch, TagsInput, Text, TextInput, Textarea, UnstyledButton } from '@mantine/core';
+import { ActionIcon, Anchor, Badge, Paper, Button, Checkbox, Group, MultiSelect, NumberInput, Popover, ScrollArea, SegmentedControl, Select, Slider, Stack, Switch, TagsInput, Text, TextInput, Textarea, UnstyledButton } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { IconLink, IconPlus, IconTrash } from '@tabler/icons-react';
 import { db } from '../../db/db';
-import type { CalcStat, Parameter, ReportBlock, ReportBlockType, RoundTableBlock, Sample, Site } from '../../db/types';
-import { CALC_STATS } from '../../reports/calc';
-import { InsertCalc } from './InsertCalc';
+import type { CalcStat, Parameter, ReportBlock, ReportBlockType, RoundTableBlock, Sample, Site, TableCalc, TableStat } from '../../db/types';
+import { CALC_STATS, TABLE_STATS, calcHead } from '../../reports/calc';
+import { InsertCalc, paramOptions } from './InsertCalc';
+import { useCalcChoices } from './projectChoices';
 import { FillInInput } from './FillInInput';
 import { NOTE_FILL_INS, captionFillIns, defaultCaption, earlierCaption, tidyCaption, withCaption } from '../../reports/captions';
 import { formatDate } from '../../lib/dates';
@@ -126,13 +127,13 @@ export function blockSummary(b: ReportBlock): string {
     case 'text':
       return `${b.prompt ? '[filled in per report] ' : ''}${b.text.slice(0, 80)}`;
     case 'resultsTable':
-      return `${b.captionText || b.title || 'Results'} · ${b.layout === 'parametersAsRows' ? 'parameters down' : 'dates down'}${b.splitBySite ? ' · one table per site' : ''}${b.ruleColumns === 'all' ? ' · with consent limits & triggers' : b.ruleColumns === 'limits' ? ' · with consent limits' : ''}`;
+      return `${b.captionText || b.title || 'Results'} · ${b.layout === 'parametersAsRows' ? 'parameters down' : 'dates down'}${b.splitBySite ? ' · one table per site' : ''}${b.ruleColumns === 'all' ? ' · with consent limits & triggers' : b.ruleColumns === 'limits' ? ' · with consent limits' : ''}${b.calcColumns?.length ? ` · ${b.calcColumns.map(calcHead).join(', ')}` : ''}`;
     case 'chart':
       return `${b.parameterIds.length ? `${b.parameterIds.length} parameters` : 'Key parameters (those with consent rules)'} · ${b.range === 'years' ? `last ${b.years} years` : b.range === 'all' ? 'all data' : 'report period'} · ${(b.size ?? 'full') === 'full' ? 'full width' : b.size === 'half' ? 'two per row' : `${b.widthCm} × ${b.heightCm} cm`}`;
     case 'roundReview':
       return `${b.captionText || b.title || 'Results'} · ${b.historyYears ? `last ${b.historyYears} years` : 'all earlier results'}`;
     case 'roundTable':
-      return [b.previousDates?.length ? `this round and ${b.previousDates.length} chosen` : b.previous ? `this round and ${b.previous} before` : 'this round', b.comment && 'comments', b.summaries && 'a summary per site'].filter(Boolean).join(' · ');
+      return [b.previousDates?.length ? `this round and ${b.previousDates.length} chosen` : b.previous ? `this round and ${b.previous} before` : 'this round', b.calcColumns?.length && b.calcColumns.map(calcHead).join(', '), b.comment && 'comments', b.summaries && 'a summary per site'].filter(Boolean).join(' · ');
     case 'triggerTable':
       return b.levels === 'limits' ? 'Consent limits' : b.levels === 'triggers' ? 'Trigger levels' : 'Consent limits and trigger levels';
     case 'letter':
@@ -668,6 +669,7 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
           </div>
           <Switch label="Use the project's default guideline sets" checked={block.guidelineSetIds === null} onChange={(e) => set({ guidelineSetIds: e.currentTarget.checked ? null : [] })} />
           {block.guidelineSetIds !== null && <GuidelinePicker sets={sets} value={block.guidelineSetIds} onChange={(v) => set({ guidelineSetIds: v })} label="Guideline columns" />}
+          <TableCalcsField calcs={block.calcColumns ?? []} onChange={(calcColumns) => set({ calcColumns })} asRows={block.layout === 'parametersAsColumns'} shown="The results in the table" />
         </Stack>
       );
     case 'statsTable':
@@ -833,6 +835,7 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
           <Switch label="A comment on each result: the change since the last result shown and whether it complies (e.g. “Increase – Compliant”, or “No earlier result – Compliant”)" checked={block.comment} onChange={(e) => set({ comment: e.currentTarget.checked })} />
           <Switch label="A summary under each site's table – drafted from the results, yours to edit in the report's commentary" checked={block.summaries} onChange={(e) => set({ summaries: e.currentTarget.checked })} />
           <BlockParamsField block={block} params={params} onChange={onChange} all="All measured" />
+          <TableCalcsField calcs={block.calcColumns ?? []} onChange={(calcColumns) => set({ calcColumns })} shown="The rounds shown" />
         </Stack>
       );
     case 'triggerTable':
@@ -954,11 +957,69 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
   }
 }
 
+/**
+ * Calculation columns in a table – the mean, 95th percentile, total … of each parameter's results – worked out from the
+ * results in the table, or the table's sites' results over the report period, the last few years or all of them.
+ */
+function TableCalcsField({ calcs, onChange, asRows, shown }: { calcs: TableCalc[]; onChange: (c: TableCalc[] | undefined) => void; asRows?: boolean; shown: string }) {
+  const setCalc = (i: number, patch: Partial<TableCalc>) => onChange(calcs.map((c, k) => (k === i ? { ...c, ...patch } : c)));
+  const what = asRows ? 'row' : 'column';
+  return (
+    <div>
+      <Text size="sm" fw={500}>
+        Calculation {what}s
+      </Text>
+      <Text size="xs" c="dimmed" mb={4}>
+        {asRows ? 'Rows at the foot of the table' : 'Columns after the results'} with each parameter’s mean, percentile, total …
+      </Text>
+      <Stack gap={6}>
+        {calcs.map((c, i) => (
+          <Paper key={c.id} withBorder p={6} radius="sm">
+            <Stack gap={4}>
+              <Group gap={6} wrap="nowrap">
+                <Select size="xs" style={{ flex: 1 }} aria-label="Calculation" data={Object.entries(TABLE_STATS).map(([value, label]) => ({ value, label }))} value={c.stat} onChange={(v) => v && setCalc(i, { stat: v as TableStat })} allowDeselect={false} />
+                {c.stat === 'percentile' && <NumberInput size="xs" w={76} aria-label="Percentile" min={1} max={99} value={c.percentile ?? 90} onChange={(v) => setCalc(i, { percentile: Math.max(1, Math.min(99, Number(v) || 90)) })} suffix="th" />}
+                <ActionIcon variant="subtle" color="red" onClick={() => onChange(calcs.length > 1 ? calcs.filter((_, k) => k !== i) : undefined)} aria-label={`Remove this calculation ${what}`}>
+                  <IconTrash size={14} />
+                </ActionIcon>
+              </Group>
+              <Group gap={6} wrap="nowrap">
+                <Text size="xs" c="dimmed" w={22}>
+                  of
+                </Text>
+                <Select
+                  size="xs"
+                  style={{ flex: 1 }}
+                  aria-label="Worked out from"
+                  data={[
+                    { value: 'shown', label: shown },
+                    { value: 'period', label: 'The report period' },
+                    { value: 'years', label: 'The last few years' },
+                    { value: 'all', label: 'All results to the report’s end' },
+                  ]}
+                  value={c.over ?? 'shown'}
+                  onChange={(v) => v && setCalc(i, { over: v === 'shown' ? undefined : (v as TableCalc['over']), years: v === 'years' ? (c.years ?? 5) : undefined })}
+                  allowDeselect={false}
+                />
+                {c.over === 'years' && <NumberInput size="xs" w={76} aria-label="Years" min={1} max={50} value={c.years ?? 5} onChange={(v) => setCalc(i, { years: Math.max(1, Math.min(50, Number(v) || 5)) })} suffix=" yr" />}
+              </Group>
+              <TextInput size="xs" aria-label="Heading" placeholder={`Heading: ${calcHead(c)}`} value={c.label ?? ''} onChange={(e) => setCalc(i, { label: e.currentTarget.value || undefined })} />
+            </Stack>
+          </Paper>
+        ))}
+        <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} style={{ alignSelf: 'flex-start' }} onClick={() => onChange([...calcs, { id: uid('tc'), stat: calcs.some((c) => c.stat === 'mean') ? 'p95' : 'mean' }])}>
+          Add a calculation {what}
+        </Button>
+      </Stack>
+    </div>
+  );
+}
+
 /** A Calculations section: each value's statistic, parameter and sites. */
 function CalcForm({ block, onChange }: { block: Extract<ReportBlock, { type: 'calc' }>; onChange: (b: ReportBlock) => void }) {
-  const params = useLiveQuery(() => db.parameters.toArray(), []) ?? [];
-  const codes = useLiveQuery(async () => [...new Set((await db.sites.toArray()).map((x) => x.code))].sort(), []) ?? [];
-  const paramData = [...params].sort((a, b) => a.name.localeCompare(b.name)).map((p) => ({ value: p.id, label: p.name }));
+  // the project's own sites and parameters (all of them in the template library)
+  const { params, codes, project } = useCalcChoices();
+  const paramData = paramOptions(params, !!project);
   const rows = block.rows;
   const setRow = (i: number, patch: Partial<(typeof rows)[number]>) => onChange({ ...block, rows: rows.map((r, k) => (k === i ? { ...r, ...patch } : r)) });
   return (
