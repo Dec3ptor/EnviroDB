@@ -22,14 +22,13 @@ import {
   TableCell,
   TableLayoutType,
   TableRow,
-  TabStopPosition,
   TabStopType,
   TextRun,
   WidthType,
   type ISectionOptions,
 } from 'docx';
 import type { LetterheadItem } from '../db/types';
-import type { Cell, DocNode, ReportDoc, Run } from './model';
+import type { Cell, DocNode, PageLine, ReportDoc, Run } from './model';
 import { dataUrlToBytes } from '../charts/render';
 import { CHART_GAP_MM, SIGN_GAP_MM, pageSizeMm, type Orientation } from './build';
 import { fitCellSize, fontWidthFactor } from './measure';
@@ -402,6 +401,30 @@ function letterheadPart(items: LetterheadItem[], widthMm: number): Array<Paragra
   ];
 }
 
+/** Text with {page} and {pages} as Word's page number fields. */
+function pageRuns(text: string, size: number, color = '777777'): TextRun[] {
+  return text
+    .split(/(\{pages?\})/)
+    .filter(Boolean)
+    .map((bit) => new TextRun({ size, color, ...(bit === '{page}' ? { children: [PageNumber.CURRENT] } : bit === '{pages}' ? { children: [PageNumber.TOTAL_PAGES] } : { text: bit }) }));
+}
+
+/** A header or footer line: left, then centre and right at tab stops across the page. */
+function pageLinePara(l: PageLine, widthMm: number, size: number): Paragraph {
+  const tab = () => new TextRun({ text: '\t', size });
+  return new Paragraph({
+    tabStops: [
+      { type: TabStopType.CENTER, position: twips(widthMm / 2) },
+      { type: TabStopType.RIGHT, position: twips(widthMm) },
+    ],
+    spacing: { before: 0, after: 0 },
+    indent: { left: 0 },
+    children: [...pageRuns(l.left, size), ...(l.center || l.right ? [tab(), ...pageRuns(l.center, size)] : []), ...(l.right ? [tab(), ...pageRuns(l.right, size)] : [])],
+  });
+}
+
+const pageLineEmpty = (l: PageLine) => !(l.left || l.center || l.right);
+
 function section(doc: ReportDoc, children: Array<Paragraph | Table>, orientation: Orientation, first: boolean): ISectionOptions {
   const t = doc.template;
   const [w, h] = pageSizeMm(t);
@@ -409,39 +432,36 @@ function section(doc: ReportDoc, children: Array<Paragraph | Table>, orientation
   // the letterhead's Word file replaces the header and footers afterwards, so none are drawn here
   const fromWord = !!doc.letterhead?.docx && doc.letterhead.useWordFile !== false;
   const lh = doc.letterhead && fromWord ? { ...doc.letterhead, first: { header: [], footer: [] }, other: { header: [], footer: [] } } : doc.letterhead;
+  const small = (t.fontSize - 2) * 2;
   if (lh) {
     const g = doc.page;
     const widthMm = (orientation === 'landscape' ? h : w) - g.left - g.right;
+    // the template's own lines as well, under the letterhead's header and above its footer
+    const extra = doc.pageTextWithLetterhead;
+    const head = (items: LetterheadItem[], own: boolean) => [...letterheadPart(items, widthMm), ...(extra && own && !pageLineEmpty(doc.header) ? [pageLinePara(doc.header, widthMm, small)] : [])];
+    const foot = (items: LetterheadItem[], own: boolean) => [...(extra && own && !pageLineEmpty(doc.footer) ? [pageLinePara(doc.footer, widthMm, small)] : []), ...letterheadPart(items, widthMm)];
     return {
       properties: { page: { size, margin: { top: twips(g.top), right: twips(g.right), bottom: twips(g.bottom), left: twips(g.left), header: twips(g.header), footer: twips(g.footer) } }, titlePage: first },
       // later sections carry on with the same header and footer
       ...(first
         ? {
-            headers: { default: new Header({ children: letterheadPart(lh.other.header, widthMm) }), first: new Header({ children: letterheadPart(lh.first.header, widthMm) }) },
-            footers: { default: new Footer({ children: letterheadPart(lh.other.footer, widthMm) }), first: new Footer({ children: letterheadPart(lh.first.footer, widthMm) }) },
+            headers: { default: new Header({ children: head(lh.other.header, true) }), first: new Header({ children: head(lh.first.header, doc.pageTextFirst) }) },
+            footers: { default: new Footer({ children: foot(lh.other.footer, true) }), first: new Footer({ children: foot(lh.first.footer, doc.pageTextFirst) }) },
           }
         : {}),
       children,
     };
   }
-  const small = (t.fontSize - 2) * 2;
+  const widthMm = (orientation === 'landscape' ? h : w) - 2 * t.marginMm;
+  const line = (l: PageLine) => (pageLineEmpty(l) ? [new Paragraph({ children: [] })] : [pageLinePara(l, widthMm, small)]);
   return {
     properties: {
       page: { size, margin: { top: twips(t.marginMm), bottom: twips(t.marginMm), left: twips(t.marginMm), right: twips(t.marginMm) } },
-      titlePage: first && doc.nodes[0]?.t === 'title' && doc.nodes[0].pageBreakAfter,
+      // the first page has its own (empty) header and footer unless they go on it too
+      titlePage: first && !doc.pageTextFirst,
     },
-    headers: { default: new Header({ children: [new Paragraph({ children: [new TextRun({ text: doc.header, size: small, color: '777777' })] })] }), first: new Header({ children: [new Paragraph({ children: [] })] }) },
-    footers: {
-      default: new Footer({
-        children: [
-          new Paragraph({
-            tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }],
-            children: [new TextRun({ text: doc.footer, size: small, color: '777777' }), new TextRun({ children: ['\tPage ', PageNumber.CURRENT, ' of ', PageNumber.TOTAL_PAGES], size: small, color: '777777' })],
-          }),
-        ],
-      }),
-      first: new Footer({ children: [new Paragraph({ children: [] })] }),
-    },
+    headers: { default: new Header({ children: line(doc.header) }), first: new Header({ children: [new Paragraph({ children: [] })] }) },
+    footers: { default: new Footer({ children: line(doc.footer) }), first: new Footer({ children: [new Paragraph({ children: [] })] }) },
     children,
   };
 }
@@ -458,9 +478,16 @@ export async function docxBlob(doc: ReportDoc): Promise<Blob> {
   const d = new Document({ creator: 'EnviroDB', title: doc.title, description: doc.title, styles: styles(doc), sections });
   const blob = await Packer.toBlob(d);
   if (!doc.letterhead?.docx || doc.letterhead.useWordFile === false) return blob;
-  // on the company's own letterhead: its header and footers from the Word file, exactly as they are
-  const { applyWordLetterhead } = await import('./wordLetterhead');
-  return applyWordLetterhead(blob, doc.letterhead.docx);
+  // on the company's own letterhead: its header and footers from the Word file, exactly as they are – with the
+  // template's own lines added, if wanted
+  const { applyWordLetterhead, pageLineXml } = await import('./wordLetterhead');
+  const g = doc.page;
+  const widthMm = (doc.template.orientation === 'landscape' ? h : w) - g.left - g.right;
+  const small = (t.fontSize - 2) * 2;
+  const extra = doc.pageTextWithLetterhead
+    ? { header: pageLineEmpty(doc.header) ? undefined : pageLineXml(doc.header, twips(widthMm), small), footer: pageLineEmpty(doc.footer) ? undefined : pageLineXml(doc.footer, twips(widthMm), small), first: doc.pageTextFirst }
+    : undefined;
+  return applyWordLetterhead(blob, doc.letterhead.docx, extra);
 }
 
 /** Quick Word document containing a list of graphs (from the graph builder). */

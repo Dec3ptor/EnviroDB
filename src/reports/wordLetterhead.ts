@@ -692,11 +692,35 @@ function adaptPart(xml: string, ids: Map<string, string>, normal: string): strin
   );
 }
 
+/** A header or footer line as a Word paragraph: left, then centre and right at tab stops; {page} and {pages} as fields. */
+export function pageLineXml(l: { left: string; center: string; right: string }, widthTwips: number, size: number): string {
+  const rPr = `<w:rPr><w:sz w:val="${size}"/><w:szCs w:val="${size}"/><w:color w:val="777777"/></w:rPr>`;
+  const bits = (t: string) =>
+    t
+      .split(/(\{pages?\})/)
+      .filter(Boolean)
+      .map((b) => (b === '{page}' || b === '{pages}' ? `<w:fldSimple w:instr=" ${b === '{page}' ? 'PAGE' : 'NUMPAGES'} "><w:r>${rPr}<w:t>1</w:t></w:r></w:fldSimple>` : `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(b)}</w:t></w:r>`))
+      .join('');
+  const tab = `<w:r>${rPr}<w:tab/></w:r>`;
+  return (
+    `<w:p><w:pPr><w:tabs><w:tab w:val="center" w:pos="${Math.round(widthTwips / 2)}"/><w:tab w:val="right" w:pos="${Math.round(widthTwips)}"/></w:tabs><w:spacing w:before="0" w:after="0"/><w:ind w:left="0" w:right="0" w:firstLine="0"/></w:pPr>` +
+    `${bits(l.left)}${l.center || l.right ? tab + bits(l.center) : ''}${l.right ? tab + bits(l.right) : ''}</w:p>`
+  );
+}
+
+/** The template's own header and footer lines, to add to the letterhead's (Word paragraphs), and whether on the first page too. */
+export interface LetterheadExtra {
+  header?: string;
+  footer?: string;
+  first: boolean;
+}
+
 /**
  * Put a Word document (made by EnviroDB) on the letterhead: the header and footer parts of the letterhead's Word
- * file, with their pictures and styles, its margins, and its first-page header and footer on the first page.
+ * file, with their pictures and styles, its margins, and its first-page header and footer on the first page – and the
+ * template's own lines under the header and above the footer, if given.
  */
-export async function applyWordLetterhead(report: Blob | ArrayBuffer | Uint8Array, letterheadDocx: string | ArrayBuffer | Uint8Array): Promise<Blob> {
+export async function applyWordLetterhead(report: Blob | ArrayBuffer | Uint8Array, letterheadDocx: string | ArrayBuffer | Uint8Array, extra?: LetterheadExtra): Promise<Blob> {
   const ours = await JSZip.loadAsync(report instanceof Blob ? await report.arrayBuffer() : report);
   const { zip: tpl, main } = await openWord(typeof letterheadDocx === 'string' ? bytesOfDataUrl(letterheadDocx) : letterheadDocx);
   const tplDoc = (await text(tpl, main))!;
@@ -733,7 +757,7 @@ export async function applyWordLetterhead(report: Blob | ArrayBuffer | Uint8Arra
 
   // the letterhead's parts, renamed so nothing clashes
   const parts: Array<{ kind: 'header' | 'footer'; type: 'default' | 'first'; id: string }> = [];
-  const partXml = new Map<string, { name: string; xml: string; id: string }>();
+  const partXml = new Map<string, { name: string; xml: string; id: string; kind: 'header' | 'footer'; types: Set<'default' | 'first'> }>();
   const usedStyles = new Set<string>();
   let n = 0;
   for (const kind of ['header', 'footer'] as const)
@@ -747,7 +771,7 @@ export async function applyWordLetterhead(report: Blob | ArrayBuffer | Uint8Arra
       if (!entry) {
         const xml = await text(tpl, path);
         if (!xml) continue;
-        entry = { name: `letterhead-${kind}${++n}.xml`, xml, id: `rIdLetterhead${n}` };
+        entry = { name: `letterhead-${kind}${++n}.xml`, xml, id: `rIdLetterhead${n}`, kind, types: new Set() };
         partXml.set(path, entry);
         for (const m of xml.matchAll(/<w:(?:pStyle|rStyle|tblStyle) w:val="([^"]+)"\/>/g)) usedStyles.add(m[1]);
         // its pictures and links
@@ -769,6 +793,7 @@ export async function applyWordLetterhead(report: Blob | ArrayBuffer | Uint8Arra
         docRels = docRels.replace('</Relationships>', `<Relationship Id="${entry.id}" Type="${REL_TYPES[kind]}" Target="${entry.name}"/></Relationships>`);
         types = types.replace('</Types>', `<Override PartName="/word/${entry.name}" ContentType="${kind === 'header' ? CT.header : CT.footer}"/></Types>`);
       }
+      entry.types.add(type);
       parts.push({ kind, type, id: entry.id });
     }
 
@@ -776,7 +801,13 @@ export async function applyWordLetterhead(report: Blob | ArrayBuffer | Uint8Arra
   const tplStylesRel = tplRels.find((r) => r.type === REL_TYPES.styles);
   const tplStyles = tplStylesRel ? ((await text(tpl, resolvePath(main, tplStylesRel.target))) ?? '') : '';
   const lh = letterheadStyles(tplStyles, usedStyles);
-  for (const p of partXml.values()) ours.file(`word/${p.name}`, adaptPart(p.xml, lh.ids, lh.normal));
+  // the template's own lines: under the header, above the footer (on the first page only if wanted)
+  const withExtra = (p: { xml: string; kind: 'header' | 'footer'; types: Set<'default' | 'first'> }) => {
+    const add = extra && (p.types.has('default') || (extra.first && p.types.has('first'))) ? (p.kind === 'header' ? extra.header : extra.footer) : undefined;
+    if (!add) return p.xml;
+    return p.kind === 'header' ? p.xml.replace(/<\/w:hdr>\s*$/, `${add}</w:hdr>`) : p.xml.replace(/(<w:ftr\b[^>]*>)/, `$1${add}`);
+  };
+  for (const p of partXml.values()) ours.file(`word/${p.name}`, adaptPart(withExtra(p), lh.ids, lh.normal));
   if (lh.xml) styles = styles.replace('</w:styles>', `${lh.xml}</w:styles>`);
   const tplThemeRel = tplRels.find((r) => r.type === REL_TYPES.theme);
   if (tplThemeRel && !readRels(docRels).some((r) => r.type === REL_TYPES.theme)) {

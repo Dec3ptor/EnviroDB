@@ -31,7 +31,7 @@ export function FillInInput({
   multiline?: boolean;
   /** Show "e.g. …" under the box, with this before it (e.g. "Table 3. "). */
   example?: string;
-  /** How many fill-ins to show as links under the box. */
+  /** How many fill-ins to show as links under the box (0: none – type "[" for them). */
   chips?: number;
 }) {
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
@@ -120,6 +120,7 @@ export function FillInInput({
           </Combobox.Options>
         </Combobox.Dropdown>
       </Combobox>
+      {chips > 0 && (
       <Group gap={6} mt={4} wrap="wrap">
         <Text size="xs" c="dimmed">
           Fill in:
@@ -153,6 +154,7 @@ export function FillInInput({
           (or type [ )
         </Text>
       </Group>
+      )}
       {example !== undefined && shown.some(Boolean) && (
         <Text size="xs" c="dimmed" mt={2} style={{ whiteSpace: 'pre-line' }}>
           e.g. “{example}

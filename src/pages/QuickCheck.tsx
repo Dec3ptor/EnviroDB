@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Alert, Anchor, Badge, Button, Card, Group, Modal, ScrollArea, SegmentedControl, Stack, Switch, Text, TextInput, Tooltip } from '@mantine/core';
+import { ActionIcon, Alert, Anchor, Badge, Button, Card, Group, Modal, ScrollArea, SegmentedControl, Select, Stack, Switch, Text, TextInput, Tooltip } from '@mantine/core';
 import { Dropzone } from '@mantine/dropzone';
 import { notifications } from '@mantine/notifications';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from 'react-router-dom';
-import { IconDeviceFloppy, IconFileSpreadsheet, IconFileTypeDocx, IconFileTypePdf, IconTestPipe, IconUpload } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconEdit, IconFileSpreadsheet, IconFileTypeDocx, IconFileTypePdf, IconTestPipe, IconUpload } from '@tabler/icons-react';
 import { db } from '../db/db';
-import type { ReportBlock } from '../db/types';
 import { defaultPlans, readImportFiles } from '../importers/files';
 import { parseWithPlan } from '../importers/detect';
 import { EMPTY_CONTEXT } from '../importers/labExports';
@@ -20,8 +19,8 @@ import { unitLabel } from '../lib/units';
 import { ALL_TIME, quickCheck, quickCounts, quickFlags, saveQuickCheck } from '../lib/quickCheck';
 import { GuidelinePicker, PageHeader } from '../components/common';
 import { useSettings } from '../hooks/useSettings';
-import { adhocTemplate, exportReport } from '../reports/export';
-import { newBlock } from '../components/report/blocks';
+import { exportReport } from '../reports/export';
+import { QUICK_CHECK_TEMPLATE, QUICK_CHECK_TEMPLATE_ID } from '../data/templates';
 
 // Quick check: drop lab results – no project needed – and see them against guideline values. Nothing is saved
 // unless you make a project of them.
@@ -37,6 +36,7 @@ const ACCEPT = {
   'text/plain': ['.txt', '.tsv'],
 };
 const PREF = 'envirodb.quickCheck.sets';
+const LAYOUT_PREF = 'envirodb.quickCheck.template';
 const DEFAULT_SETS = ['anzg-fw-95'];
 
 function loadSets(): string[] {
@@ -109,11 +109,29 @@ export function QuickCheckPage() {
     });
   }, [table, show, setList, flags]);
 
-  const reportTemplate = () => {
-    const results: ReportBlock = { ...newBlock('resultsTable'), title: 'Results compared with guideline values', guidelineSetIds: chosen, ruleColumns: 'none', splitBySite: false, layout: 'parametersAsRows' } as ReportBlock;
-    const title: ReportBlock = { ...newBlock('title'), title: 'Quick check', subtitle: read?.fileName ?? '', showDetails: false, pageBreakAfter: false } as ReportBlock;
-    return adhocTemplate('Results compared with guidelines', [title, newBlock('summary'), results], 'landscape');
+  // the report's layout: the Quick check template (yours to change), or another of your templates
+  const templates = useLiveQuery(() => db.templates.toArray(), []);
+  const [layoutId, setLayoutIdState] = useState<string>(() => {
+    try {
+      return localStorage.getItem(LAYOUT_PREF) || QUICK_CHECK_TEMPLATE_ID;
+    } catch {
+      return QUICK_CHECK_TEMPLATE_ID;
+    }
+  });
+  const setLayoutId = (id: string) => {
+    setLayoutIdState(id);
+    try {
+      localStorage.setItem(LAYOUT_PREF, id);
+    } catch {
+      /* a convenience only */
+    }
   };
+  const layout = templates?.find((t) => t.id === layoutId) ?? templates?.find((t) => t.id === QUICK_CHECK_TEMPLATE_ID) ?? QUICK_CHECK_TEMPLATE;
+  const layoutOptions = [...(templates ?? [])]
+    .sort((a, b) => Number(b.id === QUICK_CHECK_TEMPLATE_ID) - Number(a.id === QUICK_CHECK_TEMPLATE_ID) || a.name.localeCompare(b.name))
+    .map((t) => ({ value: t.id, label: t.name }));
+  // the file's name is the project's, its lab job the project number – for the template's {{project.name}}, [project code] …
+  const reportBundle = () => (q ? { ...q.bundle, project: { ...q.bundle.project, name: (read?.fileName ?? 'Quick check').replace(/\.[^.]+$/, ''), code: read?.parsed.labJob ?? '' } } : null);
   const dates = q?.bundle.samples.map((s) => s.date.slice(0, 10)) ?? [];
   const period = { start: dates[0] ?? today, end: dates[dates.length - 1] ?? today, label: '' };
 
@@ -176,6 +194,23 @@ export function QuickCheckPage() {
                   >
                     Excel
                   </Button>
+                  <Group gap={2} wrap="nowrap">
+                    <Select size="xs" w={210} aria-label="Report layout" data={layoutOptions} value={layout.id} onChange={(v) => v && setLayoutId(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
+                    <Tooltip label="Change this layout – sections, header and footer, page" withArrow>
+                      <ActionIcon
+                        variant="subtle"
+                        size="lg"
+                        aria-label="Edit the report layout"
+                        onClick={async () => {
+                          // taken off the list: put the usual one back to change
+                          if (!templates?.some((t) => t.id === layout.id)) await db.templates.put(layout);
+                          navigate(`/templates/${layout.id}`);
+                        }}
+                      >
+                        <IconEdit size={16} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Group>
                   {(['docx', 'pdf'] as const).map((kind) => (
                     <Button
                       key={kind}
@@ -186,7 +221,7 @@ export function QuickCheckPage() {
                       onClick={async () => {
                         setExporting(kind);
                         try {
-                          await exportReport(kind, { bundle: q.bundle, template: reportTemplate(), period, settings });
+                          await exportReport(kind, { bundle: reportBundle()!, template: layout, period, settings });
                         } catch (e) {
                           notifications.show({ title: 'Export failed', message: (e as Error).message, color: 'red' });
                         } finally {

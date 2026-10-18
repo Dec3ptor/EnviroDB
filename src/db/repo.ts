@@ -404,7 +404,8 @@ export async function deleteGuidelineSet(id: string) {
 
 /** Saves a template (see saveEdited) and returns it as saved. */
 export async function saveTemplate(t: ReportTemplate, before?: ReportTemplate): Promise<ReportTemplate> {
-  return saveEdited(db.templates, { ...t, updatedAt: nowIso() }, before);
+  // a starter changed is your own template now
+  return saveEdited(db.templates, { ...t, starter: undefined, updatedAt: nowIso() }, before);
 }
 export async function duplicateTemplate(t: ReportTemplate, name?: string): Promise<ReportTemplate> {
   const copy: ReportTemplate = {
@@ -412,6 +413,7 @@ export async function duplicateTemplate(t: ReportTemplate, name?: string): Promi
     id: uid('tpl'),
     name: name ?? `${t.name} (custom)`,
     builtIn: false,
+    starter: undefined,
     blocks: t.blocks.map((b) => ({ ...structuredClone(b), id: uid('b') })),
     updatedAt: nowIso(),
   };

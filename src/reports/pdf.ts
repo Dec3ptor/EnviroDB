@@ -1,6 +1,6 @@
 import type { Content, TDocumentDefinitions, TableCell } from 'pdfmake/interfaces';
 import type { LetterheadItem } from '../db/types';
-import type { Cell, DocNode, ReportDoc, Run } from './model';
+import type { Cell, DocNode, PageLine, ReportDoc, Run } from './model';
 import { CHART_GAP_MM, SIGN_GAP_MM, pageSizeMm, type Orientation } from './build';
 import { downloadBlob } from '../db/backup';
 import { fitCellSize } from './measure';
@@ -307,6 +307,21 @@ function letterheadPart(items: LetterheadItem[], page: number, pages: number): C
   } as Content;
 }
 
+const pageNo = (s: string, page: number, pages: number) => s.replace(/\{page\}/g, String(page)).replace(/\{pages\}/g, String(pages));
+const hasText = (l: PageLine) => !!(l.left || l.center || l.right);
+
+/** A header or footer line: left, centre and right (the centre one only when there is one, so the left has room). */
+function pageLine(l: PageLine, page: number, pages: number): Content {
+  return {
+    columns: [
+      { width: '*', text: pageNo(l.left, page, pages), alignment: 'left' },
+      ...(l.center ? [{ width: '*', text: pageNo(l.center, page, pages), alignment: 'center' }] : []),
+      { width: l.center ? '*' : 'auto', text: pageNo(l.right, page, pages), alignment: 'right' },
+    ],
+    columnGap: 8,
+  } as Content;
+}
+
 export function toPdfDefinition(doc: ReportDoc): TDocumentDefinitions {
   const t = doc.template;
   const letter = doc.look.style === 'letter';
@@ -319,25 +334,37 @@ export function toPdfDefinition(doc: ReportDoc): TDocumentDefinitions {
   let margins: [number, number, number, number];
   let header: TDocumentDefinitions['header'];
   let footer: TDocumentDefinitions['footer'];
+  const small = t.fontSize - 2;
+  // the template's own header and footer lines – on a letterhead, under its header and above its footer, if wanted
+  const shown = (page: number) => page > 1 || doc.pageTextFirst;
   if (lh) {
+    const extra = doc.pageTextWithLetterhead;
+    const lineH = small * 1.25 + 3;
+    const addHead = extra && hasText(doc.header) ? lineH : 0;
+    const addFoot = extra && hasText(doc.footer) ? lineH : 0;
     const heads = [lh.first.header, lh.other.header].map(partHeightPt);
     const feet = [lh.first.footer, lh.other.footer].map(partHeightPt);
-    const top = Math.max(geo.top * MM, geo.header * MM + Math.max(...heads) + 4 * MM);
-    const bottom = Math.max(geo.bottom * MM, geo.footer * MM + Math.max(...feet) + 4 * MM);
+    const top = Math.max(geo.top * MM, geo.header * MM + Math.max(...heads) + addHead + 4 * MM);
+    const bottom = Math.max(geo.bottom * MM, geo.footer * MM + Math.max(...feet) + addFoot + 4 * MM);
     margins = [(geo.left + geo.indent) * MM, top, geo.right * MM, bottom];
-    header = (page: number, pages: number) => ({ ...(letterheadPart(page === 1 ? lh.first.header : lh.other.header, page, pages) as object), margin: [geo.left * MM, geo.header * MM, geo.right * MM, 0] }) as Content;
+    const own = (l: PageLine, page: number, pages: number, gap: [number, number]) => ({ ...(pageLine(l, page, pages) as object), fontSize: small, color: '#777777', margin: [0, gap[0], 0, gap[1]] }) as Content;
+    header = (page: number, pages: number) => {
+      const part = letterheadPart(page === 1 ? lh.first.header : lh.other.header, page, pages);
+      const stack = addHead && shown(page) ? [part, own(doc.header, page, pages, [3, 0])] : [part];
+      return { stack, margin: [geo.left * MM, geo.header * MM, geo.right * MM, 0] } as Content;
+    };
     footer = (page: number, pages: number) => {
       const items = page === 1 ? lh.first.footer : lh.other.footer;
-      return { ...(letterheadPart(items, page, pages) as object), margin: [geo.left * MM, Math.max(0, bottom - geo.footer * MM - partHeightPt(items)), geo.right * MM, 0] } as Content;
+      const withLine = addFoot && shown(page);
+      const h = partHeightPt(items) + (withLine ? lineH : 0);
+      const stack = withLine ? [own(doc.footer, page, pages, [0, 3]), letterheadPart(items, page, pages)] : [letterheadPart(items, page, pages)];
+      return { stack, margin: [geo.left * MM, Math.max(0, bottom - geo.footer * MM - h), geo.right * MM, 0] } as Content;
     };
   } else {
     const margin = t.marginMm * MM;
-    const titleOnOwnPage = doc.nodes[0]?.t === 'title' && doc.nodes[0].pageBreakAfter;
     margins = [margin, margin + 6, margin, margin + 4];
-    header = (page: number) =>
-      page === 1 && titleOnOwnPage ? null : ({ columns: [{ text: doc.header, alignment: 'left' }, { text: '', alignment: 'right' }], margin: [margin, margin / 2, margin, 0], fontSize: t.fontSize - 2, color: '#777777' } as Content);
-    footer = (page: number, pages: number) =>
-      ({ columns: [{ text: doc.footer, alignment: 'left' }, { text: `Page ${page} of ${pages}`, alignment: 'right' }], margin: [margin, 6, margin, 0], fontSize: t.fontSize - 2, color: '#777777' }) as Content;
+    header = (page: number, pages: number) => (shown(page) && hasText(doc.header) ? ({ ...(pageLine(doc.header, page, pages) as object), margin: [margin, margin / 2, margin, 0], fontSize: small, color: '#777777' } as Content) : null);
+    footer = (page: number, pages: number) => (shown(page) && hasText(doc.footer) ? ({ ...(pageLine(doc.footer, page, pages) as object), margin: [margin, 6, margin, 0], fontSize: small, color: '#777777' } as Content) : null);
   }
   const { content, firstOrientation } = pdfContent(doc, margins[0] + margins[2]);
   return {

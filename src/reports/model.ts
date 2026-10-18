@@ -80,11 +80,22 @@ export interface CommentaryField {
   auto: string;
 }
 
+/** A header or footer line: left, centre and right ({page} and {pages} become the page numbers). */
+export interface PageLine {
+  left: string;
+  center: string;
+  right: string;
+}
+
 export interface ReportDoc {
   template: ReportTemplate;
   nodes: DocNode[];
-  header: string;
-  footer: string;
+  header: PageLine;
+  footer: PageLine;
+  /** The header and footer on the first page too. */
+  pageTextFirst: boolean;
+  /** On a letterhead: the header and footer lines as well as its own. */
+  pageTextWithLetterhead: boolean;
   title: string;
   author: string;
   fileName: string;

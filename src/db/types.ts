@@ -648,8 +648,18 @@ export interface ReportTemplate {
   marginMm: number;
   fontSize: number;
   accent: string;
+  /** Header and footer text, with fill-ins such as [project] and [page] of [pages]: left (headerText, footerText), centre and right. */
   headerText?: string;
   footerText?: string;
+  headerCenter?: string;
+  headerRight?: string;
+  footerCenter?: string;
+  /** Unset: "Page [page] of [pages]" (none on a letterhead). */
+  footerRight?: string;
+  /** The header and footer on the first page too (unset: unless the title has a page of its own; never on a letterhead's first page). */
+  pageTextFirst?: boolean;
+  /** On a letterhead: this header and footer as well as the letterhead's own (unset: the letterhead's only). */
+  pageTextWithLetterhead?: boolean;
   logo?: string; // data URL
   /** Height of the logo on the title page (mm); its width follows the image's proportions. */
   logoHeightMm?: number;
@@ -669,6 +679,8 @@ export interface ReportTemplate {
   period?: 'latestRound';
   blocks: ReportBlock[];
   builtIn?: boolean;
+  /** Added by EnviroDB for you to change (the Quick check's): not your own work – nor shared – until you save a change. */
+  starter?: boolean;
   updatedAt: string;
 }
 

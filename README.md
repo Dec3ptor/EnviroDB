@@ -73,7 +73,11 @@ there as they work and show up for the others within seconds.
 - **Quick check – no project needed.** Drop lab results (Excel, CSV, PDF, or a zip) on *Quick check* and
   see them straight away against the guideline sets you choose, exceedances highlighted in each set's
   colour, with a count per set and a list of analytes EnviroDB couldn't match. Nothing is saved: download
-  the table to Excel or a short Word / PDF report, or *Make a project of it* to keep the results.
+  the table to Excel or a short Word / PDF report, or *Make a project of it* to keep the results. The
+  Word / PDF report follows the *Quick check* template – change it with the pencil beside the layout
+  list (its sections, header and footer, page), or pick another of your templates. In it, the file's
+  name is the project's ([project]) and its lab job the project number ([project code]); tables
+  without guideline sets of their own use the sets chosen on the page.
 - **Templates for every kind of report – your own, easily.** *Report templates* groups them: monitoring
   reports, letters, management plans, site investigations, ecology and others. *New template* starts one
   from a blank page, a starter (a **management plan** with the monitoring programme, trigger–action–response
@@ -171,6 +175,13 @@ there as they work and show up for the others within seconds.
 - **Numbers in full.** Results are written out in full everywhere – 0.00005, never 5e-5 – in the
   app, the reports and the Excel download. In PDF and Word tables a number too wide for its column is set
   a little smaller so it stays whole on one line, rather than breaking or spilling out.
+- **Headers and footers.** Each template has a header and a footer with left, centre and right text –
+  in the template editor, or on the Reports tab under *Edit layout → Header and footer* for one
+  project's report. Type "[" to fill in [page] of [pages], [project], [project code], [period],
+  [report], [company], [date] and more; a small page shows how they'll look. Choose whether they go on
+  the first page too. On a letterhead they're the letterhead's own, unless you switch on *Add my own
+  lines* – then yours go under its header and above its footer, in Word (on the company's own Word
+  letterhead) and in the PDF.
 - **Choose the look.** Templates are written as a report or a letter, with table headers in the accent
   colour or grey, exceedances shaded or in red text, and headings numbered or not, separately from
   tables and figures.

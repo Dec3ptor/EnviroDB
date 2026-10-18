@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Anchor, Badge, Button, Card, Grid, Group, Loader, Modal, Select, Stack, Tabs, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
+import { Alert, Anchor, Badge, Button, Card, Collapse, Grid, Group, Loader, Modal, Select, Stack, Tabs, Text, TextInput, Textarea, Title, Tooltip, UnstyledButton } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
-import { IconCheck, IconDeviceFloppy, IconFileTypeDocx, IconFileTypePdf, IconLayoutList, IconSettings, IconSparkles, IconTemplate } from '@tabler/icons-react';
+import { IconCheck, IconChevronDown, IconChevronRight, IconDeviceFloppy, IconFileTypeDocx, IconFileTypePdf, IconLayoutList, IconSettings, IconSparkles, IconTemplate } from '@tabler/icons-react';
 import { db, saveReportWork } from '../../db/db';
 import { hasViewState, revivePeriod, seedViewState, useViewState } from '../../hooks/useViewState';
 import { useProject } from '../../hooks/useProjectData';
@@ -28,6 +28,7 @@ import { InsertRef, ReportDocContext, ReportSamplesContext, ReportSitesContext }
 import { InsertCalc } from '../../components/report/InsertCalc';
 import { summaryText } from '../../reports/build';
 import { PagesControl } from '../../components/report/PagesControl';
+import { PageTextEditor } from '../../components/report/PageText';
 import { JumpToPreview, usePreviewPane } from '../../components/report/JumpToPreview';
 import { ReportSites } from '../../components/report/ReportSites';
 
@@ -88,6 +89,7 @@ export function ReportsTab() {
   const data = useProject();
   const { project, obligations } = data;
   const settings = useSettings();
+  const [pageTextOpen, setPageTextOpen] = useState(false);
   const templates = useLiveQuery(() => db.templates.toArray(), []);
   const [params, setParams] = useSearchParams();
 
@@ -418,6 +420,21 @@ export function ReportsTab() {
                       </ReportDocContext.Provider>
                     </ReportSamplesContext.Provider>
                   </ReportSitesContext.Provider>
+                  <Card withBorder padding="xs">
+                    <UnstyledButton onClick={() => setPageTextOpen((o) => !o)} w="100%">
+                      <Group gap={6} wrap="nowrap">
+                        {pageTextOpen ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+                        <Text size="sm" fw={600}>
+                          Header and footer
+                        </Text>
+                      </Group>
+                    </UnstyledButton>
+                    <Collapse in={pageTextOpen}>
+                      <div style={{ marginTop: 8 }}>
+                        <PageTextEditor template={template} onChange={(patch) => changeTemplate({ ...template, ...patch })} onLetterhead={!!(template.letterhead && settings.letterhead)} title={false} />
+                      </div>
+                    </Collapse>
+                  </Card>
                   <Anchor component={Link} to={`/templates/${stored.id}`} size="xs">
                     <Group gap={4}>
                       <IconTemplate size={13} />

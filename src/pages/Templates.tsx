@@ -18,6 +18,7 @@ import { buildReport, DEFAULT_LOGO_MM } from '../reports/build';
 import { PdfPreview } from '../reports/PdfPreview';
 import { SectionsEditor } from '../components/report/SectionsEditor';
 import { ReportDocContext } from '../components/report/blocks';
+import { PageTextEditor } from '../components/report/PageText';
 import { readImageFile } from '../lib/image';
 import { roundPeriods } from '../lib/latest';
 import { JumpToPreview, usePreviewPane } from '../components/report/JumpToPreview';
@@ -200,12 +201,7 @@ export function TemplateEditorPage() {
                     <NumberInput label="Margins (mm)" min={8} max={40} value={t.marginMm} onChange={(v) => setT({ ...t, marginMm: Number(v) || 20 })} disabled={!!(t.letterhead && settings.letterhead)} />
                     <NumberInput label="Font size (pt)" min={7} max={14} step={0.5} value={t.fontSize} onChange={(v) => setT({ ...t, fontSize: Number(v) || 10 })} />
                   </SimpleGrid>
-                  {!(t.letterhead && settings.letterhead) && (
-                    <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                      <TextInput label="Header text" value={t.headerText ?? ''} onChange={(e) => setT({ ...t, headerText: e.currentTarget.value })} />
-                      <TextInput label="Footer text" value={t.footerText ?? ''} onChange={(e) => setT({ ...t, footerText: e.currentTarget.value })} description="Page numbers are added automatically" />
-                    </SimpleGrid>
-                  )}
+                  <PageTextEditor template={t} onChange={(patch) => setT({ ...t, ...patch })} onLetterhead={!!(t.letterhead && settings.letterhead)} disabled={readOnly} />
                   <Group align="flex-end" gap="md" wrap="wrap">
                     <ColorInput label="Accent colour" value={t.accent} onChange={(v) => setT({ ...t, accent: v })} w={160} swatches={['#0f766e', '#1d4ed8', '#b91c1c', '#7c3aed', '#334155', '#047857', '#c2410c']} />
                     <Stack gap={6} mb={4}>

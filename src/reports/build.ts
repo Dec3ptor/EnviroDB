@@ -16,7 +16,7 @@ import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
 import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type ReportDoc, type ReportLook, type Run } from './model';
 import { CELL_PAD_MM, fontWidthFactor, longestWordMm as longestWord, textWidthMm as textWidth } from './measure';
 import { calcValue, fillCalcs } from './calc';
-import { captionOf, fillCaption, tidyCaption } from './captions';
+import { captionOf, fillCaption, tidyCaption, usualFooterRight } from './captions';
 import { limitsTable, ruleValueText } from '../lib/limitsTable';
 
 export interface BuildOptions {
@@ -325,6 +325,9 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   };
   const siteFill = (s: Site | undefined): Record<string, string> => (s ? { site: s.name ? `${s.code} – ${s.name}` : s.code, sitecode: s.code, sitename: s.name ?? '', sitetype: s.type ?? '' } : { site: '', sitecode: '', sitename: '', sitetype: '' });
   const capText = (blk: ReportBlock, values: Record<string, string> = {}) => tidyCaption(fill(fillCaption(captionOf(blk), { ...capBase, ...values })));
+  // the header's and footer's: [page] and [pages] are left for each page ({page}, {pages})
+  const pageValues: Record<string, string> = { ...capBase, page: '{page}', pages: '{pages}', report: t.name, client: project.client ?? '', company: settings.company ?? '', author: settings.author ?? '', date: formatDate(todayStr()) };
+  const pageText = (s: string | undefined) => (s ? tidyCaption(fill(fillCaption(s, pageValues))) : '');
   const tableCaption = (s: string) => numbered('Table', 'table', s);
   const figCaption = (s: string) => numbered('Figure', 'fig', s);
   /** How an exceedance stands out in a table cell: shading, or red text. */
@@ -1230,8 +1233,11 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     letterhead: shownLetterhead,
     commentary,
     autoNotes,
-    header: fill(t.headerText),
-    footer: fill(t.footerText),
+    header: { left: pageText(t.headerText), center: pageText(t.headerCenter), right: pageText(t.headerRight) },
+    footer: { left: pageText(t.footerText), center: pageText(t.footerCenter), right: pageText(t.footerRight ?? usualFooterRight(!!letterhead)) },
+    // not on the first page when the title has a page of its own, nor on a letterhead's
+    pageTextFirst: t.pageTextFirst ?? (!letterhead && !(nodes[0]?.t === 'title' && nodes[0].pageBreakAfter)),
+    pageTextWithLetterhead: !!t.pageTextWithLetterhead,
     title: `${project.name} – ${t.name}`,
     author: settings.author || settings.company,
     fileName: `${project.name} - ${t.name} - ${wholeMonth(shownStart, shownEnd) ? monthLabel(shownStart, shownEnd) : `${formatDate(shownStart, { format: 'D MMM YYYY' })} to ${formatDate(shownEnd, { format: 'D MMM YYYY' })}`}`.replace(/[\\/:*?"<>|]+/g, '-'),

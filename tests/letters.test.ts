@@ -358,6 +358,29 @@ describe('letterhead from a Word file', () => {
     expect(JSON.stringify(footer(2, 3))).toContain('example.com');
   });
 
+  it('adds the template’s own header and footer lines to the letterhead’s when asked', async () => {
+    const own: ReportTemplate = { ...annual, pageTextWithLetterhead: true, headerText: '[project]', headerRight: 'Page [page] of [pages]', footerText: 'Ref [project code]', footerRight: '' };
+    const doc = buildReport({ bundle: await loadBundle(projectId), template: own, period: year, settings: { ...me, letterhead: lh } });
+    expect(doc.header).toEqual({ left: 'Demo – Kōwhai Quarry stormwater discharge', center: '', right: 'Page {page} of {pages}' });
+    expect(doc.pageTextFirst).toBe(false); // the letter's first page keeps the letterhead's own
+    const zip = await JSZip.loadAsync(await (await docxBlob(doc)).arrayBuffer());
+    const parts = await Promise.all(Object.keys(zip.files).filter((f) => /^word\/letterhead-(header|footer)\d+\.xml$/.test(f)).map(async (f) => [f, await zip.file(f)!.async('string')] as const));
+    const withRef = parts.filter(([, x]) => x.includes('Ref DEMO-001'));
+    const withProject = parts.filter(([, x]) => x.includes('Kōwhai Quarry stormwater discharge'));
+    expect(withRef.length).toBe(1); // the other pages' footer only
+    expect(withProject.length).toBe(1);
+    expect(withProject[0][1]).toMatch(/<w:fldSimple w:instr=" PAGE ">/);
+    expect(withProject[0][1]).toMatch(/<w:fldSimple w:instr=" NUMPAGES ">/);
+    // the PDF: under the letterhead's header on page 2, not on page 1
+    const def = toPdfDefinition(doc);
+    const header = def.header as (p: number, n: number) => { stack: unknown[] };
+    expect(header(1, 3).stack).toHaveLength(1);
+    expect(JSON.stringify(header(2, 3).stack[1])).toContain('Page 2 of 3');
+    // without asking: the letterhead's only
+    const plain = buildReport({ bundle: await loadBundle(projectId), template: { ...own, pageTextWithLetterhead: false }, period: year, settings: { ...me, letterhead: lh } });
+    expect(((toPdfDefinition(plain).header as (p: number, n: number) => { stack: unknown[] })(2, 3)).stack).toHaveLength(1);
+  });
+
   it('builds Word documents on the file’s own header and footers, with nothing left dangling', async () => {
     const doc = buildReport({ bundle: await loadBundle(projectId), template: annual, period: year, settings: { ...me, letterhead: lh } }); // has a landscape appendix: two sections
     const zip = await JSZip.loadAsync(await (await docxBlob(doc)).arrayBuffer());

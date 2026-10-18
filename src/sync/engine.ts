@@ -259,7 +259,8 @@ export async function dailySnapshot(ctx: SyncContext, today: string, makeBackup:
 const BUILT_IN_TABLES = new Set(['parameters', 'guidelineSets', 'templates']);
 
 function sharedRecords(table: string, recs: Array<Record<string, unknown>>) {
-  return recs.filter((r) => !(BUILT_IN_TABLES.has(table) && r.builtIn) && isSharedRecord(table, r[primaryKeyName(table)]));
+  // built-in reference data, and a starter template not yet changed, are every browser's own
+  return recs.filter((r) => !(BUILT_IN_TABLES.has(table) && r.builtIn) && !(table === 'templates' && r.starter) && isSharedRecord(table, r[primaryKeyName(table)]));
 }
 
 /** What this browser holds of its own: projects, and other work such as templates (built-in data and the team settings aside). */

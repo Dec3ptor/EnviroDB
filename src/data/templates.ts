@@ -23,8 +23,8 @@ const base = {
   marginMm: 20,
   fontSize: 10,
   accent: '#0f766e',
-  headerText: '{{project.name}}',
-  footerText: '{{company}} · {{project.code}}',
+  headerText: '[project]',
+  footerText: '[company] · [project code]',
   numbering: true,
   builtIn: true,
   updatedAt: UPDATED,
@@ -174,7 +174,7 @@ const letterEvent: ReportBlock[] = [
 ];
 
 /** Letters print on the letterhead in Settings: headings in its colour, grey table headers, exceedances in red. */
-const letter = { ...base, style: 'letter' as const, letterhead: true, tableHeader: 'grey' as const, highlightStyle: 'text' as const, numbering: true, numberHeadings: false, headerText: '', footerText: '{{company}}' };
+const letter = { ...base, style: 'letter' as const, letterhead: true, tableHeader: 'grey' as const, highlightStyle: 'text' as const, numbering: true, numberHeadings: false, headerText: '', footerText: '[company]' };
 
 const appendix: ReportBlock[] = [
   { id: id('d'), type: 'heading', text: 'Appendix – Monitoring data', level: 1 },
@@ -214,6 +214,34 @@ export const BUILT_IN_TEMPLATES: ReportTemplate[] = [
   { ...base, kind: 'letter', id: 'tpl-notification', name: 'Exceedance notification', description: 'Brief notification to the regulator listing exceedances and actions taken.', blocks: notification },
   { ...base, kind: 'monitoring', id: 'tpl-appendix', name: 'Data appendix', description: 'Full results tables and statistics for appending to a report.', blocks: appendix, orientation: 'landscape' },
 ];
+
+/**
+ * The Quick check page's Word and PDF downloads – yours to change (it isn't a built-in): the file's name is the
+ * project's ({{project.name}}), its lab job the project number; tables with no guideline sets of their own use the sets
+ * chosen on the page.
+ */
+export const QUICK_CHECK_TEMPLATE_ID = 'tpl-quick-check';
+export const QUICK_CHECK_TEMPLATE: ReportTemplate = {
+  id: QUICK_CHECK_TEMPLATE_ID,
+  name: 'Quick check',
+  kind: 'other',
+  description: 'The Word and PDF downloads on the Quick check page – change it to suit. Tables without guideline sets of their own compare with the sets chosen there.',
+  orientation: 'landscape',
+  pageSize: 'A4',
+  marginMm: 15,
+  fontSize: 9.5,
+  accent: '#0f766e',
+  headerText: '[project]',
+  footerText: '[company]',
+  numbering: true,
+  starter: true,
+  blocks: [
+    { id: 'qc-title', type: 'title', title: 'Quick check', subtitle: '{{project.name}}', showDetails: false, pageBreakAfter: false },
+    { id: 'qc-summary', type: 'summary' },
+    { id: 'qc-results', type: 'resultsTable', title: 'Results compared with guideline values', siteIds: [], parameterIds: [], layout: 'parametersAsRows', guidelineSetIds: null, ruleColumns: 'none', highlight: true, splitBySite: false },
+  ],
+  updatedAt: UPDATED,
+};
 
 /** What templates are for, in the order they're listed. */
 export const REPORT_KINDS: Array<{ kind: ReportKind; label: string }> = [

@@ -19,7 +19,7 @@ import type {
 } from './types';
 import { BUILT_IN_PARAMETERS, splitPhysicalAndField } from '../data/parameters';
 import { BUILT_IN_GUIDELINES } from '../data/guidelines';
-import { BUILT_IN_TEMPLATES } from '../data/templates';
+import { BUILT_IN_TEMPLATES, QUICK_CHECK_TEMPLATE, QUICK_CHECK_TEMPLATE_ID } from '../data/templates';
 import { captureMiddleware, markUncaptured } from '../sync/capture';
 import { isDeleted, isSharedRecord, rowKey, type DirtySegment, type SyncRow } from '../sync/model';
 import type { SyncedFile } from '../sync/engine';
@@ -135,6 +135,9 @@ export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<voi
     const tplStates = await database.syncState.bulkGet(BUILT_IN_TEMPLATES.map((t) => rowKey('templates', t.id)));
     const tplDeleted = new Set(tplStates.filter((r): r is SyncRow => !!r && isDeleted(r)).map((r) => r.k));
     await database.templates.bulkPut(BUILT_IN_TEMPLATES.filter((t) => !tplDeleted.has(t.id)));
+    // the Quick check's template: added once, then yours to change (or delete)
+    const qcState = await database.syncState.get(rowKey('templates', QUICK_CHECK_TEMPLATE_ID));
+    if (!(qcState && isDeleted(qcState)) && !(await database.templates.get(QUICK_CHECK_TEMPLATE_ID))) await database.templates.put(QUICK_CHECK_TEMPLATE);
   });
 }
 

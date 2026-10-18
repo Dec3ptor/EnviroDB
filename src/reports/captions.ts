@@ -52,6 +52,21 @@ export function captionFillIns(b: ReportBlock): FillIn[] {
 /** Fill-ins for notes under a table: the ones every table has. */
 export const NOTE_FILL_INS = COMMON;
 
+/** Fill-ins for a page's header and footer. */
+export const PAGE_FILL_INS: FillIn[] = [
+  { name: 'page', help: 'The page number', example: '2' },
+  { name: 'pages', help: 'How many pages', example: '14' },
+  { name: 'report', help: "The template's name", example: 'Annual compliance monitoring report' },
+  ...COMMON,
+  { name: 'client', help: 'The client', example: 'Demo Aggregates Ltd' },
+  { name: 'company', help: 'Your company (Settings)', example: 'Example Ltd' },
+  { name: 'author', help: 'Your name (Settings)', example: 'Sam Smith' },
+  { name: 'date', help: "Today's date", example: '18 Oct 2026' },
+];
+
+/** What the footer's right side says when it hasn't been changed: the page number, except on a letterhead (it has its own). */
+export const usualFooterRight = (onLetterhead: boolean) => (onLetterhead ? '' : 'Page [page] of [pages]');
+
 /** "Site name", "site.name" and "siteName" are all the same fill-in. */
 export const fillKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 const ALIASES: Record<string, string> = {
@@ -76,9 +91,12 @@ export function fillCaption(pattern: string, values: Record<string, string>): st
   return pattern.replace(/\{\{\s*([\w. ]+?)\s*\}\}/g, (m, k: string) => get(k) ?? m).replace(/\[([^[\]\n]{1,40})\]/g, (m, k: string) => get(k) ?? m);
 }
 
-/** Tidy what an empty fill-in leaves: "DP1 ()" → "DP1", "DP1 – , 3 Mar" → "DP1, 3 Mar". */
+/** Tidy what an empty fill-in leaves: "DP1 ()" → "DP1", "DP1 – , 3 Mar" → "DP1, 3 Mar", " · DEMO-001" → "DEMO-001". */
 export function tidyCaption(s: string): string {
   return s
+    .replace(/(\s[·|]\s*)+(?=\s[·|]\s)/g, '')
+    .replace(/^\s*[·|]\s*/, '')
+    .replace(/\s*[·|]\s*$/, '')
     .replace(/\s*\(\s*\)/g, '')
     .replace(/\s+[–-]\s*(?=[,.;:)]|$)/g, '')
     .replace(/,\s*(?=[,.;]|$)/g, '')
