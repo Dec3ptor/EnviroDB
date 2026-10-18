@@ -5,7 +5,7 @@ import { db } from '../../db/db';
 import type { CalcStat, Parameter, ReportBlock, ReportBlockType, RoundTableBlock, Sample, Site, TableCalc, TableStat } from '../../db/types';
 import { CALC_STATS, TABLE_STATS, calcHead } from '../../reports/calc';
 import { InsertCalc, paramOptions } from './InsertCalc';
-import { useCalcChoices } from './projectChoices';
+import { ReportProjectContext, useCalcChoices } from './projectChoices';
 import { FillInInput } from './FillInInput';
 import { NOTE_FILL_INS, captionFillIns, defaultCaption, earlierCaption, tidyCaption, withCaption } from '../../reports/captions';
 import { formatDate } from '../../lib/dates';
@@ -361,6 +361,9 @@ function BlockSitesField({ block, onChange }: { block: ReportBlock; onChange: (b
 function BlockParamsField({ block, params, onChange, all }: { block: ReportBlock & { parameterIds: string[] }; params: Parameter[]; onChange: (b: ReportBlock) => void; all: string }) {
   const [mode, setMode] = useState<Choice>(block.parameterIds.length ? 'only' : block.excludeParameterIds?.length ? 'except' : 'all');
   const set = (patch: Partial<{ parameterIds: string[]; excludeParameterIds?: string[] }>) => onChange({ ...block, ...patch } as ReportBlock);
+  // on a project's Reports tab: its own parameters (and any chosen already), not the whole library
+  const project = useContext(ReportProjectContext);
+  const onlyIds = useMemo(() => (project ? new Set([...project.paramIds, ...block.parameterIds, ...(block.excludeParameterIds ?? [])]) : undefined), [project, block.parameterIds, block.excludeParameterIds]);
   return (
     <Stack gap={6}>
       <Text size="sm" fw={500}>
@@ -383,10 +386,11 @@ function BlockParamsField({ block, params, onChange, all }: { block: ReportBlock
           {all}
         </Text>
       )}
-      {mode === 'only' && <ParamPicker params={params} label="Only these parameters" placeholder="Choose the parameters" value={block.parameterIds} onChange={(v) => set({ parameterIds: v })} />}
+      {mode === 'only' && <ParamPicker params={params} onlyIds={onlyIds} label="Only these parameters" placeholder="Choose the parameters" value={block.parameterIds} onChange={(v) => set({ parameterIds: v })} />}
       {mode === 'except' && (
         <ParamPicker
           params={params}
+          onlyIds={onlyIds}
           label="Leave out these parameters"
           description={`${all}, less these – e.g. water levels, given a table of their own`}
           placeholder="Choose the parameters to leave out"

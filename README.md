@@ -96,7 +96,8 @@ there as they work and show up for the others within seconds.
   schedules, consent rules and reporting obligations). *Insert a calculation* puts a value into text –
   `{{calc:median:no3-n:DS1}}` – so a sentence reads "the median nitrate-N at DS1 was 0.82 mg/L". On a
   project's Reports tab (or previewing a template with a project), *Insert a calculation* and the
-  Calculations section offer only that project's sites and the parameters it has results for, by group.
+  Calculations section offer only that project's sites and the parameters it has results for, by group –
+  as do the sections' own parameter choices (*Only these*, *All except*).
 - **An automatic summary, and a draft to edit.** The *Automatic summary* section describes the sampling,
   the monitoring programme, compliance and guideline exceedances, and now compares the period with the
   one before (samples, limits exceeded, and whether the key parameters' medians were higher, lower or
