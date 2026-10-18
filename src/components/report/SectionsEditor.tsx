@@ -5,7 +5,7 @@ import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalList
 import { CSS } from '@dnd-kit/utilities';
 import { IconArrowDown, IconArrowUp, IconChevronDown, IconChevronRight, IconCopy, IconDots, IconPageBreak, IconGripVertical, IconLayoutRows, IconPlus, IconTrash } from '@tabler/icons-react';
 import type { ReportBlock, ReportBlockType } from '../../db/types';
-import { BLOCK_GROUPS, BLOCK_LABELS, BlockForm, BlockSitesNote, blockSummary, newBlock } from './blocks';
+import { BLOCK_GROUPS, BLOCK_LABELS, BlockForm, BlockSitesNote, ReportBlocksContext, blockSummary, newBlock } from './blocks';
 import { uid } from '../../lib/ids';
 import { insertAt, moveSection, sectionRange, setPages, stepSection, type Orientation } from './sections';
 import { pageOrientations } from '../../reports/build';
@@ -250,104 +250,106 @@ export function SectionsEditor({ blocks, onChange, orientation, open, onOpen, re
     if (from >= 0 && to >= 0) onChange(moveSection(blocks, from, to));
   };
   return (
-    <Stack gap={4}>
-      {/* while a heading is dragged its section folds into it, so it lands with its content exactly where it is dropped */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-        onDragStart={(e) => setDragging(String(e.active.id))}
-        onDragMove={(e) => String(e.active.id).startsWith('new:') && setDropAt(targetOf(e))}
-        onDragCancel={() => {
-          setDragging(null);
-          setDropAt(null);
-        }}
-        onDragEnd={onDragEnd}
-      >
-        {!readOnly && (
-          <Card withBorder padding="xs" className="sec-palette">
-            <UnstyledButton onClick={() => setShowPalette((o) => !o)} className="sec-palette-head">
-              {showPalette ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
-              <Text size="sm" fw={600}>
-                Add a section
-              </Text>
-              <Text size="xs" c="dimmed">
-                {showPalette ? `drag one into place, or click to add it ${open ? 'after the section selected' : 'at the end'}` : ''}
-              </Text>
-            </UnstyledButton>
-            <Collapse in={showPalette}>
-              <Stack gap={6} mt={6}>
-                {BLOCK_GROUPS.map((g) => (
-                  <div key={g.label}>
-                    <Text size="xs" c="dimmed" fw={600} mb={3}>
-                      {g.label}
-                    </Text>
-                    <Group gap={4}>
-                      {g.types.map((type) => (
-                        <PaletteItem key={type} type={type} onAdd={() => add(type)} />
-                      ))}
-                    </Group>
-                  </div>
-                ))}
-              </Stack>
-            </Collapse>
-          </Card>
-        )}
-        <SortableContext items={blocks.filter((b) => !carried.has(b.id)).map((b) => b.id)} strategy={verticalListSortingStrategy}>
-          {blocks.map((b, i) =>
-            carried.has(b.id) ? null : (
-              <Row
-                key={b.id}
-                block={b}
-                index={i}
-                blocks={blocks}
-                orient={orient[i]}
-                base={orientation}
-                open={open === b.id}
-                readOnly={readOnly}
-                carrying={b.id === dragging ? carried.size : 0}
-                depth={depths[i]}
-                dropMark={fromPalette && dropAt !== null ? (dropAt === i ? 'before' : dropAt === i + 1 && i === blocks.length - 1 ? 'after' : undefined) : undefined}
-                onToggle={() => onOpen(open === b.id ? null : b.id)}
-                onBlocks={onChange}
-              />
-            ),
+    <ReportBlocksContext.Provider value={{ blocks, setBlocks: onChange }}>
+      <Stack gap={4}>
+        {/* while a heading is dragged its section folds into it, so it lands with its content exactly where it is dropped */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+          onDragStart={(e) => setDragging(String(e.active.id))}
+          onDragMove={(e) => String(e.active.id).startsWith('new:') && setDropAt(targetOf(e))}
+          onDragCancel={() => {
+            setDragging(null);
+            setDropAt(null);
+          }}
+          onDragEnd={onDragEnd}
+        >
+          {!readOnly && (
+            <Card withBorder padding="xs" className="sec-palette">
+              <UnstyledButton onClick={() => setShowPalette((o) => !o)} className="sec-palette-head">
+                {showPalette ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+                <Text size="sm" fw={600}>
+                  Add a section
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {showPalette ? `drag one into place, or click to add it ${open ? 'after the section selected' : 'at the end'}` : ''}
+                </Text>
+              </UnstyledButton>
+              <Collapse in={showPalette}>
+                <Stack gap={6} mt={6}>
+                  {BLOCK_GROUPS.map((g) => (
+                    <div key={g.label}>
+                      <Text size="xs" c="dimmed" fw={600} mb={3}>
+                        {g.label}
+                      </Text>
+                      <Group gap={4}>
+                        {g.types.map((type) => (
+                          <PaletteItem key={type} type={type} onAdd={() => add(type)} />
+                        ))}
+                      </Group>
+                    </div>
+                  ))}
+                </Stack>
+              </Collapse>
+            </Card>
           )}
-        </SortableContext>
-        {!readOnly && <EndZone active={!!fromPalette} />}
-        <DragOverlay dropAnimation={null}>{fromPalette ? <div className="sec-chip sec-chip-drag">{BLOCK_LABELS[fromPalette].label}</div> : null}</DragOverlay>
-      </DndContext>
-      {!readOnly && !blocks.length && (
-        <Text size="sm" c="dimmed">
-          No sections yet – drag one from the palette, or click one to add it.
-        </Text>
-      )}
-      {!readOnly && (
-        <Menu position="bottom-start" width={320} withinPortal>
-          <Menu.Target>
-            <Button variant="subtle" size="xs" leftSection={<IconPlus size={14} />} style={{ alignSelf: 'flex-start' }}>
-              Add section{open ? ' below the selected one' : ''}
-            </Button>
-          </Menu.Target>
-          <Menu.Dropdown mah={420} style={{ overflowY: 'auto' }}>
-            {BLOCK_GROUPS.map((g) => (
-              <div key={g.label}>
-                <Menu.Label>{g.label}</Menu.Label>
-                {g.types.map((k) => (
-                  <Menu.Item key={k} onClick={() => add(k)}>
-                    <Text size="sm" fw={500}>
-                      {BLOCK_LABELS[k].label}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      {BLOCK_LABELS[k].help}
-                    </Text>
-                  </Menu.Item>
-                ))}
-              </div>
-            ))}
-          </Menu.Dropdown>
-        </Menu>
-      )}
-    </Stack>
+          <SortableContext items={blocks.filter((b) => !carried.has(b.id)).map((b) => b.id)} strategy={verticalListSortingStrategy}>
+            {blocks.map((b, i) =>
+              carried.has(b.id) ? null : (
+                <Row
+                  key={b.id}
+                  block={b}
+                  index={i}
+                  blocks={blocks}
+                  orient={orient[i]}
+                  base={orientation}
+                  open={open === b.id}
+                  readOnly={readOnly}
+                  carrying={b.id === dragging ? carried.size : 0}
+                  depth={depths[i]}
+                  dropMark={fromPalette && dropAt !== null ? (dropAt === i ? 'before' : dropAt === i + 1 && i === blocks.length - 1 ? 'after' : undefined) : undefined}
+                  onToggle={() => onOpen(open === b.id ? null : b.id)}
+                  onBlocks={onChange}
+                />
+              ),
+            )}
+          </SortableContext>
+          {!readOnly && <EndZone active={!!fromPalette} />}
+          <DragOverlay dropAnimation={null}>{fromPalette ? <div className="sec-chip sec-chip-drag">{BLOCK_LABELS[fromPalette].label}</div> : null}</DragOverlay>
+        </DndContext>
+        {!readOnly && !blocks.length && (
+          <Text size="sm" c="dimmed">
+            No sections yet – drag one from the palette, or click one to add it.
+          </Text>
+        )}
+        {!readOnly && (
+          <Menu position="bottom-start" width={320} withinPortal>
+            <Menu.Target>
+              <Button variant="subtle" size="xs" leftSection={<IconPlus size={14} />} style={{ alignSelf: 'flex-start' }}>
+                Add section{open ? ' below the selected one' : ''}
+              </Button>
+            </Menu.Target>
+            <Menu.Dropdown mah={420} style={{ overflowY: 'auto' }}>
+              {BLOCK_GROUPS.map((g) => (
+                <div key={g.label}>
+                  <Menu.Label>{g.label}</Menu.Label>
+                  {g.types.map((k) => (
+                    <Menu.Item key={k} onClick={() => add(k)}>
+                      <Text size="sm" fw={500}>
+                        {BLOCK_LABELS[k].label}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {BLOCK_LABELS[k].help}
+                      </Text>
+                    </Menu.Item>
+                  ))}
+                </div>
+              ))}
+            </Menu.Dropdown>
+          </Menu>
+        )}
+      </Stack>
+    </ReportBlocksContext.Provider>
   );
 }

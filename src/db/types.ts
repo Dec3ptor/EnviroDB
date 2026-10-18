@@ -363,6 +363,8 @@ export interface ReportBlockBase {
    * to the orientation before it, so the setting moves with the section.
    */
   pages?: 'portrait' | 'landscape';
+  /** Tables and graphs: under a numbered caption ("Table 3. …", the default) or a heading of their own (not numbered). */
+  captionStyle?: 'caption' | 'heading';
   /** Sections with parameters: leave these out (e.g. water levels, given a table of their own). */
   excludeParameterIds?: ID[];
   /** Sections with sites: leave these out. */

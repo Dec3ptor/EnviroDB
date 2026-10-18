@@ -4,6 +4,8 @@ export interface Run {
   text: string;
   bold?: boolean;
   italic?: boolean;
+  /** A link to the table or figure with this anchor (a reference such as "Table 3"). */
+  link?: string;
 }
 
 export interface Cell {
@@ -18,21 +20,22 @@ export interface Cell {
 
 export type DocNode =
   | { t: 'title'; title: string; subtitle?: string; details: Array<[string, string]>; logo?: { dataUrl: string; widthMm: number; heightMm: number }; pageBreakAfter: boolean }
-  | { t: 'h'; level: 1 | 2 | 3; text: string; number?: string }
+  | { t: 'h'; level: 1 | 2 | 3; text: string; number?: string; anchor?: string }
   /** A paragraph; `quote` = an indented quotation in italics, e.g. a consent condition. */
   | { t: 'p'; runs: Run[]; quote?: boolean }
   /** Lines kept together without space between them, e.g. an address. */
   | { t: 'lines'; lines: Run[][] }
   | { t: 'ul'; items: Run[][] }
-  | { t: 'table'; caption?: string; head: Cell[][]; body: Cell[][]; widths: Array<number | '*' | 'auto'>; fontSize?: number; notes?: string[]; keepRows?: number }
-  | { t: 'image'; dataUrl: string; widthCm: number; heightCm: number; caption?: string }
+  /** `anchor`: where links to this table (its caption) go. */
+  | { t: 'table'; caption?: string; head: Cell[][]; body: Cell[][]; widths: Array<number | '*' | 'auto'>; fontSize?: number; notes?: string[]; keepRows?: number; anchor?: string }
+  | { t: 'image'; dataUrl: string; widthCm: number; heightCm: number; caption?: string; anchor?: string }
   /** Graphs side by side (two per row). */
-  | { t: 'figures'; items: Array<{ dataUrl: string; widthCm: number; heightCm: number; caption?: string }> }
+  | { t: 'figures'; items: Array<{ dataUrl: string; widthCm: number; heightCm: number; caption?: string; anchor?: string }> }
   /**
    * Images in rows of `perRow` columns, each fitted in its cell (sizes worked out by the builder), a caption under
    * each and optionally one for the group.
    */
-  | { t: 'gallery'; perRow: number; colWidthMm: number; gapMm: number; border: boolean; items: Array<{ dataUrl: string; widthMm: number; heightMm: number; caption?: string }>; caption?: string }
+  | { t: 'gallery'; perRow: number; colWidthMm: number; gapMm: number; border: boolean; items: Array<{ dataUrl: string; widthMm: number; heightMm: number; caption?: string; anchor?: string }>; caption?: string; anchor?: string }
   | { t: 'note'; text: string }
   /** Sign-off: signatories side by side, `cols` to a row; without an image a line is left to sign by hand. */
   | { t: 'signatures'; closing?: Run[]; cols: number; colWidthMm: number; imageHeightMm: number; items: Array<{ role: string; name: string; lines: Run[][]; date?: string; image?: { dataUrl: string; widthMm: number; heightMm: number } }> }

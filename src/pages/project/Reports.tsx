@@ -24,7 +24,7 @@ import { saveTemplate, setSubmitted } from '../../db/repo';
 import type { FigureImage, FiguresBlock, LetterBlock, Project, ReportTemplate, TextBlock } from '../../db/types';
 import { FigureImages, FiguresLayout } from '../../components/report/Figures';
 import { SectionsEditor } from '../../components/report/SectionsEditor';
-import { ReportSitesContext } from '../../components/report/blocks';
+import { InsertRef, ReportSitesContext } from '../../components/report/blocks';
 import { InsertCalc } from '../../components/report/InsertCalc';
 import { summaryText } from '../../reports/build';
 import { PagesControl } from '../../components/report/PagesControl';
@@ -462,6 +462,15 @@ export function ReportsTab() {
                           </Button>
                         </Tooltip>
                         <InsertCalc target={`commentary-${c.key}`} value={prompts[c.key] ?? c.text} onChange={(text) => savePrompt(c.key, text)} />
+                        <InsertRef
+                          blocks={template.blocks}
+                          target={`commentary-${c.key}`}
+                          value={prompts[c.key] ?? c.text}
+                          onInsert={(text, named) => {
+                            savePrompt(c.key, text);
+                            if (named) changeTemplate({ ...template, blocks: template.blocks.map((x) => (x.id === named.id ? { ...x, ref: named.ref } : x)) });
+                          }}
+                        />
                       </Group>
                     )}
                     {c.auto && prompts[c.key] !== undefined && prompts[c.key] !== c.text && (

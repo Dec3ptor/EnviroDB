@@ -1,6 +1,6 @@
-import { ActionIcon, Badge, Button, Checkbox, Group, NumberInput, SegmentedControl, Select, Slider, Stack, Switch, TagsInput, Text, TextInput, Textarea } from '@mantine/core';
+import { ActionIcon, Badge, Button, Checkbox, Group, NumberInput, Popover, ScrollArea, SegmentedControl, Select, Slider, Stack, Switch, TagsInput, Text, TextInput, Textarea, UnstyledButton } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconLink, IconPlus, IconTrash } from '@tabler/icons-react';
 import { db } from '../../db/db';
 import type { CalcStat, Parameter, ReportBlock, ReportBlockType, Site } from '../../db/types';
 import { CALC_STATS } from '../../reports/calc';
@@ -148,6 +148,91 @@ export function blockSummary(b: ReportBlock): string {
     default:
       return BLOCK_LABELS[b.type].help;
   }
+}
+
+/** The template's sections and a way to change them together – for "Insert a reference" in a text section. */
+export const ReportBlocksContext = createContext<{ blocks: ReportBlock[]; setBlocks: (b: ReportBlock[]) => void } | null>(null);
+
+/** A table's or figure's name in the list: "Results table: Monitoring results". */
+function refLabel(b: ReportBlock): string {
+  const title = 'title' in b && typeof b.title === 'string' ? b.title : 'caption' in b && typeof b.caption === 'string' ? b.caption : '';
+  return `${BLOCK_LABELS[b.type].label}${title ? `: ${title}` : ''}`;
+}
+
+/** A name not used by another section, from the section's title (e.g. "monitoring-results", "monitoring-results-2"). */
+function freshRef(b: ReportBlock, blocks: ReportBlock[]): string {
+  const base = refName(refLabel(b).split(': ').pop() || BLOCK_LABELS[b.type].label) || 'item';
+  const used = new Set(blocks.map((x) => x.ref).filter(Boolean));
+  let name = base;
+  for (let i = 2; used.has(name); i++) name = `${base}-${i}`;
+  return name;
+}
+
+/**
+ * "Insert a reference": "see {{table:results}}" where the caret is in a text box – "Table 3" in the report, a link to it in
+ * the PDF and Word files. A table or figure without a name is given one.
+ */
+export function InsertRef({ blocks, target, value, onInsert }: { blocks: ReportBlock[]; target: string; value: string; onInsert: (text: string, named?: { id: string; ref: string }) => void }) {
+  const [open, setOpen] = useState(false);
+  const items = blocks.filter((b) => REF_KIND[b.type]);
+  const insert = (b: ReportBlock) => {
+    const ref = b.ref ?? freshRef(b, blocks);
+    const token = `{{${REF_KIND[b.type]}:${ref}}}`;
+    const el = document.getElementById(target) as HTMLTextAreaElement | null;
+    const at = el?.selectionStart ?? value.length;
+    const to = el?.selectionEnd ?? at;
+    const text = el ? `${value.slice(0, at)}${token}${value.slice(to)}` : `${value}${value && !value.endsWith(' ') ? ' ' : ''}${token}`;
+    onInsert(text, b.ref ? undefined : { id: b.id, ref });
+    setOpen(false);
+    if (el) requestAnimationFrame(() => (el.focus(), el.setSelectionRange(at + token.length, at + token.length)));
+  };
+  return (
+    <Popover opened={open} onChange={setOpen} width={340} position="bottom-start" withArrow shadow="md">
+      <Popover.Target>
+        <Button size="compact-xs" variant="subtle" leftSection={<IconLink size={14} />} onClick={() => setOpen((o) => !o)} style={{ alignSelf: 'flex-start' }}>
+          Insert a reference
+        </Button>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Text size="xs" c="dimmed" mb={6}>
+          Its number (“Table 3”) in the text – a link to it in the PDF and Word files, and right however the sections move.
+        </Text>
+        {items.length ? (
+          <ScrollArea.Autosize mah={280} type="auto">
+            <Stack gap={2}>
+              {items.map((b) => (
+                <UnstyledButton key={b.id} onClick={() => insert(b)} p={6} style={{ borderRadius: 4 }} className="edb-site-row">
+                  <Text size="sm" lh={1.3}>
+                    {REF_KIND[b.type] === 'fig' ? 'Figure' : 'Table'} – {refLabel(b)}
+                  </Text>
+                  <Text size="xs" c="dimmed" lh={1.3}>
+                    {b.ref ? `{{${REF_KIND[b.type]}:${b.ref}}}` : `named “${freshRef(b, blocks)}” when chosen`}
+                  </Text>
+                </UnstyledButton>
+              ))}
+            </Stack>
+          </ScrollArea.Autosize>
+        ) : (
+          <Text size="sm">No tables or figures in this template yet.</Text>
+        )}
+      </Popover.Dropdown>
+    </Popover>
+  );
+}
+
+/** Insert a reference in a text section: its text and a newly named table change together. */
+function TextRefs({ block }: { block: Extract<ReportBlock, { type: 'text' }> }) {
+  const ctx = useContext(ReportBlocksContext);
+  if (!ctx) return null;
+  const now = ctx.blocks.find((b) => b.id === block.id) as typeof block | undefined;
+  return (
+    <InsertRef
+      blocks={ctx.blocks}
+      target={`text-${block.id}`}
+      value={now?.text ?? block.text}
+      onInsert={(text, named) => ctx.setBlocks(ctx.blocks.map((b) => (b.id === block.id ? { ...b, text } : named && b.id === named.id ? { ...b, ref: named.ref } : b)) as ReportBlock[])}
+    />
+  );
 }
 
 /** The project's sites, for choosing a section's sites on a project's Reports tab (none in the template library). */
@@ -315,12 +400,33 @@ export function BlockForm({ block, onChange }: { block: ReportBlock; onChange: (
     <Stack gap="xs">
       <BlockSitesField block={block} onChange={onChange} />
       <BlockSettings block={block} onChange={onChange} />
+      {kind && block.type !== 'roundTable' && (
+        <div>
+          <Text size="sm" fw={500} mb={4}>
+            {block.type === 'figures' ? 'The section labelled with' : kind === 'fig' ? 'The graph labelled with' : 'Each table labelled with'}
+          </Text>
+          <SegmentedControl
+            size="xs"
+            value={block.captionStyle ?? 'caption'}
+            onChange={(v) => onChange({ ...block, captionStyle: v === 'heading' ? 'heading' : undefined })}
+            data={[
+              { value: 'caption', label: block.type === 'figures' ? 'Numbered captions' : kind === 'fig' ? 'A numbered caption (Figure 2)' : 'A numbered caption (Table 3)' },
+              { value: 'heading', label: 'A heading' },
+            ]}
+          />
+          {block.type === 'figures' && block.captionStyle === 'heading' && (
+            <Text size="xs" c="dimmed" mt={4}>
+              The section’s caption becomes a heading above the images; the images keep their own captions, not numbered.
+            </Text>
+          )}
+        </div>
+      )}
       {kind && (
         <TextInput
           size="xs"
           label="Name to refer to it in text (optional)"
           placeholder={kind === 'fig' ? 'e.g. site-plan' : 'e.g. triggers'}
-          description={block.ref ? `Write {{${kind}:${block.ref}}} in text for its number, e.g. “see ${kind === 'fig' ? 'Figure' : 'Table'} 2”.` : `Then {{${kind}:name}} in text gives its number, and stays right when sections move.`}
+          description={block.ref ? `Write {{${kind}:${block.ref}}} in text (or use Insert a reference) for its number, e.g. “see ${kind === 'fig' ? 'Figure' : 'Table'} 2” – a link to it in the PDF and Word files.` : `Then {{${kind}:name}} in text gives its number – a link to it in the PDF and Word files – and stays right when sections move.`}
           value={block.ref ?? ''}
           onChange={(e) => onChange({ ...block, ref: refName(e.currentTarget.value) || undefined })}
           maw={360}
@@ -379,7 +485,10 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
       return (
         <Stack gap="xs">
           <Textarea id={`text-${block.id}`} label="Text" autosize minRows={3} maxRows={14} value={block.text} onChange={(e) => set({ text: e.currentTarget.value })} description="Blank line = new paragraph · “- ” = bullet · **bold** · *italic* · {{placeholders}}" />
-          <InsertCalc target={`text-${block.id}`} value={block.text} onChange={(text) => set({ text })} />
+          <Group gap={4}>
+            <InsertCalc target={`text-${block.id}`} value={block.text} onChange={(text) => set({ text })} />
+            <TextRefs block={block} />
+          </Group>
           <Switch label="Fill in each time a report is generated (this text is the starting point)" checked={!!block.prompt} onChange={(e) => set({ prompt: e.currentTarget.checked })} />
         </Stack>
       );

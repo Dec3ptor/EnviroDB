@@ -442,3 +442,85 @@ describe('the letter templates', () => {
     expect(buildReport({ bundle: b, template: event, period: march, settings: me }).fileName).toMatch(/March 2026$/);
   });
 });
+
+describe('labels: numbered captions or headings, and references that link to them', () => {
+  type Heading = Extract<DocNode, { t: 'h' }>;
+  type Para = Extract<DocNode, { t: 'p' }>;
+  const template = (style?: 'caption' | 'heading'): ReportTemplate => ({
+    ...annual,
+    blocks: [
+      { id: 't1', type: 'text', text: 'The sites are listed in {{table:sites}} and the statistics are in {{table:stats}}.' },
+      { id: 's1', type: 'siteTable', ref: 'sites' },
+      { id: 's2', type: 'statsTable', title: 'Summary statistics', siteIds: [], parameterIds: [], stats: ['n', 'max'], ref: 'stats', captionStyle: style },
+      { id: 's3', type: 'samplingTable' },
+    ],
+  });
+  const build = async (style?: 'caption' | 'heading') => buildReport({ bundle: await loadBundle(projectId), template: template(style), period: year, settings: me });
+  const tables = (doc: ReportDoc) => doc.nodes.filter((n): n is Table => n.t === 'table');
+  const links = (doc: ReportDoc) => doc.nodes.filter((n): n is Para => n.t === 'p').flatMap((p) => p.runs.filter((r) => r.link));
+
+  it('numbers captions and links each reference to its caption', async () => {
+    const doc = await build();
+    const [sitesT, statsT, samplesT] = tables(doc);
+    expect([sitesT.caption, statsT.caption, samplesT.caption]).toEqual(['Table 1. Monitoring sites', 'Table 2. Summary statistics', expect.stringMatching(/^Table 3\. Samples collected/)]);
+    expect(allText(doc)).toContain('The sites are listed in Table 1 and the statistics are in Table 2.');
+    expect(links(doc)).toEqual([expect.objectContaining({ text: 'Table 1', link: sitesT.anchor }), expect.objectContaining({ text: 'Table 2', link: statsT.anchor })]);
+    expect(new Set(tables(doc).map((t) => t.anchor)).size).toBe(3);
+  });
+
+  it('can put a table under a heading instead: not numbered, and the reference gives the heading', async () => {
+    const doc = await build('heading');
+    const at = doc.nodes.findIndex((n) => n.t === 'h' && n.text === 'Summary statistics');
+    const h = doc.nodes[at] as Heading;
+    const statsT = doc.nodes[at + 1] as Table;
+    expect(statsT).toMatchObject({ t: 'table', caption: undefined });
+    expect(h.anchor).toBeTruthy();
+    // the numbering carries on without it
+    expect(tables(doc).map((t) => t.caption?.replace(/,.*/, ''))).toEqual(['Table 1. Monitoring sites', undefined, 'Table 2. Samples collected']);
+    expect(allText(doc)).toContain('the statistics are in Summary statistics.');
+    expect(links(doc)[1]).toMatchObject({ text: 'Summary statistics', link: h.anchor });
+  });
+
+  it('makes the references links in the PDF and Word files', async () => {
+    const doc = await build();
+    const [sitesT] = tables(doc);
+    const pdf = JSON.stringify(toPdfDefinition(doc).content);
+    expect(pdf).toContain(`"text":"Table 1","linkToDestination":"${sitesT.anchor}"`);
+    expect(pdf).toContain(`"id":"${sitesT.anchor}"`);
+    const xml = await (await JSZip.loadAsync(await (await docxBlob(doc)).arrayBuffer())).file('word/document.xml')!.async('string');
+    expect(xml).toMatch(new RegExp(`<w:bookmarkStart w:name="_Ref_${sitesT.anchor}" w:id="\\d+"/>`));
+    // each bookmark its own number, so Word pairs each start with its end
+    const ids = Array.from(xml.matchAll(/<w:bookmarkStart [^>]*w:id="(\d+)"/g)).map((m) => m[1]);
+    expect(ids.length).toBeGreaterThan(2);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(xml).toMatch(new RegExp(`<w:hyperlink [^>]*w:anchor="_Ref_${sitesT.anchor}">(?:(?!</w:hyperlink>).)*>Table 1</w:t>`));
+    // a heading is a link target too
+    const hdoc = await build('heading');
+    const h = hdoc.nodes.find((n): n is Heading => n.t === 'h' && n.text === 'Summary statistics')!;
+    expect(JSON.stringify(toPdfDefinition(hdoc).content)).toContain(`"id":"${h.anchor}"`);
+    const hxml = await (await JSZip.loadAsync(await (await docxBlob(hdoc)).arrayBuffer())).file('word/document.xml')!.async('string');
+    expect(hxml).toContain(`w:name="_Ref_${h.anchor}"`);
+  });
+
+  it('can put a graph or a group of figures under a heading', () => {
+    const pic = (id: string, caption: string): FigureImage => ({ id, src: png(400, 300), caption });
+    const t: ReportTemplate = {
+      ...event,
+      blocks: [
+        { id: 't1', type: 'text', text: 'See {{fig:photos}}.' },
+        { id: 'f1', type: 'figures', images: [pic('a', 'Upstream'), pic('b', 'Downstream')], perRow: 2, heightMm: 0, numbering: 'group', label: 'Figure', caption: 'Site photos', ref: 'photos', captionStyle: 'heading' },
+        { id: 'f2', type: 'figures', images: [pic('c', 'Outlet')], perRow: 1, heightMm: 0, numbering: 'each', label: 'Figure', caption: '' },
+      ],
+    };
+    return loadBundle(projectId).then((bundle) => {
+      const doc = buildReport({ bundle, template: t, period: march, settings: me });
+      const h = doc.nodes.find((n): n is Heading => n.t === 'h' && n.text === 'Site photos')!;
+      const [g1, g2] = doc.nodes.filter((n): n is Gallery => n.t === 'gallery');
+      expect(g1.items.map((i) => i.caption)).toEqual(['Upstream', 'Downstream']);
+      expect(g1.caption).toBeUndefined();
+      expect(g2.items[0].caption).toBe('Figure 1. Outlet');
+      expect(g2.items[0].anchor).toBeTruthy();
+      expect(links(doc)).toEqual([expect.objectContaining({ text: 'Site photos', link: h.anchor })]);
+    });
+  });
+});

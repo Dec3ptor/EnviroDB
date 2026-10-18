@@ -28,7 +28,12 @@ async function loadPdfMake(): Promise<PdfMake> {
   return pdfMakePromise;
 }
 
-const runs = (rs: Run[]) => rs.map((r) => ({ text: r.text, bold: r.bold, italics: r.italic }));
+/** Text runs; a reference ("Table 3") links to its table or figure. */
+const runs = (rs: Run[]) => rs.map((r) => ({ text: r.text, bold: r.bold, italics: r.italic, ...(r.link ? { linkToDestination: r.link } : {}) }));
+/** Where links to a caption or heading go. */
+const dest = (anchor?: string) => (anchor ? { id: anchor } : {});
+/** A link target at the top of a picture (its caption is under it, and a link shows the page from where it lands). */
+const spot = (anchor?: string): Content[] => (anchor ? [{ text: ' ', id: anchor, fontSize: 1, lineHeight: 1 } as Content] : []);
 
 /** Table header rows: the accent colour with white text, light grey, or dark grey with white text. */
 function headerLook(doc: ReportDoc): { fill: string; color: string } {
@@ -102,7 +107,7 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
       return out; // a title page's page break is applied to the content that follows (see toPdfDefinition)
     }
     case 'h':
-      return [{ text: `${n.number ? `${n.number}  ` : ''}${n.text}`, style: `h${n.level}`, headlineLevel: n.level } as Content];
+      return [{ text: `${n.number ? `${n.number}  ` : ''}${n.text}`, style: `h${n.level}`, headlineLevel: n.level, ...dest(n.anchor) } as Content];
     case 'p':
       return n.quote ? [{ text: runs(n.runs), italics: true, margin: [5 * MM, 0, 0, gap] }] : [{ text: runs(n.runs), margin: [0, 0, 0, gap] }];
     case 'lines':
@@ -117,7 +122,7 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
       return [{ text: '', margin: [0, 0, 0, n.mm * MM] } as Content];
     case 'image': {
       const w = Math.min(n.widthCm * 10 * MM, contentWidthPt);
-      const out: Content[] = [];
+      const out: Content[] = [...spot(n.anchor)];
       if (n.dataUrl) out.push({ image: n.dataUrl, width: w, margin: [0, 4, 0, 2] });
       if (n.caption) out.push({ text: n.caption, style: 'caption' });
       return [{ stack: out, unbreakable: true } as Content];
@@ -131,7 +136,7 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
             {
               columns: n.items.map((it) => {
                 const w = Math.min(it.widthCm * 10 * MM, max);
-                const stack: Content[] = [];
+                const stack: Content[] = [...spot(it.anchor)];
                 if (it.dataUrl) stack.push({ image: it.dataUrl, width: w, margin: [0, 4, 0, 2] });
                 if (it.caption) stack.push({ text: it.caption, style: 'caption' });
                 return { width: w, stack };
@@ -161,8 +166,9 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
             const last = i === rows.length - 1;
             return {
               stack: [
+                ...(i === 0 ? spot(n.anchor) : []),
                 {
-                  columns: row.map((it) => ({ width: colW, stack: [picture(it), ...(it.caption ? [{ text: it.caption, style: 'caption', alignment: n.perRow > 1 ? 'center' : 'left', margin: [0, 3, 0, 0] }] : [])] })),
+                  columns: row.map((it) => ({ width: colW, stack: [...spot(it.anchor), picture(it), ...(it.caption ? [{ text: it.caption, style: 'caption', alignment: n.perRow > 1 ? 'center' : 'left', margin: [0, 3, 0, 0] }] : [])] })),
                   columnGap: n.gapMm * MM,
                 },
                 ...(last && n.caption ? [{ text: n.caption, style: 'caption', margin: [0, 4, 0, 0] }] : []),
@@ -201,7 +207,7 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
       const out: Content[] = [];
       const head = headerLook(doc);
       const rule = letter ? '#404040' : '#b9b9b9';
-      if (n.caption) out.push({ text: n.caption, style: 'tableCaption', headlineLevel: 9 } as Content); // 9 = table caption (kept with its table)
+      if (n.caption) out.push({ text: n.caption, style: 'tableCaption', headlineLevel: 9, ...dest(n.anchor) } as Content); // 9 = table caption (kept with its table)
       out.push({
         table: {
           headerRows: n.head.length,

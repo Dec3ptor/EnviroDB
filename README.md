@@ -138,6 +138,13 @@ there as they work and show up for the others within seconds.
   your text for its number, e.g. "see Figure 3(b)"; tables work the same with `{{table:name}}`, and the
   numbers stay right when sections move. Pictures for one report go under *Figures for this report* on
   the Reports tab; a site plan used every time goes in the section's own settings.
+- **Captions or headings, and references you can click.** Each table, graph or figures section is
+  labelled with a numbered caption ("Table 3. Monitoring results", the default) or a heading of its
+  own, not numbered – set *Labelled with* in the section (the numbering carries on without it). In any
+  text or commentary box, *Insert a reference* lists the report's tables and figures: pick one and its
+  number goes in where you're typing ("see Table 3"), naming the table if it hasn't a name yet. In the
+  PDF and Word files each reference is a link – click it to go to the table or figure – and a
+  reference to a section under a heading gives the heading.
 - **Choose the look.** Templates are written as a report or a letter, with table headers in the accent
   colour or grey, exceedances shaded or in red text, and headings numbered or not, separately from
   tables and figures.

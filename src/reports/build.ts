@@ -249,14 +249,52 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     counters.set(k, (counters.get(k) ?? 0) + 1);
     return counters.get(k)!;
   };
-  const refs = new Map<string, string>();
+  // what {{table:name}} becomes ("Table 3") and where its link goes (an anchor on the caption or heading)
+  const refs = new Map<string, Ref>();
+  // each caption's link target, in the order made (two tables can have the same caption)
+  const captionAnchors = new Map<string, string[]>();
+  const mark = (caption: string, anchor: string) => captionAnchors.set(caption, [...(captionAnchors.get(caption) ?? []), anchor]);
+  const anchorOf = (caption: string) => captionAnchors.get(caption)?.shift();
+  let anchorSeq = 0;
+  const newAnchor = () => `ref${++anchorSeq}`;
   let current: ReportBlock | null = null;
   const capSep = letter ? '. ' : ': ';
   const numbered = (label: string, kind: 'table' | 'fig', s: string) => {
-    if (!numbering) return s;
+    const anchor = newAnchor();
+    // under a heading of its own: not numbered; text referring to it gives the heading
+    if (current?.captionStyle === 'heading') {
+      if (current.ref && !refs.has(`${kind}:${current.ref}`)) refs.set(`${kind}:${current.ref}`, { text: s, anchor });
+      mark(s, anchor);
+      return s;
+    }
+    if (!numbering) {
+      mark(s, anchor);
+      return s;
+    }
     const n = `${label} ${nextNumber(label)}`;
-    if (current?.ref && !refs.has(`${kind}:${current.ref}`)) refs.set(`${kind}:${current.ref}`, n);
-    return s ? `${n}${capSep}${s}` : n;
+    if (current?.ref && !refs.has(`${kind}:${current.ref}`)) refs.set(`${kind}:${current.ref}`, { text: n, anchor });
+    const caption = s ? `${n}${capSep}${s}` : n;
+    mark(caption, anchor);
+    return caption;
+  };
+  /** After a section: its captions get their anchors, or – for a section under headings – become headings. */
+  const finishSection = (blk: ReportBlock, from: number) => {
+    const asHeading = blk.captionStyle === 'heading';
+    for (let i = from; i < nodes.length; i++) {
+      const n = nodes[i];
+      if ((n.t === 'table' || n.t === 'image') && n.caption) {
+        const anchor = anchorOf(n.caption);
+        if (asHeading) {
+          nodes.splice(i, 0, { t: 'h', level: 3, text: n.caption, anchor });
+          n.caption = undefined;
+          i++;
+        } else n.anchor ??= anchor;
+      } else if (n.t === 'figures') n.items.forEach((it) => it.caption && (it.anchor ??= anchorOf(it.caption)));
+      else if (n.t === 'gallery') {
+        n.items.forEach((it) => it.caption && (it.anchor ??= anchorOf(it.caption)));
+        if (n.caption) n.anchor ??= anchorOf(n.caption);
+      }
+    }
   };
   const tableCaption = (s: string) => numbered('Table', 'table', s);
   const figCaption = (s: string) => numbered('Figure', 'fig', s);
@@ -903,7 +941,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const linesW = (x: string, bold = false) => Math.max(0, ...x.split('\n').map((line) => textWidthMm(line, pt, bold)));
       const monthYear = (d: string) => `${MONTH_SHORT[+d.slice(5, 7) - 1]}-${d.slice(2, 4)}`;
       const title = fill(blk.title);
-      const asHeading = blk.siteLabel === 'heading';
+      const asHeading = blk.siteLabel === 'heading' || blk.captionStyle === 'heading';
       const group = heading || title || 'Results';
       let lastTable: Extract<DocNode, { t: 'table' }> | undefined;
       let anyFlag = false;
@@ -1047,8 +1085,11 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const colWidthMm = (width - gapMm * (perRow - 1)) / perRow;
       const maxH = usableHeightMm(t, orientation, geo) * (perRow === 1 ? 0.7 : 0.45); // room for captions, and a row stays on one page
       const label = blk.label.trim() || 'Figure';
-      const group = blk.numbering === 'group';
+      const asHeading = blk.captionStyle === 'heading';
+      const numberedAs = asHeading ? 'none' : blk.numbering;
+      const group = numberedAs === 'group';
       const groupNo = group && numbering ? `${label} ${nextNumber(label)}` : '';
+      const groupAnchor = newAnchor();
       const items = images.map((im, i) => {
         const px = imageSize(im.src);
         const aspect = px ? px.height / px.width : 0.75;
@@ -1061,18 +1102,25 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         if (group) {
           const sub = `(${String.fromCharCode(97 + (i % 26))})`;
           caption = text ? `${sub} ${text}` : sub;
-          if (im.ref) refs.set(`fig:${im.ref}`, groupNo ? `${groupNo}${sub}` : sub);
-        } else if (blk.numbering === 'each' && numbering) {
+          if (im.ref) refs.set(`fig:${im.ref}`, { text: groupNo ? `${groupNo}${sub}` : sub, anchor: groupAnchor });
+        } else if (numberedAs === 'each' && numbering) {
           const n = `${label} ${nextNumber(label)}`;
+          const anchor = newAnchor();
           caption = text ? `${n}${capSep}${text}` : n;
-          if (im.ref) refs.set(`fig:${im.ref}`, n);
-          if (blk.ref && !refs.has(`fig:${blk.ref}`)) refs.set(`fig:${blk.ref}`, n);
+          mark(caption, anchor);
+          if (im.ref) refs.set(`fig:${im.ref}`, { text: n, anchor });
+          if (blk.ref && !refs.has(`fig:${blk.ref}`)) refs.set(`fig:${blk.ref}`, { text: n, anchor });
         } else caption = text || undefined;
         return { dataUrl: im.src, widthMm: w, heightMm: h, caption };
       });
       const groupText = fill(blk.caption).trim();
-      if (group && groupNo && blk.ref) refs.set(`fig:${blk.ref}`, groupNo);
-      nodes.push({ t: 'gallery', perRow, colWidthMm, gapMm, border: !!blk.border, items, caption: group ? [groupNo, groupText].filter(Boolean).join(groupNo && groupText ? capSep : '') || undefined : undefined });
+      if (group && groupNo && blk.ref) refs.set(`fig:${blk.ref}`, { text: groupNo, anchor: groupAnchor });
+      // under a heading of its own: the section's caption is the heading, above the pictures
+      if (asHeading && groupText) {
+        nodes.push({ t: 'h', level: 3, text: groupText, anchor: groupAnchor });
+        if (blk.ref && !refs.has(`fig:${blk.ref}`)) refs.set(`fig:${blk.ref}`, { text: groupText, anchor: groupAnchor });
+      }
+      nodes.push({ t: 'gallery', perRow, colWidthMm, gapMm, border: !!blk.border, items, caption: group ? [groupNo, groupText].filter(Boolean).join(groupNo && groupText ? capSep : '') || undefined : undefined, anchor: group ? groupAnchor : undefined });
     },
     signatures: (blk) => {
       const items = blk.signatories
@@ -1116,7 +1164,9 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     if (blk.type === 'heading') heading = fill(blk.text);
     current = blk;
     const h = blockHandlers[blk.type] as (x: ReportBlock) => void;
+    const from = nodes.length;
     h(blk);
+    finishSection(blk, from);
   });
   resolveRefs(nodes, refs);
   // placeholders in the letterhead's lines, e.g. {{company}} in a footer ({page} is left for the page number)
@@ -1175,21 +1225,44 @@ export function siteSummary(facts: Array<{ p: Parameter; trend: string; status: 
   return out.filter(Boolean).join(' ');
 }
 
-/** "{{fig:site-plan}}" → "Figure 2" and "{{table:triggers}}" → "Table 1" everywhere in the report ("Figure ?" when no such name). */
-function resolveRefs(nodes: DocNode[], refs: Map<string, string>): void {
+interface Ref {
+  text: string;
+  anchor?: string;
+}
+
+/**
+ * "{{fig:site-plan}}" → "Figure 2" and "{{table:triggers}}" → "Table 1" everywhere in the report ("Figure ?" when no
+ * such name); in text, a link to the table or figure.
+ */
+function resolveRefs(nodes: DocNode[], refs: Map<string, Ref>): void {
   const re = /\{\{\s*(fig|table):([\w.-]+)\s*\}\}/g;
-  const fix = (text: string) => (text.includes('{{') ? text.replace(re, (_, kind: string, name: string) => refs.get(`${kind}:${name}`) ?? (kind === 'fig' ? 'Figure ?' : 'Table ?')) : text);
-  const fixRuns = (rs: Run[]) => rs.forEach((r) => (r.text = fix(r.text)));
+  const missing = (kind: string) => (kind === 'fig' ? 'Figure ?' : 'Table ?');
+  const fix = (text: string) => (text.includes('{{') ? text.replace(re, (_, kind: string, name: string) => refs.get(`${kind}:${name}`)?.text ?? missing(kind)) : text);
+  // a run with references becomes runs: the text between them, and each reference as a link
+  const fixRuns = (rs: Run[]): Run[] =>
+    rs.flatMap((r) => {
+      if (!r.text.includes('{{')) return [r];
+      const out: Run[] = [];
+      let at = 0;
+      for (const m of r.text.matchAll(re)) {
+        if (m.index! > at) out.push({ ...r, text: r.text.slice(at, m.index) });
+        const ref = refs.get(`${m[1]}:${m[2]}`);
+        out.push({ ...r, text: ref?.text ?? missing(m[1]), link: ref?.anchor });
+        at = m.index! + m[0].length;
+      }
+      if (at < r.text.length) out.push({ ...r, text: r.text.slice(at) });
+      return out;
+    });
   for (const n of nodes) {
     switch (n.t) {
       case 'p':
-        fixRuns(n.runs);
+        n.runs = fixRuns(n.runs);
         break;
       case 'ul':
-        n.items.forEach(fixRuns);
+        n.items = n.items.map(fixRuns);
         break;
       case 'lines':
-        n.lines.forEach(fixRuns);
+        n.lines = n.lines.map(fixRuns);
         break;
       case 'h':
         n.text = fix(n.text);
