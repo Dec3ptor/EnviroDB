@@ -25,10 +25,15 @@ describe('a report section’s sites', () => {
   const site = (id: string, active = true): Site => ({ id, projectId: 'p', code: id.toUpperCase(), type: 'Groundwater', role: '', aliases: [], active, order: 1 });
   const all = [site('bh1'), site('bh2'), site('sw1'), site('old', false)];
   it('shows the ones chosen, or all when none are (or none of them are in this report)', () => {
-    expect(sectionSites(['bh2', 'bh1'], all).map((s) => s.id)).toEqual(['bh1', 'bh2']);
-    expect(sectionSites([], all)).toBe(all);
-    expect(sectionSites(['from-another-project'], all)).toBe(all);
+    expect(sectionSites({ siteIds: ['bh2', 'bh1'] }, all).map((s) => s.id)).toEqual(['bh1', 'bh2']);
+    expect(sectionSites({ siteIds: [] }, all)).toBe(all);
+    expect(sectionSites({ siteIds: ['from-another-project'] }, all)).toBe(all);
     const active = all.filter((s) => s.active);
-    expect(sectionSites(['old'], active, all).map((s) => s.id)).toEqual(['old']); // chosen even though inactive
+    expect(sectionSites({ siteIds: ['old'] }, active, all).map((s) => s.id)).toEqual(['old']); // chosen even though inactive
+  });
+  it('leaves out the sites it is told to', () => {
+    expect(sectionSites({ siteIds: [], excludeSiteIds: ['sw1'] }, all).map((s) => s.id)).toEqual(['bh1', 'bh2', 'old']);
+    expect(sectionSites({ siteIds: ['bh1', 'bh2'], excludeSiteIds: ['bh2'] }, all).map((s) => s.id)).toEqual(['bh1']);
+    expect(sectionSites({ siteIds: [], excludeSiteIds: ['elsewhere'] }, all)).toBe(all);
   });
 });

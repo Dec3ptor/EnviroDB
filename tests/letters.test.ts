@@ -182,6 +182,28 @@ describe('a section for some sites only', () => {
   });
 });
 
+describe('a section leaving some out', () => {
+  it('leaves out the parameters and sites chosen – e.g. water levels in a table of their own', async () => {
+    const b = await loadBundle(projectId);
+    const dp1 = b.sites.find((s) => s.code === 'DP1')!.id;
+    const t: ReportTemplate = {
+      ...annual,
+      blocks: annual.blocks.map((x) => (x.type === 'resultsTable' || x.type === 'roundTable' ? { ...x, excludeParameterIds: ['ph'], excludeSiteIds: [dp1] } : x)) as ReportBlock[],
+    };
+    const tables = buildReport({ bundle: b, template: t, period: year, settings: me }).nodes.filter((n): n is Table => n.t === 'table' && /Results – /.test(n.caption ?? ''));
+    expect(tables.length).toBeGreaterThan(0);
+    expect(tables.some((n) => n.caption!.includes('DP1'))).toBe(false);
+    expect(tables.some((n) => n.caption!.includes('DS1'))).toBe(true);
+    expect(tables.flatMap((n) => n.body.map((r) => r[0].text)).includes('pH')).toBe(false);
+    // and a table of just one parameter
+    const only: ReportTemplate = { ...annual, blocks: annual.blocks.map((x) => (x.type === 'roundTable' ? { ...x, parameterIds: ['tss'] } : x)) as ReportBlock[] };
+    const rows = buildReport({ bundle: b, template: only, period: year, settings: me })
+      .nodes.filter((n): n is Table => n.t === 'table' && /Results – /.test(n.caption ?? ''))
+      .flatMap((n) => n.body.map((r) => r[0].text));
+    expect(new Set(rows)).toEqual(new Set(['Total Suspended Solids']));
+  });
+});
+
 describe('trigger levels table', () => {
   it('lists each parameter and level with a column per site, and text can refer to it by name', async () => {
     const doc = buildReport({ bundle: await loadBundle(projectId), template: annual, period: year, settings: me });

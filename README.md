@@ -96,10 +96,12 @@ there as they work and show up for the others within seconds.
 - **Choose the sites a report covers.** On the Reports tab, tap sites in or out, or pick *Groundwater
   only* (or any other site type), so a groundwater report has no effluent results. Every table, graph,
   compliance check and summary follows, the title page lists the sites covered, and the choice is
-  remembered for that reporting obligation. A single table, graph or statistics section can show just
-  some sites too: on the Reports tab, *Edit layout*, open the section and choose *Sites in this
-  table* (e.g. only the bores) – duplicate the section for another group of sites. The section shows
-  a badge with its sites.
+  remembered for that reporting obligation. Each table, graph, statistics or rounds section can also
+  choose its own sites and parameters – *All*, *Only these* or *All except* – e.g. a table of just
+  water levels above the main results table, which leaves water levels out, or a *Results vs
+  previous rounds* table without the discharge. On the Reports tab, *Edit layout*, open the section
+  (⋯ → *Duplicate* makes a second one); sites are chosen there, parameters there or in the template.
+  Badges in the section list show each choice ("only GWL", "not DP1").
 - **Pick up where you left off.** Each tab keeps how you set it up – the graphs chosen and their
   options, the data filters and sort, the report's template, period and layout tab, the compliance
   and overview periods – when you go to another tab and come back, and next time in this browser.

@@ -363,6 +363,10 @@ export interface ReportBlockBase {
    * to the orientation before it, so the setting moves with the section.
    */
   pages?: 'portrait' | 'landscape';
+  /** Sections with parameters: leave these out (e.g. water levels, given a table of their own). */
+  excludeParameterIds?: ID[];
+  /** Sections with sites: leave these out. */
+  excludeSiteIds?: ID[];
 }
 
 export interface TitleBlock extends ReportBlockBase {

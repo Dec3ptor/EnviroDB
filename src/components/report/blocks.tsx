@@ -2,11 +2,11 @@ import { ActionIcon, Badge, Button, Checkbox, Group, NumberInput, SegmentedContr
 import { useLiveQuery } from 'dexie-react-hooks';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { db } from '../../db/db';
-import type { CalcStat, ReportBlock, ReportBlockType, Site } from '../../db/types';
+import type { CalcStat, Parameter, ReportBlock, ReportBlockType, Site } from '../../db/types';
 import { CALC_STATS } from '../../reports/calc';
 import { InsertCalc } from './InsertCalc';
 import { GuidelinePicker, ParamPicker, SitePicker } from '../common';
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { uid } from '../../lib/ids';
 import { SignaturesForm } from './Signatures';
 import { FigureImages, FiguresLayout, refName } from './Figures';
@@ -168,41 +168,143 @@ function sectionSiteIds(block: ReportBlock): string[] {
   return SITE_LABELS[block.type] && 'siteIds' in block ? block.siteIds : [];
 }
 
-/** A badge beside a section's name when it shows only some sites: "BH1, BH2" or "5 sites". */
+/** Badges beside a section's name when it shows only some parameters or sites, or leaves some out. */
 export function BlockSitesNote({ block }: { block: ReportBlock }) {
-  const sites = useContext(ReportSitesContext);
-  const ids = sectionSiteIds(block);
-  if (!sites || !ids.length) return null;
-  const codes = sites.filter((s) => ids.includes(s.id)).map((s) => s.code);
-  if (!codes.length) return null;
   return (
-    <Badge size="xs" variant="light" color="teal" style={{ flexShrink: 0, textTransform: 'none' }} title={`Only ${codes.join(', ')}`}>
-      {codes.length > 3 ? `${codes.length} sites` : codes.join(', ')}
+    <>
+      <ParamsBadge block={block} />
+      <SitesBadge block={block} />
+    </>
+  );
+}
+
+function ParamsBadge({ block }: { block: ReportBlock }) {
+  const params = useLiveQuery(() => db.parameters.toArray(), []);
+  const only = 'parameterIds' in block ? block.parameterIds : [];
+  const out = block.excludeParameterIds ?? [];
+  if (!params || (!only.length && !out.length)) return null;
+  const name = (id: string) => {
+    const p = params.find((x) => x.id === id);
+    return p ? p.short || p.name : id;
+  };
+  const list = (ids: string[]) => (ids.length > 2 ? `${ids.length} parameters` : ids.map(name).join(', '));
+  return (
+    <Badge size="xs" variant="light" color={only.length ? 'blue' : 'gray'} style={{ flexShrink: 0, textTransform: 'none' }} title={(only.length ? only : out).map(name).join(', ')}>
+      {only.length ? `only ${list(only)}` : `not ${list(out)}`}
     </Badge>
   );
 }
 
-/** A section's sites: all the report's, or the ones chosen for it (e.g. the bores for a groundwater table). */
+/** "BH1, BH2" or "not DP1" (or a count) when a section shows only some sites, or leaves some out. */
+function SitesBadge({ block }: { block: ReportBlock }) {
+  const sites = useContext(ReportSitesContext);
+  if (!sites || !SITE_LABELS[block.type]) return null;
+  const ids = sectionSiteIds(block);
+  const codes = sites.filter((s) => ids.includes(s.id)).map((s) => s.code);
+  const out = sites.filter((s) => block.excludeSiteIds?.includes(s.id)).map((s) => s.code);
+  if (codes.length)
+    return (
+      <Badge size="xs" variant="light" color="teal" style={{ flexShrink: 0, textTransform: 'none' }} title={`Only ${codes.join(', ')}`}>
+        {codes.length > 3 ? `${codes.length} sites` : codes.join(', ')}
+      </Badge>
+    );
+  if (out.length)
+    return (
+      <Badge size="xs" variant="light" color="gray" style={{ flexShrink: 0, textTransform: 'none' }} title={`All sites but ${out.join(', ')}`}>
+        not {out.length > 3 ? `${out.length} sites` : out.join(', ')}
+      </Badge>
+    );
+  return null;
+}
+
+type Choice = 'all' | 'only' | 'except';
+const CHOICES = [
+  { value: 'all', label: 'All' },
+  { value: 'only', label: 'Only these' },
+  { value: 'except', label: 'All except' },
+];
+
+/** A section's sites: all the report's, only some (e.g. the bores for a groundwater table), or all but some. */
 function BlockSitesField({ block, onChange }: { block: ReportBlock; onChange: (b: ReportBlock) => void }) {
   const sites = useContext(ReportSitesContext);
   const label = SITE_LABELS[block.type];
-  if (!label || !('siteIds' in block)) return null;
+  const has = !!label && 'siteIds' in block;
+  const only = has ? (block as { siteIds: string[] }).siteIds.filter((id) => sites?.some((s) => s.id === id)) : [];
+  const except = (block.excludeSiteIds ?? []).filter((id) => sites?.some((s) => s.id === id));
+  const [mode, setMode] = useState<Choice>(only.length ? 'only' : except.length ? 'except' : 'all');
+  if (!has) return null;
   if (!sites)
     return (
       <Text size="xs" c="dimmed">
-        Shows all the report’s sites. To show only some in this section (e.g. just the bores), choose them on a project’s Reports tab under Edit layout.
+        Shows all the report’s sites. To show only some in this section (e.g. just the bores), or leave some out, choose them on a project’s Reports tab under Edit layout.
       </Text>
     );
-  const value = block.siteIds.filter((id) => sites.some((s) => s.id === id));
+  const set = (patch: Partial<{ siteIds: string[]; excludeSiteIds?: string[] }>) => onChange({ ...block, ...patch } as ReportBlock);
   return (
-    <SitePicker
-      sites={sites}
-      label={label}
-      description="Only these sites in this section – add the same section again for other sites"
-      placeholder="All the report’s sites"
-      value={value}
-      onChange={(v) => onChange({ ...block, siteIds: v.length >= sites.length ? [] : v } as ReportBlock)}
-    />
+    <Stack gap={6}>
+      <Text size="sm" fw={500}>
+        {label}
+      </Text>
+      <SegmentedControl
+        size="xs"
+        fullWidth
+        value={mode}
+        data={CHOICES}
+        onChange={(v) => {
+          setMode(v as Choice);
+          if (v === 'all') set({ siteIds: [], excludeSiteIds: undefined });
+          if (v === 'only') set({ excludeSiteIds: undefined });
+          if (v === 'except') set({ siteIds: [] });
+        }}
+      />
+      {mode === 'only' && (
+        <SitePicker sites={sites} label="Only these sites" placeholder="Choose the sites" value={only} onChange={(v) => set({ siteIds: v.length >= sites.length ? [] : v })} />
+      )}
+      {mode === 'except' && (
+        <SitePicker sites={sites} label="Leave out these sites" placeholder="Choose the sites to leave out" value={except} onChange={(v) => set({ excludeSiteIds: v.length ? v : undefined })} />
+      )}
+    </Stack>
+  );
+}
+
+/** A section's parameters: all of them, only some (e.g. just water levels), or all but some (e.g. all but water levels). */
+function BlockParamsField({ block, params, onChange, all }: { block: ReportBlock & { parameterIds: string[] }; params: Parameter[]; onChange: (b: ReportBlock) => void; all: string }) {
+  const [mode, setMode] = useState<Choice>(block.parameterIds.length ? 'only' : block.excludeParameterIds?.length ? 'except' : 'all');
+  const set = (patch: Partial<{ parameterIds: string[]; excludeParameterIds?: string[] }>) => onChange({ ...block, ...patch } as ReportBlock);
+  return (
+    <Stack gap={6}>
+      <Text size="sm" fw={500}>
+        Parameters
+      </Text>
+      <SegmentedControl
+        size="xs"
+        fullWidth
+        value={mode}
+        data={CHOICES}
+        onChange={(v) => {
+          setMode(v as Choice);
+          if (v === 'all') set({ parameterIds: [], excludeParameterIds: undefined });
+          if (v === 'only') set({ excludeParameterIds: undefined });
+          if (v === 'except') set({ parameterIds: [] });
+        }}
+      />
+      {mode === 'all' && (
+        <Text size="xs" c="dimmed">
+          {all}
+        </Text>
+      )}
+      {mode === 'only' && <ParamPicker params={params} label="Only these parameters" placeholder="Choose the parameters" value={block.parameterIds} onChange={(v) => set({ parameterIds: v })} />}
+      {mode === 'except' && (
+        <ParamPicker
+          params={params}
+          label="Leave out these parameters"
+          description={`${all}, less these – e.g. water levels, given a table of their own`}
+          placeholder="Choose the parameters to leave out"
+          value={block.excludeParameterIds ?? []}
+          onChange={(v) => set({ excludeParameterIds: v.length ? v : undefined })}
+        />
+      )}
+    </Stack>
   );
 }
 
@@ -297,7 +399,7 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
             <Switch label="One table per site" checked={block.splitBySite} onChange={(e) => set({ splitBySite: e.currentTarget.checked })} />
             <Switch label="Highlight exceedances" checked={block.highlight} onChange={(e) => set({ highlight: e.currentTarget.checked })} />
           </Group>
-          <ParamPicker params={params} value={block.parameterIds} onChange={(v) => set({ parameterIds: v })} label="Parameters (empty = all with data)" />
+          <BlockParamsField block={block} params={params} onChange={onChange} all="All with data" />
           <div>
             <Text size="sm" fw={500}>
               Consent values to compare with
@@ -331,13 +433,13 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
               ))}
             </Group>
           </Checkbox.Group>
-          <ParamPicker params={params} value={block.parameterIds} onChange={(v) => set({ parameterIds: v })} label="Parameters (empty = all with data)" />
+          <BlockParamsField block={block} params={params} onChange={onChange} all="All with data" />
         </Stack>
       );
     case 'chart':
       return (
         <Stack gap="xs">
-          <ParamPicker params={params} value={block.parameterIds} onChange={(v) => set({ parameterIds: v })} label="Parameters (empty = parameters with consent rules)" />
+          <BlockParamsField block={block} params={params} onChange={onChange} all="The parameters with consent rules" />
           <Group align="flex-end">
             <Select label="Time range" data={[{ value: 'period', label: 'Report period' }, { value: 'years', label: 'Years up to period end' }, { value: 'all', label: 'All data' }]} value={block.range} onChange={(v) => v && set({ range: v as typeof block.range })} w={200} allowDeselect={false} />
             {block.range === 'years' && <NumberInput label="Years" min={1} max={30} value={block.years ?? 3} onChange={(v) => set({ years: Number(v) || 3 })} w={90} />}
@@ -421,7 +523,7 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
               ]}
             />
           </div>
-          <ParamPicker params={params} value={block.parameterIds} onChange={(v) => set({ parameterIds: v })} label="Parameters (empty = all measured)" />
+          <BlockParamsField block={block} params={params} onChange={onChange} all="All measured" />
           <div>
             <Text size="sm" fw={500} mb={4}>
               Consent values to compare with
@@ -485,7 +587,7 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
           </div>
           <Switch label="A comment on each result: the change since last round and whether it complies (e.g. “Increase – Compliant”)" checked={block.comment} onChange={(e) => set({ comment: e.currentTarget.checked })} />
           <Switch label="A summary under each site's table – drafted from the results, yours to edit in the report's commentary" checked={block.summaries} onChange={(e) => set({ summaries: e.currentTarget.checked })} />
-          <ParamPicker params={params} value={block.parameterIds} onChange={(v) => set({ parameterIds: v })} label="Parameters (empty = all measured)" />
+          <BlockParamsField block={block} params={params} onChange={onChange} all="All measured" />
         </Stack>
       );
     case 'triggerTable':
