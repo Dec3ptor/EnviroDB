@@ -8,8 +8,7 @@ import { addDays, addMonths, daysBetween, endOfMonth, formatDate, formatDateLong
 import { monthLabel, reportPeriodLabel, reviewCell, type ReviewCell } from '../lib/latest';
 import { guidelineFor } from '../lib/guidelines';
 import { scheduleStep, frequencyLabel, nextObligation } from '../lib/schedule';
-import { convert, unitLabel } from '../lib/units';
-import { statLabel } from '../lib/stats';
+import { unitLabel } from '../lib/units';
 import { fmtNum } from '../lib/values';
 import { imageSize, logoSizeMm } from '../lib/image';
 import { buildChartSpec, chartOption } from '../charts/timeSeries';
@@ -18,6 +17,7 @@ import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, ty
 import { CELL_PAD_MM, fontWidthFactor, longestWordMm as longestWord, textWidthMm as textWidth } from './measure';
 import { calcValue, fillCalcs } from './calc';
 import { captionOf, fillCaption, tidyCaption } from './captions';
+import { limitsTable, ruleValueText } from '../lib/limitsTable';
 
 export interface BuildOptions {
   bundle: ProjectBundle;
@@ -365,16 +365,8 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     const out: string[] = [];
     for (const r of rules) {
       if (r.level !== level || r.parameterId !== p.id) continue;
-      const inUnit = (x: number | undefined) => (x === undefined ? null : convert(x, r.unit || p.unit, p.unit));
-      const [lo, hi, v] = [inUnit(r.min), inUnit(r.max), inUnit(r.value)];
-      const num = r.operator === 'outside' ? (lo !== null && hi !== null ? `${fmtNum(lo)}–${fmtNum(hi)}` : '') : v === null ? '' : r.operator === '<' || r.operator === '<=' ? `≥${fmtNum(v)}` : fmtNum(v);
-      if (!num) continue;
-      const q: string[] = [];
-      if (r.kind === 'statistic') q.push(statLabel(r.statistic ?? 'mean', r.percentile));
-      if (r.kind === 'consecutive') q.push(`${r.consecutive ?? 2} in a row`);
-      if (r.limitSetId && r.hardnessAdjust) q.push('HMTV');
-      if (siteIds.length > 1 && r.siteIds.length) q.push(r.siteIds.filter((id) => siteIds.includes(id)).map((id) => b.siteMap.get(id)?.code ?? '').join(', '));
-      out.push(q.length ? `${num}\n(${q.join(', ')})` : num); // the bracket on its own line keeps the column narrow
+      const text = ruleValueText(r, p, siteIds.length > 1 && r.siteIds.length ? r.siteIds.filter((id) => siteIds.includes(id)).map((id) => b.siteMap.get(id)?.code ?? '').join(', ') : undefined);
+      if (text) out.push(text);
     }
     return [...new Set(out)].join('\n');
   };
@@ -1083,19 +1075,18 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     },
     triggerTable: (blk) => {
       const sites = sectionSites(blk, b.sites.filter((s) => s.active), b.sites);
-      const ofLevel = (l: string) => blk.levels === 'all' || (blk.levels === 'limits' ? isLimitLevel(l) : !isLimitLevel(l));
-      const rules = limitRules.filter((r) => r.active && RULE_COLUMN_KINDS.has(r.kind) && !!r.parameterId && b.paramMap.has(r.parameterId) && ofLevel(r.level) && (!r.siteIds.length || r.siteIds.some((id) => sites.some((s) => s.id === id))));
       const what = blk.levels === 'limits' ? 'Consent limits' : blk.levels === 'triggers' ? 'Trigger levels' : 'Consent limits and trigger levels';
-      if (!rules.length) {
+      // the same table as the Compliance tab's
+      const lt = limitsTable({ rules: b.rules, params: b.params, setMap: b.setMap }, sites, blk.levels);
+      if (!lt.rows.length) {
         nodes.push({ t: 'p', runs: [{ text: `No ${what.toLowerCase()} have been set up for this project.`, italic: true }] });
         return;
       }
-      const params = b.params.filter((p) => rules.some((r) => r.parameterId === p.id));
-      const levels = ruleLevels(rules);
+      const params = [...new Set(lt.rows.map((r) => r.param))];
+      const levels = lt.levels;
       const showLevel = levels.length > 1;
-      const perSite = rules.some((r) => r.siteIds.length);
-      const cols = perSite ? sites.filter((s) => rules.some((r) => !r.siteIds.length || r.siteIds.includes(s.id))) : [];
-      const at = (site: Site) => rules.filter((r) => !r.siteIds.length || r.siteIds.includes(site.id));
+      const perSite = lt.sites.length > 0;
+      const cols = lt.sites;
       const pt = big;
       const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
       const paramW = clamp(Math.max(...params.map((p) => textWidthMm(p.name, pt))) + CELL_PAD_MM, 26, 46);
@@ -1107,12 +1098,11 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       parts.forEach((part, i) => {
         const head: Cell[] = [{ text: 'Parameter' }, { text: 'Unit' }, ...(showLevel ? [{ text: 'Level' }] : []), ...(perSite ? part.map((s) => ({ text: s.code, align: 'center' as const })) : [{ text: levels[0], align: 'center' as const }])];
         const body: Cell[][] = [];
-        for (const p of params)
-          for (const l of levels) {
-            const values = perSite ? part.map((s) => ruleText(at(s), l, p, [s.id])) : [ruleText(rules, l, p, [])];
-            if (values.every((v) => !v)) continue;
-            body.push([{ text: p.name }, { text: unitLabel(p.unit) }, ...(showLevel ? [{ text: l }] : []), ...values.map((v) => (v ? { text: v, align: 'center' as const } : { text: '–', align: 'center' as const, color: '#999999' }))]);
-          }
+        for (const row of lt.rows) {
+          const values = perSite ? part.map((s) => row.cells[cols.indexOf(s)]?.text ?? '') : [row.cells[0]?.text ?? ''];
+          if (values.every((v) => !v)) continue;
+          body.push([{ text: row.param.name }, { text: unitLabel(row.param.unit) }, ...(showLevel ? [{ text: row.level }] : []), ...values.map((v) => (v ? { text: v, align: 'center' as const } : { text: '–', align: 'center' as const, color: '#999999' }))]);
+        }
         const rest = (width - paramW - unitW - levelW) / Math.max(1, head.length - (showLevel ? 3 : 2));
         const bracketed = body.some((row) => row.some((c) => c.text.includes('(')));
         nodes.push({

@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Accordion, ActionIcon, Badge, Button, Card, Group, Menu, Select, Stack, Table, Text, Textarea, Popover } from '@mantine/core';
+import { Accordion, ActionIcon, Badge, Button, Card, Group, Menu, SegmentedControl, Select, Stack, Table, Text, Textarea, Popover } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { Link } from 'react-router-dom';
-import { IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay, IconFileTypeDocx, IconSparkles } from '@tabler/icons-react';
+import { IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay, IconFileTypeDocx, IconSparkles, IconListDetails, IconTable } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
@@ -18,6 +18,7 @@ import { db } from '../../db/db';
 import type { ExceedanceNote, ReportBlock, Rule } from '../../db/types';
 import type { Exceedance, RuleEvaluation } from '../../lib/compliance';
 import { RuleEditor } from './RuleEditor';
+import { LimitsView } from './LimitsView';
 import { uid } from '../../lib/ids';
 
 type Preset = { label: string; description: string; make: (projectId: string) => Rule[] };
@@ -169,6 +170,8 @@ export function ComplianceTab() {
   const { project, rules } = data;
   const [period, setPeriod] = useViewState<PeriodValue>(`${project.id}:compliance.period`, () => defaultPeriod(project.yearStartMonth, 'thisRy'), revivePeriod(project.yearStartMonth));
   const [editing, setEditing] = useState<Rule | null>(null);
+  // the rules one by one, or the limits and triggers as a table
+  const [view, setView] = useViewState<'rules' | 'table'>(`${project.id}:compliance.view`, 'rules', (v) => (v === 'rules' || v === 'table' ? v : undefined));
   const evals = useMemo(() => evaluateAll(data, period.start, period.end, rules.filter((r) => r.active)), [data, period, rules]);
   const evalMap = new Map(evals.map((e) => [e.rule.id, e]));
   // most important first: limits exceeded, then triggers, results to check, compliant, no data, paused
@@ -191,6 +194,8 @@ export function ComplianceTab() {
       const blocks: ReportBlock[] = [
         { id: 'h1', type: 'heading', text: `Compliance summary – ${period.label}`, level: 1 },
         { id: 'c', type: 'complianceTable', ruleIds: [] },
+        { id: 'h3', type: 'heading', text: 'Consent limits and trigger levels', level: 2 },
+        { id: 't', type: 'triggerTable', title: '', siteIds: [], levels: 'all' },
         { id: 'h2', type: 'heading', text: 'Exceedances and follow-up', level: 2 },
         { id: 'e', type: 'exceedances', ruleIds: [], includeGuidelines: false, includeNotes: true },
       ];
@@ -213,7 +218,35 @@ export function ComplianceTab() {
   return (
     <Stack gap="md">
       <Group justify="space-between" align="flex-end" wrap="wrap">
-        <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} />
+        <Group gap="sm" align="flex-end" wrap="wrap">
+          <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} />
+          {rules.length > 0 && (
+            <SegmentedControl
+              value={view}
+              onChange={(v) => setView(v as 'rules' | 'table')}
+              data={[
+                {
+                  value: 'rules',
+                  label: (
+                    <Group gap={6} wrap="nowrap">
+                      <IconListDetails size={16} />
+                      <span>Rules</span>
+                    </Group>
+                  ),
+                },
+                {
+                  value: 'table',
+                  label: (
+                    <Group gap={6} wrap="nowrap">
+                      <IconTable size={16} />
+                      <span>Limits &amp; triggers</span>
+                    </Group>
+                  ),
+                },
+              ]}
+            />
+          )}
+        </Group>
         <Group gap="xs">
           {rules.length > 0 && (
             <Badge size="lg" color={exceeded ? 'red' : checkDl ? 'yellow' : withData ? 'green' : 'gray'} variant="light">
@@ -264,6 +297,8 @@ export function ComplianceTab() {
         <EmptyState title="No consent rules yet" action={<Button onClick={() => setEditing(newRule(project.id, { name: '' }))}>Add your first rule</Button>}>
           Add each consent limit, trigger level or guideline comparison. Rules are checked automatically every time data is imported, and feed the compliance tables in your reports.
         </EmptyState>
+      ) : view === 'table' ? (
+        <LimitsView data={data} evals={evals} period={period} onEdit={setEditing} />
       ) : (
         <Accordion multiple variant="separated" defaultValue={evals.filter((e) => e.status === 'exceeded').map((e) => e.rule.id)}>
           {ordered.map((rule) => {

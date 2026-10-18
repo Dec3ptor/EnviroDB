@@ -30,6 +30,14 @@ there as they work and show up for the others within seconds.
 
   Non-detects are handled conservatively, and metals guideline values can be
   hardness-modified using the measured hardness (for each sample's own result).
+
+  To see every consent limit and trigger at once, switch the Compliance tab to *Limits & triggers*:
+  a row per parameter and level, a column per site, each value coloured by how that site did in the
+  period (red exceeded, with how many times; amber check the detection limit; green complied; grey no
+  results). Show limits only or triggers only; hover a value for its rule, condition and required
+  action and the latest exceedance; click it to change the rule. Changes from an upstream site and
+  comparisons with a whole guideline set are listed under it. The tab's *Word* download includes
+  the same table.
 - **Browse, sort and filter data.** Click a column to sort (e.g. highest TSS first), filter by
   value (TSS > 100, zinc not detected…), show only samples with exceedances, search lab jobs
   and notes, and export exactly what you see to Excel, CSV or Word. Analytes are always listed in
