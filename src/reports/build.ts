@@ -2,6 +2,8 @@ import type { ChartBlock, FigureImage, GuidelineSet, Letterhead, LetterheadItem,
 import { RULE_LEVELS } from '../db/types';
 import type { ProjectBundle } from '../lib/analysis';
 import { QA_DEFAULTS, qaInputFor, qcKind, runQa, withRecords } from '../lib/qa';
+import { chartTrends, compareSites, defaultPairs, projectTrends } from '../lib/projectTrends';
+import { CATEGORY_TEXT, categoryTone } from '../lib/trends';
 import { displayValue, evaluateAll, flagResults, isLimitLevel, keyParameters, limitToSites, statsTable, type CellFlag } from '../lib/analysis';
 import type { RuleEvaluation } from '../lib/compliance';
 import { describeRule, expandRules, ruleParamIds, STATUS_META } from '../lib/compliance';
@@ -821,6 +823,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         if (!chartSites.length) continue;
         const spec = buildChartSpec({ index: b.index, param: p, sites: opts.bundle.sites, siteIds: chartSites, start: cStart, end, guidelineSets: sets, rules: limitRules, setMap: b.setMap, showRules: blk.showRules, log: blk.logScale });
         if (blk.markPeriod && blk.range !== 'period') spec.band = { from: toUtcMs(start), to: toUtcMs(addDays(end, 1)) };
+        if (blk.trendLines) spec.trends = chartTrends(b, p.id, spec.series.map((x) => x.id), cStart, end);
         if (!spec.series.length) continue;
         const caption = figCaption(capText(blk, { parameter: p.name, unit: unitLabel(p.unit), sites: listText(spec.series.map((s) => s.name)), dates: `${formatDate(cStart ?? spec.series[0].points[0].date)} – ${formatDate(end)}` }));
         const option = chartOption({ ...spec, subtitle: undefined, title: `${p.name} (${unitLabel(p.unit)})` }, { forExport: true, width: Math.round((size.widthCm / 2.54) * 96) });
@@ -997,6 +1000,84 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           { text: r.note ?? '' },
         ]);
         nodes.push({ t: 'table', caption: tableCaption(tidyCaption(fill(fillCaption('QA/QC decisions, [period]', capBase)))), head, body, widths: [width * 0.13, width * 0.1, '*', width * 0.18, width * 0.28], fontSize: pt });
+      }
+    },
+    trendTable: (blk) => {
+      const pids = (blk.parameterIds.length ? blk.parameterIds : keyParameters(b, 8)).filter((id) => !blk.excludeParameterIds?.includes(id));
+      const from = blk.years ? addDays(addMonths(end, -12 * blk.years), 1) : undefined;
+      const rows = projectTrends(b, { siteIds: sectionSites(blk, b.sites).map((s) => s.id), parameterIds: pids, start: from, end, seasons: blk.seasons });
+      if (!rows.length) {
+        nodes.push({ t: 'p', runs: [{ text: 'There are not yet enough results to assess trends.', italic: true }] });
+        return;
+      }
+      const pct = (x: number) => `${Math.round(x * 100)}%`;
+      const head: Cell[][] = [[{ text: 'Site' }, { text: 'Analyte' }, { text: 'Trend' }, { text: 'Change a year', align: 'right' }, { text: 'Likelihood', align: 'right' }, { text: 'Results' }]];
+      const body: Cell[][] = rows.map(({ siteId, parameterId, result: r }) => {
+        const p = b.paramMap.get(parameterId);
+        const tone = categoryTone(r.category);
+        const flag = tone === 'bad' && r.category.startsWith('very') ? (look.highlight === 'text' ? { color: TEXT_FLAGS.exceed } : { fill: FILLS.guideline }) : {};
+        return [
+          { text: b.siteMap.get(siteId)?.code ?? '', bold: true },
+          { text: p?.name ?? parameterId },
+          { text: CATEGORY_TEXT[r.category], ...flag },
+          { text: r.ok && r.slope !== null ? `${r.slope > 0 ? '+' : ''}${fmtNum(r.slope)} ${unitLabel(p?.unit)}${r.pctPerYear !== null && r.slope ? ` (${r.pctPerYear > 0 ? '+' : ''}${r.pctPerYear.toFixed(1)}%)` : ''}${r.approximate ? ' ~' : ''}` : '', align: 'right' },
+          { text: r.ok ? (r.pImproving !== undefined ? `${pct(r.pImproving)} improving` : `${pct(r.pIncreasing)} rising`) : '', align: 'right' },
+          { text: r.ok ? `${r.n} ${r.step === 'sample' ? 'results' : `${r.step}ly values`}, ${r.years.toFixed(1)} years${r.seasonal ? ', seasonal' : ''}` : r.reason ?? '' },
+        ] as Cell[];
+      });
+      nodes.push({
+        t: 'table',
+        caption: tableCaption(capText(blk, { years: blk.years ? `the last ${blk.years} years` : 'all results' })),
+        head,
+        body,
+        widths: [width * 0.08, '*', width * 0.17, width * 0.17, width * 0.13, width * 0.2],
+        fontSize: t.fontSize - 1,
+        notes: [
+          `Trends to ${formatDate(end)}${from ? ` from ${formatDate(from)}` : ''}: the Mann-Kendall test (the seasonal Kendall test where results vary with the season, Kruskal-Wallis p < 0.05) on one value per month or quarter; Sen’s slope for the change a year (with the percentage of the median). Results below detection are tied for the test and halved for the slope (~: more than 15% below detection). Likelihood categories as used by LAWA: very likely 90% or more, likely 67–90%, otherwise indeterminate.`,
+        ],
+      });
+    },
+    upDownTable: (blk) => {
+      const pids = (blk.parameterIds.length ? blk.parameterIds : keyParameters(b, 8)).filter((id) => !blk.excludeParameterIds?.includes(id));
+      const from = blk.years ? addDays(addMonths(end, -12 * blk.years), 1) : start;
+      const pairs = (blk.upSiteId && blk.downSiteId ? [{ upId: blk.upSiteId, downId: blk.downSiteId }] : defaultPairs(b)).filter((x) => b.sites.some((s) => s.id === x.upId) && b.sites.some((s) => s.id === x.downId));
+      if (!pairs.length) {
+        if (opts.preview) nodes.push({ t: 'note', text: 'No upstream and downstream sites to compare: give sites the roles “Upstream / control” and “Downstream / impact” (Setup), or choose them for this section.' });
+        return;
+      }
+      const VERDICT = { higher: 'Higher downstream', lower: 'Lower downstream', 'no-difference': 'No clear difference', 'too-few': 'Too few pairs' } as const;
+      for (const pair of pairs) {
+        const rows = compareSites(b, pair, pids, from, end, blk.days ?? 1);
+        const up = b.siteMap.get(pair.upId)?.code ?? '';
+        const down = b.siteMap.get(pair.downId)?.code ?? '';
+        if (!rows.length) {
+          nodes.push({ t: 'p', runs: [{ text: `No results were taken at ${up} and ${down} on the same day${blk.days ? ` (or within ${blk.days} day${blk.days === 1 ? '' : 's'})` : ''}.`, italic: true }] });
+          continue;
+        }
+        const head: Cell[][] = [[{ text: 'Analyte' }, { text: 'Pairs', align: 'right' }, { text: `${up} median`, align: 'right' }, { text: `${down} median`, align: 'right' }, { text: 'Median difference', align: 'right' }, { text: 'Higher at ' + down, align: 'right' }, { text: 'Difference' }]];
+        const body: Cell[][] = rows.map(({ parameterId, c }) => {
+          const p = b.paramMap.get(parameterId);
+          const u = unitLabel(p?.unit);
+          const flag = c.verdict === 'higher' ? (look.highlight === 'text' ? { color: TEXT_FLAGS.exceed } : { fill: FILLS.guideline }) : {};
+          return [
+            { text: p?.name ?? parameterId },
+            { text: String(c.n), align: 'right' },
+            { text: c.upMedian === null ? '' : `${fmtNum(c.upMedian, p?.decimals)} ${u}`, align: 'right' },
+            { text: c.downMedian === null ? '' : `${fmtNum(c.downMedian, p?.decimals)} ${u}`, align: 'right' },
+            { text: c.medianDiff === null ? '' : `${c.medianDiff > 0 ? '+' : ''}${fmtNum(c.medianDiff, p?.decimals)}`, align: 'right' },
+            { text: c.n - c.bothNd ? `${Math.round(c.higherDown * 100)}%` : '', align: 'right' },
+            { text: `${VERDICT[c.verdict]}${c.p !== null ? ` (p ${c.p < 0.001 ? '< 0.001' : `= ${c.p.toFixed(3)}`})` : ''}`, ...flag },
+          ] as Cell[];
+        });
+        nodes.push({
+          t: 'table',
+          caption: tableCaption(`${capText(blk)}${pairs.length > 1 || blk.captionText === undefined ? ` – ${down} against ${up}` : ''}`),
+          head,
+          body,
+          widths: ['*', width * 0.07, width * 0.14, width * 0.14, width * 0.13, width * 0.11, width * 0.2],
+          fontSize: t.fontSize - 1,
+          notes: [`Results taken at both sites ${blk.days ? `within ${blk.days} day${blk.days === 1 ? '' : 's'}` : 'on the same day'}, ${formatDate(from)} to ${formatDate(end)}. A difference is reported when the Wilcoxon signed-rank test on the paired differences gives p < 0.05; pairs both below detection are left out.`],
+        });
       }
     },
     samplingTable: (blk) => {

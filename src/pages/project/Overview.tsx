@@ -4,6 +4,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { IconArrowRight, IconCalendarDue, IconFlask, IconShieldCheck } from '@tabler/icons-react';
 import { revivePeriod, useViewState } from '../../hooks/useViewState';
 import { useProject } from '../../hooks/useProjectData';
+import { latestDate, projectTrends, trendRange } from '../../lib/projectTrends';
+import { CATEGORY_TEXT, categoryTone } from '../../lib/trends';
 import { ConsentViewControl, defaultPeriod, LevelBadge, PeriodPicker, RuleStatusBadge, StatTile, type PeriodValue } from '../../components/common';
 import { cellClass } from '../../lib/highlight';
 import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResults, keyParameters, type CellFlag, type ConsentView } from '../../lib/analysis';
@@ -254,15 +256,44 @@ function Trends() {
   const keys = useMemo(() => keyParameters(data, 6), [data]);
   const start = addMonths(todayStr(), -36);
   const sets = data.project.guidelineSetIds.map((id) => data.setMap.get(id)).filter((s): s is NonNullable<typeof s> => !!s);
+  // the trends worth knowing about: likely or very likely improving or degrading, over 10 years
+  const notable = useMemo(() => {
+    const range = trendRange('10y', latestDate(data));
+    return projectTrends(data, { parameterIds: keys, ...range })
+      .filter((r) => r.result.ok && /likely-(improving|degrading)$/.test(r.result.category))
+      .sort((a, c) => Number(categoryTone(c.result.category) === 'bad') - Number(categoryTone(a.result.category) === 'bad') || (c.result.pImproving ?? 0) - (a.result.pImproving ?? 0));
+  }, [data, keys]);
   if (!keys.length) return null;
   return (
     <Card>
       <Group justify="space-between" mb="xs">
         <Title order={4}>Key parameter trends (3 years)</Title>
-        <Anchor component={Link} to={`/projects/${data.project.id}/charts`} size="sm">
-          Graph builder
-        </Anchor>
+        <Group gap="md">
+          <Anchor component={Link} to={`/projects/${data.project.id}/trends`} size="sm">
+            Trend tests
+          </Anchor>
+          <Anchor component={Link} to={`/projects/${data.project.id}/charts`} size="sm">
+            Graph builder
+          </Anchor>
+        </Group>
       </Group>
+      {notable.length > 0 && (
+        <Group gap={6} mb="sm" wrap="wrap">
+          <Text size="xs" c="dimmed">
+            Over 10 years:
+          </Text>
+          {notable.slice(0, 8).map((r) => (
+            <Badge key={`${r.siteId}|${r.parameterId}`} size="sm" variant="light" color={categoryTone(r.result.category) === 'bad' ? 'red' : 'teal'} style={{ textTransform: 'none' }}>
+              {data.siteMap.get(r.siteId)?.code} {data.paramMap.get(r.parameterId)?.short ?? data.paramMap.get(r.parameterId)?.name}: {CATEGORY_TEXT[r.result.category].toLowerCase()}
+            </Badge>
+          ))}
+          {notable.length > 8 && (
+            <Text size="xs" c="dimmed">
+              and {notable.length - 8} more
+            </Text>
+          )}
+        </Group>
+      )}
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         {keys.map((pid) => {
           const p = data.paramMap.get(pid)!;

@@ -430,7 +430,9 @@ export type ReportBlockType =
   | 'programmeTable'
   | 'tarpTable'
   | 'reportingTable'
-  | 'qaSummary';
+  | 'qaSummary'
+  | 'trendTable'
+  | 'upDownTable';
 
 export interface ReportBlockBase {
   id: string;
@@ -543,6 +545,8 @@ export interface ChartBlock extends ReportBlockBase {
   caption?: string;
   /** Shade the reporting period, e.g. this monitoring round against the earlier years. */
   markPeriod?: boolean;
+  /** Each site's trend line (Sen's slope) over the graph's dates, where there are enough results. */
+  trendLines?: boolean;
 }
 export interface SiteTableBlock extends ReportBlockBase {
   type: 'siteTable';
@@ -557,6 +561,27 @@ export interface QaSummaryBlock extends ReportBlockBase {
   duplicates?: 'all' | 'outside' | 'none';
   /** The decisions' table (results left out, samples swapped, accepted findings …) – default shown. */
   decisions?: boolean;
+}
+/** Trends (Mann-Kendall / seasonal Kendall, Sen's slope) at each site for each analyte, up to the report's end. */
+export interface TrendTableBlock extends ReportBlockBase {
+  type: 'trendTable';
+  siteIds: ID[]; // [] = the report's sites
+  parameterIds: ID[]; // [] = the consent analytes
+  /** Years back from the report's end (0 = all results). */
+  years: number;
+  seasons?: 'auto' | 'none' | 'months' | 'quarters';
+}
+/** Downstream against upstream: results paired by date, compared (Wilcoxon signed-rank test). */
+export interface UpDownTableBlock extends ReportBlockBase {
+  type: 'upDownTable';
+  /** The sites compared (none = the project's upstream and downstream sites, paired by their roles). */
+  upSiteId?: ID;
+  downSiteId?: ID;
+  parameterIds: ID[]; // [] = the consent analytes
+  /** The report's period, or this many years back from its end (0 = all results). */
+  years?: number;
+  /** Results paired within this many days (default 1). */
+  days?: number;
 }
 /** What a monitoring round's results are compared with, besides limits and guidelines. */
 export type RoundCompare = 'previous' | 'change' | 'median' | 'range' | 'note';
@@ -736,6 +761,8 @@ export interface ReportingTableBlock extends ReportBlockBase {
 
 export type ReportBlock =
   | QaSummaryBlock
+  | TrendTableBlock
+  | UpDownTableBlock
   | TitleBlock
   | HeadingBlock
   | TextBlock

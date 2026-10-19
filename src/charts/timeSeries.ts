@@ -43,6 +43,8 @@ export interface ChartSpec {
   xAuto?: boolean;
   /** A time range to shade, e.g. the reporting period against earlier years (UTC ms). */
   band?: { from: number; to: number };
+  /** Trend lines (Sen's slope) for some of the series: points along each, [UTC ms, value]. */
+  trends?: Array<{ seriesId: string; points: Array<[number, number]> }>;
 }
 
 export interface ChartInput {
@@ -265,8 +267,10 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
   const keyFont = 11 * fs;
   const rowH = Math.round(17 * fs);
   const swatch = 28;
+  const trendKey = spec.trends?.length ? [{ text: 'Trend (Sen’s slope)', w: swatch, line: { text: '', values: [], color: ink.secondary, dash: [6, 4] } as ThresholdStyle }] : [];
   const keyItems = [
-    ...styles.map((s) => ({ text: s.text, w: swatch, line: s })),
+    ...styles.map((s) => ({ text: s.text, w: swatch, line: s as ThresholdStyle | null })),
+    ...trendKey,
     ...(spec.hasNd ? [{ text: 'Below detection limit (plotted at the limit)', w: 12, line: null }] : []),
   ].map((it) => {
     // text wider than the chart wraps onto more lines
@@ -324,6 +328,23 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
       })),
     };
   });
+  // trend lines: dashed, in their site's colour, switched off with it in the legend (same name)
+  for (const tr of spec.trends ?? []) {
+    const s = spec.series.find((x) => x.id === tr.seriesId);
+    if (!s || tr.points.length < 2) continue;
+    const color = palette[s.colorIndex % palette.length];
+    series.push({
+      type: 'line',
+      name: s.name,
+      showSymbol: false,
+      silent: true,
+      z: 4,
+      lineStyle: { width: 2, color, type: [6, 4], opacity: 0.9 },
+      itemStyle: { color },
+      tooltip: { show: false },
+      data: tr.points.filter(([, v]) => !spec.log || v > 0).map(([t, v]) => ({ value: [t, v] })),
+    });
+  }
   if (spec.band) {
     series.push({
       type: 'line',

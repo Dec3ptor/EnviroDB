@@ -289,12 +289,24 @@ describe('copy for AI input', () => {
     expect(t2).toContain('Required response: Notify [regulator] and check the DP1.');
   });
 
+  it('gives EnviroDB’s trends and upstream–downstream comparisons', async () => {
+    const b = await loadBundle(projectId);
+    const t = buildAiInput(b, { ...opts, sections: { ...DEFAULT_SECTIONS, results: false } }).text;
+    expect(t).toMatch(/## Trends \(\d+ \w+ \d{4} to \d+ \w+ \d{4}\)/);
+    expect(t).toContain('site,parameter,unit,trend,sen_slope_per_year');
+    expect(t).toMatch(/\nDP1,Total Suspended Solids,mg\/L,[A-Z][a-z ]+,-?[\d.]+,-?[\d.]+,0\.\d\d,0\.\d\d,\d+,\d+\.\d,(yes|no),\d+,/);
+    // the slope's size, not its floating-point noise
+    expect(t).not.toMatch(/\.\d*[1-9]\d{5,}/);
+    expect(t).toContain('## DS1 compared with US1');
+    expect(t).toMatch(/\nTotal Suspended Solids,mg\/L,\d+,[\d.]+,[\d.]+,[\d.-]+,[\d.]+,[\d.]+,(higher downstream|no clear difference)/);
+  });
+
   it('includes only the chosen sections and appends the request last', async () => {
     const b = await loadBundle(projectId);
-    const sections = { results: false, stats: true, compliance: false, rules: false, guidelines: false, schedule: false };
+    const sections = { results: false, stats: true, compliance: false, rules: false, guidelines: false, schedule: false, trends: false };
     const t = withRequest(buildAiInput(b, { ...opts, sections }).text, '  Which site has the highest zinc?  ');
     expect(t).toContain('## Summary statistics');
-    for (const h of ['## Results', '## Compliance assessment', '## Consent conditions', '## Guideline values', '## Monitoring schedule']) expect(t, h).not.toContain(h);
+    for (const h of ['## Results', '## Compliance assessment', '## Consent conditions', '## Guideline values', '## Monitoring schedule', '## Trends', 'compared with']) expect(t, h).not.toContain(h);
     expect(t.endsWith('## My request\nWhich site has the highest zinc?\n')).toBe(true);
     expect(csvCell('a,b')).toBe('"a,b"');
     expect(csvCell('say "hi"')).toBe('"say ""hi"""');

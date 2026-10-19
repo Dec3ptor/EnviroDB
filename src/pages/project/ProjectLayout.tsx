@@ -2,11 +2,12 @@ import { InboxPanel } from '../../components/InboxPanel';
 import { lazy, Suspense, useState } from 'react';
 import { Badge, Button, Center, Group, Loader, Menu, Stack, Tabs, Text, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap, IconListCheck } from '@tabler/icons-react';
+import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap, IconListCheck, IconTrendingUp } from '@tabler/icons-react';
 import { ProjectDataProvider, useProject } from '../../hooks/useProjectData';
 import { OverviewTab } from './Overview';
 import { DataTab } from './Data';
 import { QaTab } from './QA';
+import { TrendsTab } from './Trends';
 import { useProjectQa } from '../../hooks/useQa';
 import { ChartsTab } from './Charts';
 import { ComplianceTab } from './Compliance';
@@ -26,6 +27,7 @@ const TABS = [
   { value: 'data', label: 'Data', icon: IconTable },
   { value: 'qa', label: 'QA/QC', icon: IconListCheck },
   { value: 'charts', label: 'Graphs', icon: IconChartLine },
+  { value: 'trends', label: 'Trends', icon: IconTrendingUp },
   { value: 'map', label: 'Map', icon: IconMap },
   { value: 'compliance', label: 'Compliance', icon: IconShieldCheck },
   { value: 'schedule', label: 'Schedule', icon: IconCalendarEvent },
@@ -134,6 +136,7 @@ export function ProjectLayout() {
         <Route index element={<OverviewTab />} />
         <Route path="data" element={<DataTab />} />
         <Route path="qa" element={<QaTab />} />
+        <Route path="trends" element={<TrendsTab />} />
         <Route path="charts" element={<ChartsTab />} />
         <Route
           path="map"

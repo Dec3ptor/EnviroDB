@@ -8,6 +8,7 @@ import { buildChartSpec, chartOption, type ChartSpec } from '../../charts/timeSe
 import { EChart, type EChartHandle } from '../../charts/EChart';
 import { cmToPx, copyPngToClipboard, renderChartPng } from '../../charts/render';
 import { keyParameters } from '../../lib/analysis';
+import { chartTrends } from '../../lib/projectTrends';
 import { reviveIds, revivePeriod, useViewState } from '../../hooks/useViewState';
 import { expandRules } from '../../lib/compliance';
 import { downloadBlob, safeFileName } from '../../db/backup';
@@ -74,6 +75,7 @@ export function ChartsTab() {
   const [setIds, setSetIds] = useViewState<string[]>(k('sets'), project.guidelineSetIds, reviveIds((id) => data.setMap.has(id)));
   const [showRules, setShowRules] = useViewState(k('rules'), true);
   const [log, setLog] = useViewState(k('log'), false);
+  const [trendLines, setTrendLines] = useViewState(k('trends'), false);
   const [sizeKey, setSizeKey] = useViewState(k('size'), 'half', (v) => (SIZE_PRESETS[v] ? v : undefined));
   const [titles, setTitles] = useViewState<Record<string, string>>(k('titles'), {});
   const [busy, setBusy] = useState(false);
@@ -88,11 +90,13 @@ export function ChartsTab() {
       paramIds
         .map((pid) => data.paramMap.get(pid))
         .filter((p): p is NonNullable<typeof p> => !!p)
-        .map((p) => ({
-          p,
-          spec: buildChartSpec({ index, param: p, sites, siteIds, start: period.start, end: period.end, guidelineSets: sets, rules: limitRules, setMap, showRules, log }),
-        })),
-    [paramIds, data.paramMap, index, sites, siteIds, period, sets, limitRules, showRules, log],
+        .map((p) => {
+          const spec = buildChartSpec({ index, param: p, sites, siteIds, start: period.start, end: period.end, guidelineSets: sets, rules: limitRules, setMap, showRules, log });
+          // each site's Sen's slope over the graph's dates
+          if (trendLines) spec.trends = chartTrends(data, p.id, spec.series.map((x) => x.id), period.start, period.end);
+          return { p, spec };
+        }),
+    [paramIds, data, index, sites, siteIds, period, sets, limitRules, showRules, log, trendLines],
   );
 
   const exportDocx = async () => {
@@ -127,6 +131,9 @@ export function ChartsTab() {
           <Group align="center" gap="lg" wrap="wrap">
             <Switch label="Consent limits / triggers" checked={showRules} onChange={(e) => setShowRules(e.currentTarget.checked)} />
             <Switch label="Log scale" checked={log} onChange={(e) => setLog(e.currentTarget.checked)} />
+            <Tooltip label="Each site’s Sen’s slope over the dates shown, where there are enough results (see the Trends tab)">
+              <Switch label="Trend lines" checked={trendLines} onChange={(e) => setTrendLines(e.currentTarget.checked)} />
+            </Tooltip>
             <Group gap="sm" ml="auto" wrap="wrap">
               <Select aria-label="Graph size" data={Object.entries(SIZE_PRESETS).map(([value, v]) => ({ value, label: v.label }))} value={sizeKey} onChange={(v) => v && setSizeKey(v)} w={230} allowDeselect={false} comboboxProps={{ width: 'max-content' }} />
               <Button variant="default" leftSection={<IconFileTypeDocx size={16} />} loading={busy} onClick={exportDocx} disabled={!specs.length}>

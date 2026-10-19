@@ -43,13 +43,15 @@ export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string
   programmeTable: { label: 'Monitoring programme', help: 'Each sampling schedule: its sites, how often and what for' },
   tarpTable: { label: 'Trigger–action–response plan', help: 'Each consent limit and trigger level, when it is exceeded and the response required' },
   reportingTable: { label: 'Reporting requirements', help: 'Each report: how often, when it is next due and who it goes to' },
+  trendTable: { label: 'Trends', help: 'Each site’s trend for each analyte – improving, degrading or indeterminate – with Sen’s slope, over the years up to the report’s end' },
+  upDownTable: { label: 'Upstream vs downstream', help: 'Downstream results against upstream ones taken the same day: medians, the difference, and whether it is significant' },
   qaSummary: { label: 'QA/QC', help: 'Field duplicates (RPDs), blanks, the checks run on the results, and the results left out or samples swapped – with why' },
 };
 
 /** The sections offered to add, grouped as in the palette. */
 export const BLOCK_GROUPS: Array<{ label: string; types: ReportBlockType[] }> = [
   { label: 'Text and layout', types: ['heading', 'text', 'spacer', 'pageBreak', 'title', 'toc', 'letter', 'signatures'] },
-  { label: 'From the results', types: ['summary', 'calc', 'resultsTable', 'roundTable', 'roundReview', 'statsTable', 'chart', 'figures', 'qaSummary'] },
+  { label: 'From the results', types: ['summary', 'calc', 'resultsTable', 'roundTable', 'roundReview', 'statsTable', 'chart', 'trendTable', 'upDownTable', 'figures', 'qaSummary'] },
   { label: 'Compliance', types: ['complianceTable', 'exceedances', 'triggerTable'] },
   { label: 'Programme and plans', types: ['programmeTable', 'tarpTable', 'reportingTable', 'siteTable', 'samplingTable'] },
 ];
@@ -70,6 +72,8 @@ const REF_KIND: Partial<Record<ReportBlockType, 'table' | 'fig'>> = {
   tarpTable: 'table',
   reportingTable: 'table',
   qaSummary: 'table',
+  trendTable: 'table',
+  upDownTable: 'table',
   chart: 'fig',
   figures: 'fig',
 };
@@ -120,6 +124,10 @@ export function newBlock(type: ReportBlockType): ReportBlock {
       return { id, type, title: '' };
     case 'qaSummary':
       return { id, type, duplicates: 'all', decisions: true };
+    case 'trendTable':
+      return { id, type, siteIds: [], parameterIds: [], years: 10, seasons: 'auto' };
+    case 'upDownTable':
+      return { id, type, parameterIds: [], years: 0, days: 1 };
     default:
       return { id, type } as ReportBlock;
   }
@@ -159,6 +167,10 @@ export function blockSummary(b: ReportBlock): string {
       return b.rows.length ? `${b.rows.length} value${b.rows.length === 1 ? '' : 's'}${b.show === 'list' ? ' as a list' : ' in a table'}` : 'No values chosen yet';
     case 'tarpTable':
       return b.levels === 'limits' ? 'Consent limits' : b.levels === 'triggers' ? 'Trigger levels' : 'Limits and trigger levels, with their responses';
+    case 'trendTable':
+      return `${b.parameterIds.length ? `${b.parameterIds.length} analytes` : 'Consent analytes'} · ${b.years ? `last ${b.years} years` : 'all results'}${b.seasons && b.seasons !== 'auto' ? ` · seasons: ${b.seasons}` : ''}`;
+    case 'upDownTable':
+      return `${b.parameterIds.length ? `${b.parameterIds.length} analytes` : 'Consent analytes'} · ${b.years ? `last ${b.years} years` : 'the report period'} · paired ${b.days ? `within ${b.days} day${b.days === 1 ? '' : 's'}` : 'on the same day'}`;
     case 'qaSummary':
       return ['A summary of the checks', b.duplicates === 'none' ? '' : b.duplicates === 'outside' ? 'duplicates outside the limits' : 'every duplicate RPD', b.decisions === false ? '' : 'the decisions made'].filter(Boolean).join(' · ');
     default:
@@ -753,6 +765,7 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
             <Switch label="Consent limit / trigger lines" checked={block.showRules} onChange={(e) => set({ showRules: e.currentTarget.checked })} />
             <Switch label="Log scale" checked={block.logScale} onChange={(e) => set({ logScale: e.currentTarget.checked })} />
             {block.range !== 'period' && <Switch label="Shade the report period" checked={!!block.markPeriod} onChange={(e) => set({ markPeriod: e.currentTarget.checked })} />}
+            <Switch label="Trend lines (Sen’s slope)" checked={!!block.trendLines} onChange={(e) => set({ trendLines: e.currentTarget.checked })} />
           </Group>
         </Stack>
       );
@@ -923,6 +936,43 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
           </Text>
         </Stack>
       );
+    case 'trendTable':
+      return (
+        <Stack gap="xs">
+          <BlockParamsField block={block} params={params} onChange={onChange} all="The consent analytes" />
+          <Group grow>
+            <Select
+              label="Over"
+              data={[
+                { value: '5', label: 'The last 5 years' },
+                { value: '10', label: 'The last 10 years' },
+                { value: '20', label: 'The last 20 years' },
+                { value: '0', label: 'All results' },
+              ]}
+              value={String(block.years)}
+              onChange={(v) => v !== null && set({ years: Number(v) })}
+              allowDeselect={false}
+            />
+            <Select
+              label="Seasons"
+              data={[
+                { value: 'auto', label: 'If they matter' },
+                { value: 'months', label: 'By month' },
+                { value: 'quarters', label: 'By quarter' },
+                { value: 'none', label: 'Ignore' },
+              ]}
+              value={block.seasons ?? 'auto'}
+              onChange={(v) => v && set({ seasons: v as typeof block.seasons })}
+              allowDeselect={false}
+            />
+          </Group>
+          <Text size="xs" c="dimmed">
+            Up to the report’s end. Mann-Kendall (seasonal Kendall when results vary with the season) with Sen’s slope, as on the Trends tab; a note under the table says how.
+          </Text>
+        </Stack>
+      );
+    case 'upDownTable':
+      return <UpDownSettings block={block} onChange={(b) => onChange(b)} />;
     case 'qaSummary':
       return (
         <Stack gap="xs">
@@ -1118,6 +1168,53 @@ function CalcForm({ block, onChange }: { block: Extract<ReportBlock, { type: 'ca
       <Text size="xs" c="dimmed">
         Worked out from each report’s period. To put a value in a sentence instead, use “Insert a calculation” in a Text section.
       </Text>
+    </Stack>
+  );
+}
+
+function UpDownSettings({ block, onChange }: { block: Extract<ReportBlock, { type: 'upDownTable' }>; onChange: (b: ReportBlock) => void }) {
+  const params = useLiveQuery(() => db.parameters.toArray(), []) ?? [];
+  // on a project's Reports tab: its sites to choose from (in the template library, the sites' roles decide)
+  const sites = useContext(ReportSitesContext) ?? [];
+  const set = (patch: Partial<typeof block>) => onChange({ ...block, ...patch });
+  const options = sites.filter((s) => s.type !== 'Quality control').map((s) => ({ value: s.id, label: s.name ? `${s.code} – ${s.name}` : s.code }));
+  return (
+    <Stack gap="xs">
+      {options.length > 0 ? (
+        <Group grow>
+          <Select label="Upstream" placeholder="By the sites’ roles" data={options} value={block.upSiteId ?? null} onChange={(v) => set({ upSiteId: v ?? undefined })} clearable />
+          <Select label="Downstream" placeholder="By the sites’ roles" data={options} value={block.downSiteId ?? null} onChange={(v) => set({ downSiteId: v ?? undefined })} clearable />
+        </Group>
+      ) : (
+        <Text size="xs" c="dimmed">
+          Compares each project’s upstream / control sites with its downstream / impact sites (their roles in Setup), or the sites you choose when the template is used for one project.
+        </Text>
+      )}
+      <BlockParamsField block={block} params={params} onChange={onChange} all="The consent analytes" />
+      <Group grow>
+        <Select
+          label="Results from"
+          data={[
+            { value: '0', label: 'The report period' },
+            { value: '3', label: 'The last 3 years' },
+            { value: '5', label: 'The last 5 years' },
+          ]}
+          value={String(block.years ?? 0)}
+          onChange={(v) => v !== null && set({ years: Number(v) })}
+          allowDeselect={false}
+        />
+        <Select
+          label="Paired within"
+          data={[
+            { value: '0', label: 'The same day' },
+            { value: '1', label: '1 day' },
+            { value: '3', label: '3 days' },
+          ]}
+          value={String(block.days ?? 1)}
+          onChange={(v) => v !== null && set({ days: Number(v) })}
+          allowDeselect={false}
+        />
+      </Group>
     </Stack>
   );
 }

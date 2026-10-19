@@ -304,6 +304,28 @@ there as they work and show up for the others within seconds.
   alike the results are – confirm it, or choose another. The report section **QA/QC** sums up the duplicates
   (with an RPD table), the blanks, the checks run and the decisions made, and says how many checks were still
   to be looked at.
+- **Trends.** Each project's *Trends* tab tests every site and analyte (the consent analytes unless you
+  choose) over the last 5 or 10 years or all the results, the way NZ's national water quality reporting does
+  it (LAWA; Snelder & Fraser 2021):
+  - Results are reduced to one value per month or quarter (the median), by how often the site is sampled.
+  - The **Mann-Kendall test** says how likely the values are to be rising or falling – the **seasonal
+    Kendall test** when results vary with the season (Kruskal-Wallis, p < 0.05), or as you choose.
+  - **Sen's slope** gives the size, in units a year and as a percentage of the median, with a 90%
+    confidence interval.
+  - Results below detection count as equal (below the highest detection limit) for the test and as half
+    the detection limit for the slope (marked ~ when more than 15% are).
+  - The result is put in LAWA's words: very likely improving (90% or more), likely improving (67–90%),
+    indeterminate, likely degrading, very likely degrading. A fall is an improvement for most analytes, a
+    rise for dissolved oxygen and clarity; pH and temperature are only rising or falling.
+  - At least 8 values over two years are needed, 5 of them above detection; otherwise it says why not.
+
+  Click a row for its graph with the trend line. **Upstream and downstream** compares two sites' results taken
+  the same day (or within 1–7 days): medians, the median difference, how often downstream was higher, and the
+  Wilcoxon signed-rank test (a difference is called at p < 0.05). Sites with the roles *Upstream / control* and
+  *Downstream / impact* are paired for you. The *Graphs* tab and report graphs can draw each site's **trend
+  line**, the *Overview* lists the likely and very likely trends, and *Copy for AI input* includes the trend
+  and upstream–downstream results. Report sections: **Trends** (a table up to the report's end, with a note on
+  the method) and **Upstream vs downstream** (over the report's period, or the last 3 or 5 years).
 - **Version numbers.** The version is at the foot of the menu – click it for what's new. Reports, Excel
   files and backups record the version that made them. When a new version is published EnviroDB offers to
   reload, and it tells you if someone in your workspace is already using a newer one.

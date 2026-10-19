@@ -11,6 +11,18 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.4.0',
+    date: '2026-10-19',
+    title: 'Trends and statistics',
+    items: [
+      'A Trends tab on each project: is each site improving or degrading? The Mann-Kendall test (seasonal Kendall when results vary with the season) with Sen’s slope, as LAWA does it – very likely improving, likely improving, indeterminate, likely degrading, very likely degrading – with the change a year and its likelihood.',
+      'Results below detection are handled properly, and it says why a trend can’t be assessed when there are too few results.',
+      'Upstream and downstream: results taken the same day compared – medians, the difference, how often downstream is higher, and whether the difference is significant (Wilcoxon signed-rank test).',
+      'Trend lines on the Graphs tab and report graphs; notable trends on the project Overview; trends and comparisons in Copy for AI input.',
+      'New report sections: Trends, and Upstream vs downstream.',
+    ],
+  },
+  {
     version: '1.3.0',
     date: '2026-10-19',
     title: 'QA/QC checks',

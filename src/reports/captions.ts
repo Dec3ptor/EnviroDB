@@ -126,6 +126,10 @@ export function defaultCaption(b: ReportBlock): string {
       return 'Monitoring sites';
     case 'qaSummary':
       return 'Field duplicate results, [period]';
+    case 'trendTable':
+      return 'Trends in water quality';
+    case 'upDownTable':
+      return 'Downstream compared with upstream, [period]';
     case 'samplingTable':
       return 'Samples collected, [period]';
     case 'calc':

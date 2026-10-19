@@ -3,7 +3,9 @@
 // anywhere – the user copies the text and decides where it goes.
 
 import type { Result, Rule } from '../db/types';
-import { evaluateAll, pivot, statsTable, type ProjectBundle } from './analysis';
+import { evaluateAll, keyParameters, pivot, statsTable, type ProjectBundle } from './analysis';
+import { compareSites, defaultPairs, projectTrends, trendRange } from './projectTrends';
+import { CATEGORY_TEXT } from './trends';
 import { exceededWhen, ruleParamIds, siteLabel, type Exceedance, type RuleStatus } from './compliance';
 import { formatDate, MONTH_LONG, todayStr } from './dates';
 import { guidelineFor } from './guidelines';
@@ -18,6 +20,8 @@ export interface AiInputSections {
   rules: boolean;
   guidelines: boolean;
   schedule: boolean;
+  /** Trends and upstream–downstream comparisons worked out by EnviroDB (older choices don't have it: on). */
+  trends?: boolean;
 }
 
 export const AI_SECTION_LABELS: Record<keyof AiInputSections, string> = {
@@ -27,9 +31,10 @@ export const AI_SECTION_LABELS: Record<keyof AiInputSections, string> = {
   rules: 'Consent conditions & triggers',
   guidelines: 'Guideline values',
   schedule: 'Monitoring schedule & reporting dates',
+  trends: 'Trends & upstream vs downstream (worked out by EnviroDB)',
 };
 
-export const DEFAULT_SECTIONS: AiInputSections = { results: true, stats: true, compliance: true, rules: true, guidelines: true, schedule: true };
+export const DEFAULT_SECTIONS: AiInputSections = { results: true, stats: true, compliance: true, rules: true, guidelines: true, schedule: true, trends: true };
 
 export interface AiInputOptions {
   start: string;
@@ -60,11 +65,11 @@ export const AI_PROMPTS: Array<{ label: string; text: string; allData?: boolean 
   },
   {
     label: 'Upstream vs downstream',
-    text: 'Compare the downstream/impact sites with the upstream/control sites. Is there evidence the discharge is affecting water quality? Use suitable paired statistics and explain the results in plain language.',
+    text: 'Compare the downstream/impact sites with the upstream/control sites. Is there evidence the discharge is affecting water quality? Use the paired comparisons EnviroDB worked out where they are included (otherwise suitable paired statistics), and explain the results in plain language.',
   },
   {
     label: 'Trends over time',
-    text: "Test for trends over time at each site for the key parameters (for example Mann-Kendall with Sen's slope, seasonal if needed). Report the direction, size and significance of each trend, and any limitations such as non-detects or gaps.",
+    text: "Describe the trends over time at each site for the key parameters. Use the trend results EnviroDB worked out (Mann-Kendall with Sen's slope) where they're included; otherwise test for trends yourself. Report the direction, size and confidence of each trend in plain language, and any limitations such as non-detects or gaps.",
     allData: true,
   },
   {
@@ -340,6 +345,69 @@ export function buildAiInput(b: ProjectBundle, o: AiInputOptions): AiInput {
       section(`Summary statistics (${period})`);
       L.push('```csv', csvRow(['site', 'parameter', 'unit', 'n', 'n_not_detected', 'min', 'median', 'mean', '95th_percentile', 'max']));
       for (const r of st) L.push(csvRow([r.site.code, r.param.name, unitLabel(r.param.unit), String(r.n), String(r.nd), r.minText, fmtNum(r.median), fmtNum(r.mean), fmtNum(r.p95), r.maxText]));
+      L.push('```');
+    }
+  }
+
+  if (S.trends !== false) {
+    // over the last 10 years to the period's end (all the record), whatever period the results above cover
+    const tEnd = b.index.dates.max && b.index.dates.max.slice(0, 10) < end ? b.index.dates.max.slice(0, 10) : end;
+    const range = trendRange('10y', tEnd);
+    const pids = o.paramIds.length ? o.paramIds : keyParameters(b, 8);
+    const rows = projectTrends(b, { siteIds: o.siteIds, parameterIds: pids, start: range.start, end: range.end });
+    if (rows.length) {
+      section(`Trends (${day(range.start ?? start)} to ${day(range.end)})`);
+      L.push(
+        "Worked out by EnviroDB: the Mann-Kendall test (seasonal Kendall where results vary with the season) on one value per month or quarter, with Sen's slope. Non-detects are tied for the test and halved for the slope. probability_improving: how likely the trend is improving (for pH and temperature, probability_rising instead). Categories as LAWA: very likely ≥ 90%, likely 67–90%.",
+      );
+      L.push('```csv', csvRow(['site', 'parameter', 'unit', 'trend', 'sen_slope_per_year', 'percent_per_year', 'probability_improving', 'probability_rising', 'values', 'years', 'seasonal', 'percent_below_detection', 'note']));
+      for (const { siteId, parameterId, result: r } of rows) {
+        const p = b.paramMap.get(parameterId);
+        L.push(
+          csvRow([
+            b.siteMap.get(siteId)?.code ?? '',
+            p?.name ?? parameterId,
+            unitLabel(p?.unit),
+            CATEGORY_TEXT[r.category],
+            r.ok && r.slope !== null ? plain(Number(r.slope.toPrecision(3))) : '',
+            r.pctPerYear !== null ? r.pctPerYear.toFixed(1) : '',
+            r.ok && r.pImproving !== undefined ? r.pImproving.toFixed(2) : '',
+            r.ok ? r.pIncreasing.toFixed(2) : '',
+            String(r.n),
+            r.years.toFixed(1),
+            r.ok ? (r.seasonal ? 'yes' : 'no') : '',
+            r.ok ? String(Math.round(r.censored * 100)) : '',
+            r.ok ? (r.approximate ? 'slope approximate (many non-detects)' : '') : r.reason ?? '',
+          ]),
+        );
+      }
+      L.push('```');
+    }
+    const pairs = defaultPairs(b).filter((x) => sites.some((s) => s.id === x.upId) && sites.some((s) => s.id === x.downId));
+    for (const pair of pairs) {
+      const cmp = compareSites(b, pair, pids, start, end, 1);
+      if (!cmp.length) continue;
+      const up = b.siteMap.get(pair.upId)?.code ?? '';
+      const down = b.siteMap.get(pair.downId)?.code ?? '';
+      section(`${down} compared with ${up} (${period})`);
+      L.push(`Worked out by EnviroDB: results taken at both sites within a day of each other; the Wilcoxon signed-rank test on the differences (${down} − ${up}). Pairs both below detection are left out.`);
+      L.push('```csv', csvRow(['parameter', 'unit', 'pairs', `${up}_median`, `${down}_median`, 'median_difference', 'share_higher_downstream', 'p_value', 'verdict']));
+      for (const { parameterId, c } of cmp) {
+        const p = b.paramMap.get(parameterId);
+        L.push(
+          csvRow([
+            p?.name ?? parameterId,
+            unitLabel(p?.unit),
+            String(c.n),
+            c.upMedian === null ? '' : plain(Number(c.upMedian.toPrecision(4))),
+            c.downMedian === null ? '' : plain(Number(c.downMedian.toPrecision(4))),
+            c.medianDiff === null ? '' : plain(Number(c.medianDiff.toPrecision(3))),
+            c.n - c.bothNd ? c.higherDown.toFixed(2) : '',
+            c.p === null ? '' : c.p.toFixed(4),
+            c.verdict === 'higher' ? 'higher downstream' : c.verdict === 'lower' ? 'lower downstream' : c.verdict === 'no-difference' ? 'no clear difference' : 'too few pairs',
+          ]),
+        );
+      }
       L.push('```');
     }
   }
