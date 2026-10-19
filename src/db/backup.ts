@@ -127,7 +127,7 @@ export async function restoreWorkspace(obj: unknown, mode: 'replace' | 'merge'):
 export async function exportProjectPackage(projectId: string): Promise<WorkspaceBackup> {
   const project = await db.projects.get(projectId);
   if (!project) throw new Error('Project not found');
-  const [sites, samples, results, rules, notes, schedules, obligations, imports, calendarRows, qa] = await Promise.all([
+  const [sites, samples, results, rules, notes, schedules, obligations, imports, calendarRows, qa, conditions, assessments] = await Promise.all([
     db.sites.where('projectId').equals(projectId).toArray(),
     db.samples.where('projectId').equals(projectId).toArray(),
     db.results.where('projectId').equals(projectId).toArray(),
@@ -138,6 +138,8 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     db.imports.where('projectId').equals(projectId).toArray(),
     db.calendarRows.where('projectId').equals(projectId).toArray(),
     db.qa.where('projectId').equals(projectId).toArray(),
+    db.conditions.where('projectId').equals(projectId).toArray(),
+    db.assessments.where('projectId').equals(projectId).toArray(),
   ]);
   const calendarMarks = calendarRows.length ? await db.calendarMarks.where('item').anyOf(calendarRows.map((r) => r.id)).toArray() : [];
   const usedParams = new Set(results.map((r) => r.parameterId));
@@ -153,7 +155,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     appVersion: APP_VERSION,
-    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks, qa },
+    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks, qa, conditions, assessments },
   };
 }
 
@@ -213,6 +215,19 @@ export async function importProjectPackage(obj: unknown): Promise<string> {
     await put('calendarMarks', (r) => {
       const item = remap(r.item as string)!;
       return { ...r, id: r.field ? `${item}|${String(r.month).slice(0, 4)}|${r.field}` : `${item}|${r.month}`, item };
+    });
+    // the compliance register: conditions and their grades (which name the conditions)
+    await put('conditions', (r) => ({
+      ...r,
+      id: remap(r.id)!,
+      projectId: newProjectId,
+      ruleIds: (r.ruleIds as string[] | undefined)?.map((x) => remap(x)!),
+      scheduleIds: (r.scheduleIds as string[] | undefined)?.map((x) => remap(x)!),
+      obligationIds: (r.obligationIds as string[] | undefined)?.map((x) => remap(x)!),
+    }));
+    await put('assessments', (r) => {
+      const conditionId = remap(r.conditionId as string)!;
+      return { ...r, id: `${conditionId}|${r.start}|${r.end}`, projectId: newProjectId, conditionId };
     });
     // the QA/QC log: its keys name samples, which a copy renames
     const ids = (list: unknown) => (list as string[] | undefined)?.map((x) => (exists && map.has(x) ? map.get(x)! : x));

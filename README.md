@@ -343,6 +343,20 @@ there as they work and show up for the others within seconds.
   with notes (and the statistics if you like), and *Copy for AI input* includes the bands. New library
   parameters: periphyton chlorophyll a, MCI, QMCI and ASPM. **The NPS-FM is under review – check the version in
   force, and these bands against it, before relying on a grade.**
+- **Compliance register.** *Compliance → Register* lists every condition of the project's consents – limits,
+  monitoring, reporting, notifications, management, administrative – and grades each for the period as councils
+  do: full compliance, low risk, moderate or significant non-compliance.
+  - **Make it** from the project (a condition for each condition number in the rules, each sampling schedule
+    and report, and the other requirements noted in Setup), by pasting the consent's conditions (each numbered
+    condition becomes one, linked to the rules with the same number), or one at a time.
+  - For each condition EnviroDB says what it found over the period: limits exceeded or not (and when),
+    triggers to follow up, samples missed, reports sent late or not at all. It marks a condition fully
+    compliant (auto) when everything it checks complied, and suggests a grade otherwise.
+  - **You grade it**, with the evidence and reasoning (needed for a non-compliance) and what's being done about
+    it. Who graded it and when are kept, and every earlier grade for the period too – the audit trail. The
+    overall grade is the worst of the conditions.
+  - The report section **Compliance register** gives the overall grade and the table (with or without what
+    EnviroDB found); the Compliance tab's Word download includes it.
 - **Version numbers.** The version is at the foot of the menu – click it for what's new. Reports, Excel
   files and backups record the version that made them. When a new version is published EnviroDB offers to
   reload, and it tells you if someone in your workspace is already using a newer one.

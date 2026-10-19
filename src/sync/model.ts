@@ -2,7 +2,7 @@
 
 /** Tables shared with everyone in the workspace. */
 export const SHARED_TABLES = [
-  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa', 'meta',
+  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa', 'conditions', 'assessments', 'meta',
 ] as const;
 export type SharedTable = (typeof SHARED_TABLES)[number];
 export const SHARED = new Set<string>(SHARED_TABLES);

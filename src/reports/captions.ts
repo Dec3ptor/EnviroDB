@@ -130,6 +130,8 @@ export function defaultCaption(b: ReportBlock): string {
       return 'Trends in water quality';
     case 'npsfmTable':
       return 'NPS-FM attribute bands';
+    case 'complianceRegister':
+      return 'Compliance with consent conditions, [period]';
     case 'upDownTable':
       return 'Downstream compared with upstream, [period]';
     case 'samplingTable':

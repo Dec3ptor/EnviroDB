@@ -71,7 +71,7 @@ export async function touchProject(projectId: string): Promise<void> {
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
-  await db.transaction('rw', [db.projects, db.sites, db.samples, db.results, db.rules, db.notes, db.schedules, db.obligations, db.imports, db.calendarRows, db.qa], async () => {
+  await db.transaction('rw', [db.projects, db.sites, db.samples, db.results, db.rules, db.notes, db.schedules, db.obligations, db.imports, db.calendarRows, db.qa, db.conditions, db.assessments], async () => {
     // its rows on the monitoring calendar stay, with the project's details
     const project = await db.projects.get(projectId);
     for (const r of await db.calendarRows.where('projectId').equals(projectId).toArray()) {
@@ -92,6 +92,8 @@ export async function deleteProject(projectId: string): Promise<void> {
     await db.rules.where('projectId').equals(projectId).delete();
     await db.notes.where('projectId').equals(projectId).delete();
     await db.qa.where('projectId').equals(projectId).delete();
+    await db.conditions.where('projectId').equals(projectId).delete();
+    await db.assessments.where('projectId').equals(projectId).delete();
     await db.schedules.where('projectId').equals(projectId).delete();
     await db.obligations.where('projectId').equals(projectId).delete();
     await db.imports.where('projectId').equals(projectId).delete();

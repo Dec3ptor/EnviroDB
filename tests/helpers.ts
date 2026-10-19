@@ -31,6 +31,7 @@ export async function loadBundle(projectId: string): Promise<ProjectBundle> {
     obligations: await db.obligations.where('projectId').equals(projectId).toArray(),
     index: buildIndex(samples, results, sites, params),
     qc: { sites: qcSites, samples: samples.filter(isQc), records: await db.qa.where('projectId').equals(projectId).toArray() },
+    register: { conditions: await db.conditions.where('projectId').equals(projectId).toArray(), assessments: await db.assessments.where('projectId').equals(projectId).toArray() },
   };
 }
 

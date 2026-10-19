@@ -380,6 +380,52 @@ export interface InboxFile {
   at: string;
 }
 
+/** Council-style compliance grades (as used in NZ compliance monitoring reports). */
+export type ComplianceGrade = 'full' | 'low' | 'moderate' | 'significant' | 'na';
+
+/** A condition of a resource consent in the project's compliance register. */
+export interface ConsentCondition {
+  id: ID;
+  projectId: ID;
+  /** The consent it belongs to, when the project has several. */
+  consent?: string;
+  /** Its number: "7(b)". */
+  ref: string;
+  /** In short: "TSS in the discharge no more than 100 g/m³". */
+  title: string;
+  /** The condition's wording. */
+  text?: string;
+  kind: 'limit' | 'monitoring' | 'reporting' | 'notification' | 'management' | 'administrative' | 'other';
+  /** What EnviroDB assesses it by: consent rules, sampling schedules, reports due. */
+  ruleIds?: ID[];
+  scheduleIds?: ID[];
+  obligationIds?: ID[];
+  /** How compliance is shown, for what EnviroDB can't assess (site visits, records, photos …). */
+  evidence?: string;
+  active: boolean;
+  order: number;
+  updatedAt: string;
+}
+
+/** A condition's grade over a period (a reporting year, a monitoring round …), why, and its earlier grades. */
+export interface ConditionAssessment {
+  /** `${conditionId}|${start}|${end}` */
+  id: string;
+  projectId: ID;
+  conditionId: ID;
+  start: string;
+  end: string;
+  grade: ComplianceGrade;
+  /** The evidence and reasoning. */
+  note?: string;
+  /** What is being done about a non-compliance. */
+  action?: string;
+  by?: string;
+  at: string;
+  /** Earlier grades for the period: the audit trail. */
+  history?: Array<{ grade: ComplianceGrade; note?: string; action?: string; by?: string; at: string }>;
+}
+
 /**
  * What was decided about a QA/QC finding (by its key): fine as it is, results left out, samples swapped between
  * sites, or queried with the lab – with who, when and why. The project's QA/QC log.
@@ -447,7 +493,8 @@ export type ReportBlockType =
   | 'qaSummary'
   | 'trendTable'
   | 'upDownTable'
-  | 'npsfmTable';
+  | 'npsfmTable'
+  | 'complianceRegister';
 
 export interface ReportBlockBase {
   id: string;
@@ -585,6 +632,12 @@ export interface TrendTableBlock extends ReportBlockBase {
   /** Years back from the report's end (0 = all results). */
   years: number;
   seasons?: 'auto' | 'none' | 'months' | 'quarters';
+}
+/** The compliance register for the report's period: each condition, what was found, its grade and why. */
+export interface ComplianceRegisterBlock extends ReportBlockBase {
+  type: 'complianceRegister';
+  /** Leave out what EnviroDB found (only the grades and reasons). */
+  hideFound?: boolean;
 }
 /** Each site's NPS-FM attribute bands over the years to the report's end, with the national bottom lines. */
 export interface NpsfmTableBlock extends ReportBlockBase {
@@ -784,6 +837,7 @@ export interface ReportingTableBlock extends ReportBlockBase {
 }
 
 export type ReportBlock =
+  | ComplianceRegisterBlock
   | NpsfmTableBlock
   | QaSummaryBlock
   | TrendTableBlock

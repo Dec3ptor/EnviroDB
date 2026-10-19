@@ -1,4 +1,4 @@
-import type { ExceedanceNote, GuidelineSet, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, Site } from '../db/types';
+import type { ConditionAssessment, ConsentCondition, ExceedanceNote, GuidelineSet, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, Site } from '../db/types';
 import type { DataIndex } from './dataIndex';
 import { buildIndex, resultsFor } from './dataIndex';
 import { evaluateRules, ruleParamIds, type EvalContext, type RuleEvaluation } from './compliance';
@@ -27,6 +27,8 @@ export interface ProjectBundle {
   index: DataIndex;
   /** QA/QC: the quality control sites and samples (duplicates and blanks), and the decisions made. */
   qc?: { sites: Site[]; samples: Sample[]; records: QaRecord[] };
+  /** The compliance register: the consent's conditions and their grades. */
+  register?: { conditions: ConsentCondition[]; assessments: ConditionAssessment[] };
 }
 
 /**

@@ -43,6 +43,7 @@ export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string
   programmeTable: { label: 'Monitoring programme', help: 'Each sampling schedule: its sites, how often and what for' },
   tarpTable: { label: 'Trigger–action–response plan', help: 'Each consent limit and trigger level, when it is exceeded and the response required' },
   reportingTable: { label: 'Reporting requirements', help: 'Each report: how often, when it is next due and who it goes to' },
+  complianceRegister: { label: 'Compliance register', help: 'Every consent condition with its grade for the period (full compliance … significant non-compliance), what was found and why' },
   npsfmTable: { label: 'NPS-FM attribute bands', help: 'Each site’s National Objectives Framework bands (E. coli, nitrate, ammonia, clarity, DRP …) with the national bottom lines' },
   trendTable: { label: 'Trends', help: 'Each site’s trend for each analyte – improving, degrading or indeterminate – with Sen’s slope, over the years up to the report’s end' },
   upDownTable: { label: 'Upstream vs downstream', help: 'Downstream results against upstream ones taken the same day: medians, the difference, and whether it is significant' },
@@ -53,7 +54,7 @@ export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string
 export const BLOCK_GROUPS: Array<{ label: string; types: ReportBlockType[] }> = [
   { label: 'Text and layout', types: ['heading', 'text', 'spacer', 'pageBreak', 'title', 'toc', 'letter', 'signatures'] },
   { label: 'From the results', types: ['summary', 'calc', 'resultsTable', 'roundTable', 'roundReview', 'statsTable', 'chart', 'trendTable', 'upDownTable', 'figures', 'qaSummary'] },
-  { label: 'Compliance', types: ['complianceTable', 'exceedances', 'triggerTable', 'npsfmTable'] },
+  { label: 'Compliance', types: ['complianceRegister', 'complianceTable', 'exceedances', 'triggerTable', 'npsfmTable'] },
   { label: 'Programme and plans', types: ['programmeTable', 'tarpTable', 'reportingTable', 'siteTable', 'samplingTable'] },
 ];
 
@@ -76,6 +77,7 @@ const REF_KIND: Partial<Record<ReportBlockType, 'table' | 'fig'>> = {
   trendTable: 'table',
   upDownTable: 'table',
   npsfmTable: 'table',
+  complianceRegister: 'table',
   chart: 'fig',
   figures: 'fig',
 };
@@ -130,6 +132,8 @@ export function newBlock(type: ReportBlockType): ReportBlock {
       return { id, type, siteIds: [], parameterIds: [], years: 10, seasons: 'auto' };
     case 'npsfmTable':
       return { id, type, siteIds: [], years: 5, detail: false };
+    case 'complianceRegister':
+      return { id, type };
     case 'upDownTable':
       return { id, type, parameterIds: [], years: 0, days: 1 };
     default:
@@ -171,6 +175,8 @@ export function blockSummary(b: ReportBlock): string {
       return b.rows.length ? `${b.rows.length} value${b.rows.length === 1 ? '' : 's'}${b.show === 'list' ? ' as a list' : ' in a table'}` : 'No values chosen yet';
     case 'tarpTable':
       return b.levels === 'limits' ? 'Consent limits' : b.levels === 'triggers' ? 'Trigger levels' : 'Limits and trigger levels, with their responses';
+    case 'complianceRegister':
+      return b.hideFound ? 'Grades and reasons' : 'Grades, what was found and why';
     case 'npsfmTable':
       return `${b.years ? `The last ${b.years} years` : 'All results'}${b.detail ? ' · with the statistics' : ''}`;
     case 'trendTable':
@@ -979,6 +985,15 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
       );
     case 'upDownTable':
       return <UpDownSettings block={block} onChange={(b) => onChange(b)} />;
+    case 'complianceRegister':
+      return (
+        <Stack gap="xs">
+          <Switch label="Leave out what EnviroDB found (only the grades and reasons)" checked={!!block.hideFound} onChange={(e) => set({ hideFound: e.currentTarget.checked })} />
+          <Text size="xs" c="dimmed">
+            From the project’s compliance register (Compliance tab → Register) for the report’s period, with the overall grade.
+          </Text>
+        </Stack>
+      );
     case 'npsfmTable':
       return (
         <Stack gap="xs">

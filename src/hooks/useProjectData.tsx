@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Center, Loader, Stack, Text, Button } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { db } from '../db/db';
-import type { ExceedanceNote, GuidelineSet, ImportBatch, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, Site } from '../db/types';
+import type { ConditionAssessment, ConsentCondition, ExceedanceNote, GuidelineSet, ImportBatch, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, Site } from '../db/types';
 import { isQcSite } from '../lib/qc';
 import { buildIndex, type DataIndex } from '../lib/dataIndex';
 import { SERIES_LIGHT } from '../theme';
@@ -31,6 +31,8 @@ export interface ProjectData {
   index: DataIndex;
   /** QA/QC: the quality control sites and samples (duplicates and blanks), and the decisions made. */
   qc: { sites: Site[]; samples: Sample[]; records: QaRecord[] };
+  /** The compliance register: the consent's conditions and their grades. */
+  register: { conditions: ConsentCondition[]; assessments: ConditionAssessment[] };
   siteColor: (siteId: string) => string;
 }
 
@@ -61,9 +63,11 @@ export function ProjectDataProvider({ projectId, children }: { projectId: string
   const params = useLiveQuery(() => db.parameters.toArray(), []);
   const guidelineSets = useLiveQuery(() => db.guidelineSets.toArray(), []);
   const qaRecords = useLiveQuery(() => db.qa.where('projectId').equals(projectId).toArray(), [projectId]);
+  const conditions = useLiveQuery(() => db.conditions.where('projectId').equals(projectId).toArray(), [projectId]);
+  const assessments = useLiveQuery(() => db.assessments.where('projectId').equals(projectId).toArray(), [projectId]);
 
   const value = useMemo<ProjectData | null>(() => {
-    if (!project || !sites || !samples || !results || !rules || !notes || !schedules || !obligations || !imports || !params || !guidelineSets || !qaRecords) return null;
+    if (!project || !sites || !samples || !results || !rules || !notes || !schedules || !obligations || !imports || !params || !guidelineSets || !qaRecords || !conditions || !assessments) return null;
     const sortedSites = [...sites].sort((a, b) => a.order - b.order || a.code.localeCompare(b.code));
     const sortedParams = [...params].sort(compareParams);
     const index = buildIndex(samples, results, sortedSites, sortedParams);
@@ -89,9 +93,10 @@ export function ProjectDataProvider({ projectId, children }: { projectId: string
       imports,
       index,
       qc: { sites: sortedSites.filter((s) => qcSiteIds.has(s.id)), samples: byDate.filter(isQc), records: qaRecords },
+      register: { conditions, assessments },
       siteColor: (id: string) => SERIES_LIGHT[(colorIdx.get(id) ?? 0) % SERIES_LIGHT.length],
     };
-  }, [project, sites, samples, results, rules, notes, schedules, obligations, imports, params, guidelineSets, qaRecords]);
+  }, [project, sites, samples, results, rules, notes, schedules, obligations, imports, params, guidelineSets, qaRecords, conditions, assessments]);
 
   if (project === null) {
     return (

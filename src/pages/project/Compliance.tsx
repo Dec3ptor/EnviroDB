@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
+import { RegisterView } from './Register';
 import { Accordion, ActionIcon, Badge, Button, Card, Group, Menu, SegmentedControl, Select, Stack, Table, Text, Textarea, Popover } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { Link } from 'react-router-dom';
-import { IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay, IconFileTypeDocx, IconSparkles, IconListDetails, IconTable } from '@tabler/icons-react';
+import { IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay, IconFileTypeDocx, IconSparkles, IconListDetails, IconTable, IconChecklist } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
@@ -171,7 +172,7 @@ export function ComplianceTab() {
   const [period, setPeriod] = useViewState<PeriodValue>(`${project.id}:compliance.period`, () => defaultPeriod(project.yearStartMonth, 'thisRy'), revivePeriod(project.yearStartMonth));
   const [editing, setEditing] = useState<Rule | null>(null);
   // the rules one by one, or the limits and triggers as a table
-  const [view, setView] = useViewState<'rules' | 'table'>(`${project.id}:compliance.view`, 'rules', (v) => (v === 'rules' || v === 'table' ? v : undefined));
+  const [view, setView] = useViewState<'rules' | 'table' | 'register'>(`${project.id}:compliance.view`, 'rules', (v) => (v === 'rules' || v === 'table' || v === 'register' ? v : undefined));
   const evals = useMemo(() => evaluateAll(data, period.start, period.end, rules.filter((r) => r.active)), [data, period, rules]);
   const evalMap = new Map(evals.map((e) => [e.rule.id, e]));
   // most important first: limits exceeded, then triggers, results to check, compliant, no data, paused
@@ -193,6 +194,7 @@ export function ComplianceTab() {
     try {
       const blocks: ReportBlock[] = [
         { id: 'h1', type: 'heading', text: `Compliance summary – ${period.label}`, level: 1 },
+        ...(data.register.conditions.length ? [{ id: 'reg', type: 'complianceRegister' } as ReportBlock, { id: 'h4', type: 'heading', text: 'Consent limits and triggers', level: 2 } as ReportBlock] : []),
         { id: 'c', type: 'complianceTable', ruleIds: [] },
         { id: 'h3', type: 'heading', text: 'Consent limits and trigger levels', level: 2 },
         { id: 't', type: 'triggerTable', title: '', siteIds: [], levels: 'all' },
@@ -220,10 +222,10 @@ export function ComplianceTab() {
       <Group justify="space-between" align="flex-end" wrap="wrap">
         <Group gap="sm" align="flex-end" wrap="wrap">
           <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} />
-          {rules.length > 0 && (
+          {(rules.length > 0 || view === 'register') && (
             <SegmentedControl
               value={view}
-              onChange={(v) => setView(v as 'rules' | 'table')}
+              onChange={(v) => setView(v as 'rules' | 'table' | 'register')}
               data={[
                 {
                   value: 'rules',
@@ -243,6 +245,15 @@ export function ComplianceTab() {
                     </Group>
                   ),
                 },
+                {
+                  value: 'register',
+                  label: (
+                    <Group gap={6} wrap="nowrap">
+                      <IconChecklist size={16} />
+                      <span>Register</span>
+                    </Group>
+                  ),
+                },
               ]}
             />
           )}
@@ -259,7 +270,7 @@ export function ComplianceTab() {
                     : 'No data in this period'}
             </Badge>
           )}
-          {rules.length > 0 && (
+          {(rules.length > 0 || data.register.conditions.length > 0) && (
             <Button variant="default" leftSection={<IconFileTypeDocx size={16} />} loading={wordBusy} onClick={exportWord}>
               Word
             </Button>
@@ -293,9 +304,21 @@ export function ComplianceTab() {
         </Group>
       </Group>
 
-      {!rules.length ? (
-        <EmptyState title="No consent rules yet" action={<Button onClick={() => setEditing(newRule(project.id, { name: '' }))}>Add your first rule</Button>}>
-          Add each consent limit, trigger level or guideline comparison. Rules are checked automatically every time data is imported, and feed the compliance tables in your reports.
+      {view === 'register' ? (
+        <RegisterView start={period.start} end={period.end} label={period.label} />
+      ) : !rules.length ? (
+        <EmptyState
+          title="No consent rules yet"
+          action={
+            <Group gap="xs">
+              <Button onClick={() => setEditing(newRule(project.id, { name: '' }))}>Add your first rule</Button>
+              <Button variant="default" onClick={() => setView('register')}>
+                Compliance register
+              </Button>
+            </Group>
+          }
+        >
+          Add each consent limit, trigger level or guideline comparison. Rules are checked automatically every time data is imported, and feed the compliance tables in your reports. The compliance register covers every condition of the consent.
         </EmptyState>
       ) : view === 'table' ? (
         <LimitsView data={data} evals={evals} period={period} onEdit={setEditing} />

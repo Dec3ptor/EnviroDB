@@ -5,6 +5,7 @@ import { QA_DEFAULTS, qaInputFor, qcKind, runQa, withRecords } from '../lib/qa';
 import { chartTrends, compareSites, defaultPairs, projectTrends } from '../lib/projectTrends';
 import { CATEGORY_TEXT, categoryTone } from '../lib/trends';
 import { projectNpsfm, type AttributeGrade } from '../lib/npsfm';
+import { GRADE_ORDER, GRADE_TEXT, overallGrade, registerRows } from '../lib/register';
 import { NPSFM_ATTRIBUTES, NPSFM_SOURCE } from '../data/npsfm';
 import { displayValue, evaluateAll, flagResults, isLimitLevel, keyParameters, limitToSites, statsTable, type CellFlag } from '../lib/analysis';
 import type { RuleEvaluation } from '../lib/compliance';
@@ -1037,6 +1038,47 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         notes: [
           `Trends to ${formatDate(end)}${from ? ` from ${formatDate(from)}` : ''}: the Mann-Kendall test (the seasonal Kendall test where results vary with the season, Kruskal-Wallis p < 0.05) on one value per month or quarter; Sen’s slope for the change a year (with the percentage of the median). Results below detection are tied for the test and halved for the slope (~: more than 15% below detection). Likelihood categories as used by LAWA: very likely 90% or more, likely 67–90%, otherwise indeterminate.`,
         ],
+      });
+    },
+    complianceRegister: (blk) => {
+      const reg = opts.bundle.register;
+      const rows = reg ? registerRows(reg.conditions, reg.assessments, opts.bundle, start, end) : [];
+      if (!rows.length) {
+        if (opts.preview) nodes.push({ t: 'note', text: 'No conditions in the compliance register yet – add them on the Compliance tab (Register).' });
+        return;
+      }
+      const overall = overallGrade(rows);
+      const counts = GRADE_ORDER.filter((g) => g !== 'na')
+        .reverse()
+        .map((g) => [g, rows.filter((r) => r.grade === g).length] as const)
+        .filter(([, n]) => n);
+      nodes.push({
+        t: 'p',
+        runs: [
+          { text: `Overall: ` },
+          { text: overall.grade ? GRADE_TEXT[overall.grade].toLowerCase() : 'not yet graded', bold: true },
+          { text: overall.provisional && overall.grade ? ' (provisional)' : '' },
+          { text: ` – ${counts.map(([g, n]) => `${n} condition${n === 1 ? '' : 's'} ${GRADE_TEXT[g].toLowerCase()}`).join(', ')}${overall.toGrade ? `${counts.length ? '; ' : ''}${overall.toGrade} not yet graded` : ''}.` },
+        ],
+      });
+      const severe = (g?: string) => g === 'moderate' || g === 'significant';
+      const flag = look.highlight === 'text' ? { color: TEXT_FLAGS.exceed, bold: true } : { fill: FILLS.limit };
+      const head: Cell[][] = [[{ text: 'No.' }, { text: 'Condition' }, ...(blk.hideFound ? [] : [{ text: 'Found' }]), { text: 'Grade' }, { text: 'Comments' }]];
+      const body: Cell[][] = rows.map((r) => [
+        { text: r.condition.ref || '–', bold: true },
+        { text: r.condition.title },
+        ...(blk.hideFound ? [] : [{ text: r.auto.lines.join(' ') }]),
+        { text: r.grade ? GRADE_TEXT[r.grade] : 'Not yet graded', ...(severe(r.grade) ? flag : r.grade === 'low' ? { fill: look.highlight === 'text' ? undefined : FILLS.guideline } : {}) },
+        { text: [r.assessment?.note, r.assessment?.action && `Action: ${r.assessment.action}`].filter(Boolean).join(' ') },
+      ]);
+      nodes.push({
+        t: 'table',
+        caption: tableCaption(capText(blk)),
+        head,
+        body,
+        widths: blk.hideFound ? [width * 0.07, '*', width * 0.2, width * 0.33] : [width * 0.07, width * 0.25, '*', width * 0.15, width * 0.25],
+        fontSize: t.fontSize - 1.5,
+        notes: ['Grades as used in council compliance monitoring: full compliance; low risk non-compliance; moderate non-compliance; significant non-compliance.'],
       });
     },
     npsfmTable: (blk) => {

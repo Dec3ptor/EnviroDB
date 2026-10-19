@@ -11,6 +11,18 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.6.0',
+    date: '2026-10-19',
+    title: 'Compliance register',
+    items: [
+      'A compliance register on the Compliance tab: every consent condition – limits, monitoring, reporting, notification, management – graded for the period as councils do: full compliance, low risk, moderate or significant non-compliance.',
+      'Make it from the project’s rules, sampling schedules and reports, or paste the consent’s conditions and each numbered condition becomes one, linked to its rules.',
+      'For each condition EnviroDB says what it found – limits exceeded, triggers to follow up, samples missed, reports late – and suggests a grade; you grade it with your reasons and the action taken.',
+      'Who graded it and when are kept, with every earlier grade: an audit trail. The overall grade is the worst of the conditions.',
+      'A new report section, Compliance register, also in the Compliance tab’s Word download.',
+    ],
+  },
+  {
     version: '1.5.0',
     date: '2026-10-19',
     title: 'NPS-FM attribute bands',

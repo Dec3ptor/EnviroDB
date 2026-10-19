@@ -2,6 +2,8 @@ import Dexie, { type Table } from 'dexie';
 import type {
   CalendarMark,
   CalendarRow,
+  ConditionAssessment,
+  ConsentCondition,
   ExceedanceNote,
   GuidelineSet,
   ImportBatch,
@@ -47,6 +49,8 @@ export class EnviroDatabase extends Dexie {
   calendarMarks!: Table<CalendarMark, string>;
   inbox!: Table<InboxFile, string>;
   qa!: Table<QaRecord, string>;
+  conditions!: Table<ConsentCondition, string>;
+  assessments!: Table<ConditionAssessment, string>;
   meta!: Table<MetaRecord, string>;
   // the shared workspace: what changed when (syncState), what is still to be written to the folder (syncDirty),
   // colleagues' files already read (syncFiles) and this browser's own details (syncLocal)
@@ -91,13 +95,17 @@ export class EnviroDatabase extends Dexie {
     this.version(6).stores({
       qa: 'id, projectId',
     });
+    this.version(7).stores({
+      conditions: 'id, projectId',
+      assessments: 'id, projectId, conditionId',
+    });
   }
 }
 
 export const db = new EnviroDatabase();
 
 export const DATA_TABLES = [
-  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa',
+  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa', 'conditions', 'assessments',
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 
