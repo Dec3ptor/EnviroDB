@@ -12,7 +12,7 @@
 //   2026-03-01 01:00:00,Processed,26/1234-01,2026-03-20 16:00:54,0.5,0.012,410
 //   2026-04-01 00:00:00,Missed,,,No Result,No Result,No Result
 
-import { cellAt, cellText, cellValue, isEmpty, transpose, type SheetGrid } from './workbook';
+import { cellAt, cellText, cellValue, columnLetter, isEmpty, transpose, type SheetGrid } from './workbook';
 import { PROVISIONAL_NOTE, type ParsedImport, type RawSample } from './model';
 import { extractDate, parseDateAny } from '../lib/dates';
 import { normUnit, sameDimension, splitHeaderUnit, unitDim } from '../lib/units';
@@ -34,6 +34,8 @@ export interface WideConfig {
   siteCol: number | null;
   /** Row naming the site over each analyte column ("Sample: | SP1 | SP1 …") when siteMode = row. */
   siteRow?: number | null;
+  /** Row of categories over the analytes ("Dissolved metals", "Total metals" …): each column's group. */
+  groupRow?: number | null;
   fixedSite: string; // site text (code) when siteMode = fixed
   sampleCol: number | null;
   /** Lab number / lab reference of each row. */
@@ -128,20 +130,68 @@ function bestShift(g: SheetGrid, headerRow: number, row: number, cols: number[],
   return best;
 }
 
+const FRACTION_WORD = /dissolved|soluble|filtered|total|recoverable|acid|metals?/i;
+
+/** A row's text over each of these columns, carried to the right across blanks (a category written once over its block). */
+function carried(g: SheetGrid, r: number, cols: number[]): string[] {
+  const sorted = [...cols].sort((a, b) => a - b);
+  const at = new Map<number, string>();
+  let cur = '';
+  for (let c = sorted[0] ?? 0; c <= (sorted[sorted.length - 1] ?? -1); c++) {
+    const t = cellText(cellAt(g, r, c));
+    if (t) cur = t;
+    at.set(c, cur);
+  }
+  return cols.map((c) => at.get(c) ?? '');
+}
+
+/** A row of categories just above the analyte names ("Dissolved metals", "Total metals" …), if there is one. */
+function findGroupRow(g: SheetGrid, headerRow: number, skipRows: Array<number | null>, cols: number[], index: ParamIndex): number | null {
+  if (cols.length < 2) return null;
+  for (const r of [headerRow - 1, headerRow - 2, headerRow - 3]) {
+    if (r < 0 || skipRows.includes(r)) continue;
+    const texts = carried(g, r, cols).filter(Boolean);
+    if (texts.length < Math.max(2, cols.length * 0.3)) continue;
+    const distinct = [...new Set(texts)];
+    if (distinct.some((t) => !!parseDateAny(t) || /^[-+]?\d+(\.\d+)?$/.test(t))) continue;
+    if (unitShare(g, r).share >= 0.4) continue;
+    // not a second row of analyte names, nor one title across the sheet
+    const named = distinct.filter((t) => ['exact', 'high'].includes(matchParameter(t, index).confidence)).length;
+    if (named > distinct.length / 2) continue;
+    if (distinct.length === 1 && !FRACTION_WORD.test(distinct[0])) continue;
+    return r;
+  }
+  return null;
+}
+
 /** Best-guess configuration for a sheet. */
+/** Text that is a result rather than a name: "<0.001", "1.2E-3", "> 2400", "ND". */
+const VALUE_TEXT = /^\s*([<>≤≥~]|less than|greater than)?\s*[-+]?(\d|\.\d)[\d.,eE+-]*\s*\*?\s*$|^\s*(nd|n\.d\.|bdl|<\s*dl|nr|ns|-|–)\s*$/i;
+
 export function detectWide(g0: SheetGrid, index: ParamIndex, orientation?: WideConfig['orientation']): { config: WideConfig; score: number } {
+  // how much a cell reads as an analyte name, worked out once per text (a big sheet repeats the same few)
+  const nameScore = new Map<string, number>();
+  const scoreOf = (t: string) => {
+    let v = nameScore.get(t);
+    if (v === undefined) {
+      const m = matchParameter(t, index);
+      v = m.confidence === 'exact' || m.confidence === 'high' ? 2 : m.confidence === 'low' ? 0.5 : 0;
+      nameScore.set(t, v);
+    }
+    return v;
+  };
   const tryOrient = (o: WideConfig['orientation']) => {
     const g = gridFor(g0, o);
     // header row: the row (in the first 40) with the most analyte-name matches
     let headerRow = 0, best = -1;
     for (let r = 0; r < Math.min(g.nRows, 40); r++) {
       let score = 0;
-      for (const cell of g.rows[r] ?? []) {
+      const row = g.rows[r] ?? [];
+      for (let c = 0; c < Math.min(row.length, 600); c++) {
+        const cell = row[c];
         const t = cellText(cell);
-        if (!t || typeof cell.v === 'number') continue;
-        const m = matchParameter(t, index);
-        if (m.confidence === 'exact' || m.confidence === 'high') score += 2;
-        else if (m.confidence === 'low') score += 0.5;
+        if (!t || typeof cell.v === 'number' || cell.date || t.length > 120 || VALUE_TEXT.test(t)) continue;
+        score += scoreOf(t);
       }
       if (score > best) {
         best = score;
@@ -150,7 +200,7 @@ export function detectWide(g0: SheetGrid, index: ParamIndex, orientation?: WideC
     }
     // date column: most date-like cells below the header
     let dateCol = 0, dateBest = -1;
-    for (let c = 0; c < g.nCols; c++) {
+    for (let c = 0; c < Math.min(g.nCols, 600); c++) {
       let n = 0;
       for (let r = headerRow + 1; r < Math.min(g.nRows, headerRow + 200); r++) if (dateLike(cellAt(g, r, c))) n++;
       const hdr = cellText(cellAt(g, headerRow, c));
@@ -209,6 +259,8 @@ export function detectWide(g0: SheetGrid, index: ParamIndex, orientation?: WideC
       }
     }
 
+    const groupRow = findGroupRow(g, headerRow, [unitRow, siteRow], named, index);
+
     let firstDataRow = Math.max(headerRow, unitRow ?? -1, siteRow ?? -1) + 1;
     while (firstDataRow < g.nRows && !dateLike(cellAt(g, firstDataRow, dateCol))) firstDataRow++;
     if (firstDataRow >= g.nRows) firstDataRow = Math.max(headerRow, unitRow ?? -1, siteRow ?? -1) + 1;
@@ -232,6 +284,7 @@ export function detectWide(g0: SheetGrid, index: ParamIndex, orientation?: WideC
       siteMode: siteCol !== null ? 'column' : siteRow !== null ? 'row' : 'sheet',
       siteCol,
       siteRow,
+      groupRow,
       fixedSite: '',
       sampleCol,
       labCol,
@@ -253,6 +306,9 @@ export interface WideColumn {
   unit?: string;
   /** Site written over the column (siteMode = row). */
   site?: string;
+  /** Its category ("Dissolved metals" …), from the row over the analytes – and the column, when two columns would
+   *  otherwise read the same. */
+  group?: string;
   skip: boolean;
   /** Skipped because it holds no results: only text such as "Completed", or dates. */
   noValues?: boolean;
@@ -261,7 +317,8 @@ export interface WideColumn {
 /** True when a column has no results below the header – blank, words such as "Completed" or "No Result", or dates. */
 function holdsNoValues(g: SheetGrid, col: number, firstRow: number): boolean {
   let values = 0, filled = 0, dates = 0;
-  for (let r = firstRow; r < Math.min(g.nRows, firstRow + 1000); r++) {
+  // the whole column: an analyte added years into a long sheet has its results far down
+  for (let r = firstRow; r < g.nRows; r++) {
     const cell = cellAt(g, r, col);
     if (isEmpty(cell)) continue;
     filled++;
@@ -288,6 +345,17 @@ export function wideColumns(g0: SheetGrid, cfg: WideConfig): WideColumn[] {
     const noValues = !skipped && holdsNoValues(g, c, cfg.firstDataRow);
     cols.push({ col: c, header, analyte: split.name, unit: unitCell || split.unit, site: site && !SITE_LABEL.test(site) ? site : undefined, skip: skipped || noValues, noValues });
   }
+  // each column's category, from the row over the analytes
+  if (cfg.groupRow != null) {
+    const texts = carried(g, cfg.groupRow, cols.map((c) => c.col));
+    cols.forEach((c, i) => (c.group = texts[i] || undefined));
+  }
+  // two columns that would read the same (the same name, category and unit) are told apart by their column, so
+  // neither is lost under the other
+  const keyOf = (c: WideColumn) => [c.analyte, c.group ?? '', c.unit ?? '', c.site ?? ''].map((x) => x.toLowerCase().replace(/\s+/g, ' ').trim()).join('|');
+  const seen = new Map<string, number>();
+  for (const c of cols) if (!c.skip) seen.set(keyOf(c), (seen.get(keyOf(c)) ?? 0) + 1);
+  for (const c of cols) if (!c.skip && (seen.get(keyOf(c)) ?? 0) > 1) c.group = [c.group, cfg.orientation === 'columns' ? `row ${c.col + 1}` : `column ${columnLetter(c.col)}`].filter(Boolean).join(', ');
   // a column without a site of its own belongs with its neighbour on the left (as under merged cells)
   if (cfg.siteMode === 'row') {
     let last = cols.find((c) => c.site)?.site;
@@ -315,11 +383,15 @@ export function parseWide(g0: SheetGrid, cfg: WideConfig): ParsedImport {
   const groups = new Map<string, typeof cols>();
   for (const c of cols) {
     const k = cfg.siteMode === 'row' ? c.site ?? '' : '';
-    groups.set(k, [...(groups.get(k) ?? []), c]);
+    const list = groups.get(k);
+    if (list) list.push(c);
+    else groups.set(k, [c]);
   }
   const samples: RawSample[] = [];
   const warnings: string[] = [];
-  let noDate = 0, missed = 0, upcoming = 0, provisional = 0;
+  let noDate = 0, missed = 0, upcoming = 0, provisional = 0, siteAbove = 0, noSite = 0;
+  // a site written once over a block of rows ("ditto" below it) applies to the rows under it
+  let lastSite = '';
   for (let r = cfg.firstDataRow; r < g.nRows; r++) {
     const row = g.rows[r] ?? [];
     if (row.every(isEmpty)) continue;
@@ -352,11 +424,20 @@ export function parseWide(g0: SheetGrid, cfg: WideConfig): ParsedImport {
     let any = false;
     for (const [site, groupCols] of groups) {
       let siteText = '';
-      if (cfg.siteMode === 'column' && cfg.siteCol !== null) siteText = cellText(cellAt(g, r, cfg.siteCol));
-      else if (cfg.siteMode === 'sheet') siteText = g0.name;
+      if (cfg.siteMode === 'column' && cfg.siteCol !== null) {
+        siteText = cellText(cellAt(g, r, cfg.siteCol));
+        if (siteText && !/^(-|"|〃|ditto|do\.?)$/i.test(siteText)) lastSite = siteText;
+        else if (lastSite && groupCols.some((c) => !parseValue(cellValue(cellAt(g, r, c.col))).missing)) {
+          siteText = lastSite;
+          siteAbove++;
+        } else siteText = '';
+      } else if (cfg.siteMode === 'sheet') siteText = g0.name;
       else if (cfg.siteMode === 'row') siteText = site;
       else siteText = cfg.fixedSite;
-      if (!siteText) continue;
+      if (!siteText) {
+        if (groupCols.some((c) => !parseValue(cellValue(cellAt(g, r, c.col))).missing)) noSite++;
+        continue;
+      }
       const s: RawSample = {
         key: groups.size > 1 ? `${g0.name}#${r}#${site}` : `${g0.name}#${r}`,
         sampleName: sampleName || `${siteText} ${date.slice(0, 10)}`,
@@ -372,7 +453,7 @@ export function parseWide(g0: SheetGrid, cfg: WideConfig): ParsedImport {
         const raw = cellValue(cellAt(g, r, c.col));
         const parsed = parseValue(raw);
         if (parsed.missing) continue;
-        s.results.push({ analyte: c.analyte, unit: c.unit, raw, parsed });
+        s.results.push({ analyte: c.analyte, unit: c.unit, group: c.group, raw, parsed });
       }
       if (!s.results.length) continue;
       if (kind === 'provisional') {
@@ -395,6 +476,8 @@ export function parseWide(g0: SheetGrid, cfg: WideConfig): ParsedImport {
   if (!samples.length) warnings.push('No rows with a valid date and results were found – check the date column and first data row.');
   else if (noDate > 3) warnings.push(`${noDate} rows without a valid date were skipped (e.g. guideline or statistics rows).`);
   const rows = (n: number) => (n === 1 ? '1 row' : `${n} rows`);
+  if (siteAbove) warnings.push(`${rows(siteAbove)} with no site of ${siteAbove === 1 ? 'its' : 'their'} own ${siteAbove === 1 ? 'was' : 'were'} given the site above (as when a site is written once over its rows) – check on the next step.`);
+  if (noSite) warnings.push(`${rows(noSite)} with results but no site ${noSite === 1 ? 'was' : 'were'} left out.`);
   if (missed) warnings.push(`${rows(missed)} marked as missed or not sampled had no results and ${missed === 1 ? 'was' : 'were'} left out.`);
   if (upcoming) warnings.push(`${rows(upcoming)} still due or waiting to be sampled ${upcoming === 1 ? 'was' : 'were'} left out.`);
   if (provisional) warnings.push(`${provisional === 1 ? '1 sample was' : `${provisional} samples were`} still with the lab – ${provisional === 1 ? 'it is' : 'they are'} imported with a note that the results may be provisional. Import the file again once the lab has finished to update them.`);

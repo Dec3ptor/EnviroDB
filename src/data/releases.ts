@@ -11,6 +11,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.15.0',
+    date: '2026-10-20',
+    title: 'Big master spreadsheets: every analyte, and quicker',
+    items: [
+      'Master sheets with a row of categories over the names (e.g. “Dissolved Metals” and “Total Metals”, often merged across the columns) are read with it: the two “Zinc” columns go to Dissolved Zinc and Total Zinc instead of one hiding the other. The Layout step shows the row it found (Category row) and lets you change it.',
+      'The same name twice with nothing over it: both columns are kept, told apart by their column letter, for you to match on the analytes step.',
+      'Analytes only started late in a sheet (empty for the first years) are found, and the whole of each column is read.',
+      'Merged cells: a site or category written once over several rows or columns applies to all of them; a note merged across a row of results isn’t copied into every column. A site written once over its rows applies to the rows under it, and the import says how many.',
+      'Laying out a sheet of thousands of rows and dozens of analytes takes about a second (it could take 15 seconds or more).',
+      'Saving a big file shows how far it has got (Saving results… 40,000 of 84,600), and the QA/QC checks afterwards take seconds rather than a minute or more. Everything in the file is still saved together, or not at all.',
+      'Names remembered from a file are saved once each, and a bare “Zinc” whose category chose dissolved or total isn’t remembered – it would have overruled the category next time.',
+      'A plain “Arsenic” is no longer taken for acid-soluble arsenic: its short name is now “As (acid sol)”.',
+    ],
+  },
+  {
     version: '1.14.0',
     date: '2026-10-20',
     title: 'Acid-soluble metals, and importing again over a mistake',

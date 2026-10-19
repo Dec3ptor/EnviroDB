@@ -197,15 +197,93 @@ function statsOf(pid: string, pts: Series['pts']): Stats | null {
   return {
     med: m,
     s: Math.max(mad, floor),
-    lo: Math.min(...xs),
-    hi: Math.max(...xs),
+    lo: xs.reduce((a, b) => Math.min(a, b)),
+    hi: xs.reduce((a, b) => Math.max(a, b)),
     n: pts.length,
-    rawLo: Math.min(...raws),
-    rawHi: Math.max(...raws),
+    rawLo: raws.reduce((a, b) => Math.min(a, b)),
+    rawHi: raws.reduce((a, b) => Math.max(a, b)),
     nd: pts.length - detected.length,
-    maxDetected: detected.length ? Math.max(...detected) : undefined,
+    maxDetected: detected.length ? detected.reduce((a, b) => Math.max(a, b)) : undefined,
   };
 }
+
+/** A site's results for one parameter, sorted once, so each sample's comparison with the others is quick. */
+interface SortedSeries {
+  pts: Series['pts'];
+  /** Positions in sorted order, by day. */
+  byDay: Map<string, number[]>;
+  nd: number;
+}
+
+function sortSeries(pts: Series['pts']): SortedSeries {
+  const sorted = [...pts].sort((a, b) => a.x - b.x || a.raw - b.raw);
+  const byDay = new Map<string, number[]>();
+  sorted.forEach((p, i) => {
+    const list = byDay.get(p.day);
+    if (list) list.push(i);
+    else byDay.set(p.day, [i]);
+  });
+  return { pts: sorted, byDay, nd: sorted.reduce((t, p) => t + (p.nd ? 1 : 0), 0) };
+}
+
+/**
+ * The same as statsOf() over the series' results on other days – without sorting them again for every sample
+ * (a site sampled weekly for years has thousands; sorting them for each one took minutes).
+ */
+function statsWithout(pid: string, ser: SortedSeries, day: string): Stats | null {
+  const all = ser.pts;
+  const ex = ser.byDay.get(day) ?? []; // ascending positions left out
+  const n = all.length - ex.length;
+  if (n < 2) return null;
+  const out = (i: number) => ex.includes(i);
+  /** The k-th (from 0) of those kept, in order. */
+  const kth = (k: number) => {
+    let i = k;
+    for (const e of ex) if (e <= i) i++;
+    return all[i].x;
+  };
+  const m = n % 2 ? kth((n - 1) / 2) : (kth(n / 2 - 1) + kth(n / 2)) / 2;
+  // the median distance from the median: walk outwards from it, nearest first
+  let j = 0;
+  while (j < all.length && all[j].x < m) j++;
+  let i = j - 1;
+  const want = n % 2 ? [(n - 1) / 2] : [n / 2 - 1, n / 2];
+  const got: number[] = [];
+  for (let taken = 0; got.length < want.length; ) {
+    while (i >= 0 && out(i)) i--;
+    while (j < all.length && out(j)) j++;
+    const dl = i >= 0 ? m - all[i].x : Infinity;
+    const dr = j < all.length ? all[j].x - m : Infinity;
+    const d = dl <= dr ? dl : dr;
+    if (dl <= dr) i--;
+    else j++;
+    if (want.includes(taken)) got.push(d);
+    taken++;
+  }
+  const mad = (got.reduce((a, b) => a + b, 0) / got.length) * 1.4826;
+  const floor = scaleOf(pid) === 'linear' ? Math.max(LINEAR_FLOOR[pid] ?? 0, Math.abs(m) * 0.02) : 0.1;
+  let first = 0;
+  while (out(first)) first++;
+  let last = all.length - 1;
+  while (out(last)) last--;
+  // in order of x, then raw – so in order of raw too: the highest detected is the last one kept
+  let top = all.length - 1;
+  while (top >= 0 && (out(top) || all[top].nd)) top--;
+  return {
+    med: m,
+    s: Math.max(mad, floor),
+    lo: all[first].x,
+    hi: all[last].x,
+    n,
+    rawLo: all[first].raw,
+    rawHi: all[last].raw,
+    nd: ser.nd - ex.filter((e) => all[e].nd).length,
+    maxDetected: top >= 0 ? all[top].raw : undefined,
+  };
+}
+
+/** For the tests: the quick sums against the plain ones. */
+export const _historyStats = { statsOf: (pid: string, pts: Series['pts']) => statsOf(pid, pts), statsWithout: (pid: string, pts: Series['pts'], day: string) => statsWithout(pid, sortSeries(pts), day) };
 
 // ------------------------------------------------------------------ the checks
 
@@ -228,10 +306,18 @@ export function runQa(input: QaInput): QaResult {
   const inRange = (d: string) => (!input.start || dayOf(d) >= input.start) && (!input.end || dayOf(d) <= input.end);
   const used = input.results.filter((r) => !r.excluded);
   const bySample = new Map<string, Result[]>();
-  for (const r of used) bySample.set(r.sampleId, [...(bySample.get(r.sampleId) ?? []), r]);
+  for (const r of used) {
+    const list = bySample.get(r.sampleId);
+    if (list) list.push(r);
+    else bySample.set(r.sampleId, [r]);
+  }
   // duplicates are compared result for result, left-out ones too (the comparison is about the sampling and the lab)
   const allBySample = new Map<string, Result[]>();
-  for (const r of input.results) allBySample.set(r.sampleId, [...(allBySample.get(r.sampleId) ?? []), r]);
+  for (const r of input.results) {
+    const list = allBySample.get(r.sampleId);
+    if (list) list.push(r);
+    else allBySample.set(r.sampleId, [r]);
+  }
   const qc = (s: Sample) => isQcSample(s, siteMap.get(s.siteId));
   const monitoring = input.samples.filter((s) => !qc(s));
   const qcSamples = input.samples.filter((s) => qc(s) && inRange(s.date));
@@ -279,12 +365,17 @@ export function runQa(input: QaInput): QaResult {
       series.set(k, list);
     }
   }
-  /** The site's results for a parameter on other days. */
-  const history = (siteId: string, pid: string, day: string) => (series.get(`${siteId}|${pid}`) ?? []).filter((p) => p.day !== day);
+  const sortedSeries = new Map<string, SortedSeries>();
   const statsCache = new Map<string, Stats | null>();
+  /** How the site's results for a parameter on other days spread. */
   const histStats = (siteId: string, pid: string, day: string) => {
     const k = `${siteId}|${pid}|${day}`;
-    if (!statsCache.has(k)) statsCache.set(k, statsOf(pid, history(siteId, pid, day)));
+    if (!statsCache.has(k)) {
+      const sk = `${siteId}|${pid}`;
+      let ser = sortedSeries.get(sk);
+      if (!ser) sortedSeries.set(sk, (ser = sortSeries(series.get(sk) ?? [])));
+      statsCache.set(k, statsWithout(pid, ser, day));
+    }
     return statsCache.get(k)!;
   };
   const usualText = (pid: string, st: Stats) =>
@@ -588,7 +679,9 @@ function typicalDl(results: Result[], P: Map<string, Parameter>): Map<string, nu
     if (r.qualifier !== '<' || r.value === null) continue;
     const v = convert(r.value, r.unit, P.get(r.parameterId)?.unit ?? r.unit);
     if (v === null || v <= 0) continue;
-    by.set(r.parameterId, [...(by.get(r.parameterId) ?? []), v]);
+    const list = by.get(r.parameterId);
+    if (list) list.push(v);
+    else by.set(r.parameterId, [v]);
   }
   const out = new Map<string, number>();
   for (const [pid, xs] of by) if (xs.length >= 3) out.set(pid, med(xs));

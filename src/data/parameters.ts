@@ -115,6 +115,9 @@ const ALT_NAMES: Record<string, string[]> = { Aluminium: ['aluminum'], Sulphur: 
  */
 export const RETIRED_ALIASES: Record<string, string[]> = {};
 
+/** Short names built-in parameters had before, put right in existing libraries ("As (AS)" read as arsenic twice). */
+export const RETIRED_SHORT: Record<string, string> = {};
+
 function metalParams(): P[] {
   const out: P[] = [];
   for (const [sym, name, exp] of METALS) {
@@ -130,6 +133,7 @@ function metalParams(): P[] {
       // acid soluble: unfiltered, acidified but not digested – between dissolved and total recoverable
       aAliases.push(`acid soluble ${n}`, `${n} acid soluble`, `${n} (acid soluble)`, `${n} - acid soluble`, `${n}, acid soluble`, `acid-soluble ${n}`, `${n} (acid-soluble)`, `acid sol ${n}`, `${n} (acid sol)`, `acid extractable ${n}`, `${n} (acid extractable)`);
     }
+    RETIRED_SHORT[`${s}-as`] = `${sym} (AS)`;
     for (const a of aAliases) if (/^acid soluble |\(acid soluble\)$/.test(a)) (RETIRED_ALIASES[`${s}-t`] ??= []).push(a);
     out.push({
       id: `${s}-d`,
@@ -152,7 +156,7 @@ function metalParams(): P[] {
     out.push({
       id: `${s}-as`,
       name: `Acid Soluble ${name}`,
-      short: `${sym} (AS)`,
+      short: `${sym} (acid sol)`,
       group: 'Metals (acid soluble)',
       unit: 'mg/L',
       aliases: aAliases,

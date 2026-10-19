@@ -5,7 +5,7 @@ import { useSettings } from '../hooks/useSettings';
 import { markInboxImported, takeInboxImport, useInbox, type InboxCandidate } from '../sync/inbox';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Anchor, Badge, Button, Card, Checkbox, Group, Modal, NumberInput, Paper, ScrollArea, SegmentedControl, Select, SimpleGrid, Stack, Stepper, Table, Text, TextInput, ThemeIcon, Title, Tooltip, Autocomplete, Loader, Center,
+  Alert, Anchor, Badge, Button, Card, Checkbox, Group, Modal, NumberInput, Paper, ScrollArea, SegmentedControl, Select, SimpleGrid, Stack, Stepper, Table, Text, TextInput, ThemeIcon, Title, Tooltip, Autocomplete, Loader, Center, Progress,
 } from '@mantine/core';
 import { Dropzone } from '@mantine/dropzone';
 import { notifications } from '@mantine/notifications';
@@ -62,12 +62,13 @@ const EXAMPLES = [
 
 // ------------------------------------------------------------ grid preview
 
-function GridPreview({ grid, roles }: { grid: SheetGrid; roles: { headerRow?: number; unitRow?: number | null; siteRow?: number | null; firstDataRow?: number; dateCol?: number; siteCol?: number | null; timeCol?: number | null; skip?: number[] } }) {
+function GridPreview({ grid, roles }: { grid: SheetGrid; roles: { headerRow?: number; unitRow?: number | null; groupRow?: number | null; siteRow?: number | null; firstDataRow?: number; dateCol?: number; siteCol?: number | null; timeCol?: number | null; skip?: number[] } }) {
   const rows = Math.min(grid.nRows, 30);
   const cols = Math.min(grid.nCols, 18);
   const bg = (r: number, c: number) => {
     if (r === roles.headerRow) return 'var(--mantine-color-blue-1)';
     if (r === roles.unitRow) return 'var(--mantine-color-grape-1)';
+    if (r === roles.groupRow) return 'var(--mantine-color-cyan-1)';
     if (r === roles.siteRow) return 'var(--mantine-color-orange-1)';
     if (c === roles.dateCol && r >= (roles.firstDataRow ?? 0)) return 'var(--mantine-color-green-1)';
     if (c === roles.siteCol && r >= (roles.firstDataRow ?? 0)) return 'var(--mantine-color-orange-1)';
@@ -120,7 +121,7 @@ function WideConfigEditor({ grid, config, onChange }: { grid: SheetGrid; config:
   const g = gridFor(grid, config.orientation);
   const cols = colOptions(g, config.headerRow);
   const set = <K extends keyof WideConfig>(k: K, v: WideConfig[K]) => onChange({ ...config, [k]: v });
-  const columns = wideColumns(grid, config);
+  const columns = useMemo(() => wideColumns(grid, config), [grid, config]);
   const nCols = columns.filter((c) => !c.skip).length;
   const optionalCol = (k: 'labCol' | 'statusCol', label: string) => (
     <Select label={label} data={cols} value={config[k] == null ? null : String(config[k])} onChange={(v) => set(k, v === null ? null : Number(v))} w={180} clearable searchable placeholder="None" />
@@ -141,6 +142,15 @@ function WideConfigEditor({ grid, config, onChange }: { grid: SheetGrid; config:
         />
         <NumberInput label="Header row" min={1} max={g.nRows} value={config.headerRow + 1} onChange={(v) => set('headerRow', Math.max(0, Number(v) - 1))} w={110} />
         <NumberInput label="Units row" min={0} max={g.nRows} value={config.unitRow === null ? 0 : config.unitRow + 1} onChange={(v) => set('unitRow', Number(v) > 0 ? Number(v) - 1 : null)} w={110} description="0 = none" />
+        <NumberInput
+          label="Category row"
+          min={0}
+          max={g.nRows}
+          value={config.groupRow == null ? 0 : config.groupRow + 1}
+          onChange={(v) => set('groupRow', Number(v) > 0 ? Number(v) - 1 : null)}
+          w={120}
+          description="e.g. Dissolved / Total metals; 0 = none"
+        />
         {(config.unitRow !== null || config.siteMode === 'row') && (
           <Select
             label="Units and sites sit"
@@ -187,6 +197,7 @@ function WideConfigEditor({ grid, config, onChange }: { grid: SheetGrid; config:
         {[
           ['var(--mantine-color-blue-1)', 'Header (analyte names)'],
           ['var(--mantine-color-grape-1)', 'Units'],
+          ['var(--mantine-color-cyan-1)', 'Categories (Dissolved / Total metals …)'],
           ['var(--mantine-color-green-1)', 'Dates'],
           ['var(--mantine-color-orange-1)', 'Site'],
           ['var(--mantine-color-gray-2)', 'Ignored column'],
@@ -197,7 +208,7 @@ function WideConfigEditor({ grid, config, onChange }: { grid: SheetGrid; config:
           </Text>
         ))}
       </Group>
-      <GridPreview grid={g} roles={{ headerRow: config.headerRow, unitRow: config.unitRow, siteRow: config.siteMode === 'row' ? config.siteRow : null, firstDataRow: config.firstDataRow, dateCol: config.dateCol, siteCol: config.siteMode === 'column' ? config.siteCol : null, timeCol: config.timeCol, skip: columns.filter((c) => c.skip).map((c) => c.col) }} />
+      <GridPreview grid={g} roles={{ headerRow: config.headerRow, unitRow: config.unitRow, groupRow: config.groupRow, siteRow: config.siteMode === 'row' ? config.siteRow : null, firstDataRow: config.firstDataRow, dateCol: config.dateCol, siteCol: config.siteMode === 'column' ? config.siteCol : null, timeCol: config.timeCol, skip: columns.filter((c) => c.skip).map((c) => c.col) }} />
     </Stack>
   );
 }
@@ -282,6 +293,8 @@ export function ImportWizard(_props: { projectId: string }) {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  /** How far a save has got: results written so far, of how many. */
+  const [saving, setSaving] = useState<{ saved: number; total: number } | null>(null);
   const [state, setState] = useState<WizardState | null>(null);
   const [siteMap, setSiteMap] = useState<Record<string, string | null>>({});
   const [paramMapping, setParamMapping] = useState<Record<string, string | null>>({});
@@ -376,6 +389,8 @@ export function ImportWizard(_props: { projectId: string }) {
   const jobs = [...new Set(samples.map((s) => s.labJob ?? parsed?.labJob).filter((x): x is string => !!x))];
   const sampleSite = (s: (typeof samples)[number]) => siteMap[s.siteText || s.sampleName] ?? null;
   const sampleDate = (s: (typeof samples)[number]) => dateOverrides[s.key] ?? s.date;
+  // those without a date in the file first, so the ones to fix are in the list however long the file is
+  const listedSamples = useMemo(() => [...samples.filter((s) => !s.date), ...samples.filter((s) => s.date)].slice(0, 400), [samples]);
   const included = samples.filter((s) => include[s.key] !== false);
   const ready = included.filter((s) => sampleSite(s) && sampleDate(s));
   const readyResults = ready.reduce((n, s) => n + s.results.filter((r) => paramMapping[analyteMapKey(r)]).length, 0);
@@ -453,6 +468,7 @@ export function ImportWizard(_props: { projectId: string }) {
   const doImport = async () => {
     if (!parsed) return;
     setLoading(true);
+    setSaving({ saved: 0, total: readyResults });
     try {
       const mapping: ImportMapping = {
         sites: Object.fromEntries(samples.map((s) => [s.key, sampleSite(s)])),
@@ -461,7 +477,7 @@ export function ImportWizard(_props: { projectId: string }) {
         params: paramMapping,
         units: unitMap,
       };
-      const res = await commitImport(project.id, parsed, mapping, { duplicates: clearEarlier ? 'replace' : dupes, clearEarlier, rememberAliases: remember, fileName: state!.fileName, labName: parsed.labName });
+      const res = await commitImport(project.id, parsed, mapping, { duplicates: clearEarlier ? 'replace' : dupes, clearEarlier, rememberAliases: remember, fileName: state!.fileName, labName: parsed.labName, onProgress: (saved, total) => setSaving({ saved, total }) });
       if (fromInbox.current.length) {
         await markInboxImported(fromInbox.current, project.id, res.id);
         fromInbox.current = [];
@@ -472,6 +488,7 @@ export function ImportWizard(_props: { projectId: string }) {
       notifications.show({ title: 'Import failed', message: (e as Error).message, color: 'red' });
     } finally {
       setLoading(false);
+      setSaving(null);
     }
   };
 
@@ -743,7 +760,7 @@ export function ImportWizard(_props: { projectId: string }) {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {samples.slice(0, 400).map((s) => {
+                  {listedSamples.map((s) => {
                     const d = sampleDate(s);
                     const sid = sampleSite(s);
                     return (
@@ -807,7 +824,7 @@ export function ImportWizard(_props: { projectId: string }) {
               </Table>
               {samples.length > 400 && (
                 <Text size="xs" c="dimmed" p="xs">
-                  Showing the first 400 of {samples.length} samples – all will be imported.
+                  Showing 400 of {samples.length} samples{missingDates.length ? ' (those without a date first)' : ''} – all will be imported.
                 </Text>
               )}
             </ScrollArea.Autosize>
@@ -1025,13 +1042,26 @@ export function ImportWizard(_props: { projectId: string }) {
             </Stack>
           </Card>
           <Group justify="space-between">
-            <Button variant="default" leftSection={<IconArrowLeft size={16} />} onClick={() => setStep(3)}>
+            <Button variant="default" leftSection={<IconArrowLeft size={16} />} onClick={() => setStep(3)} disabled={loading}>
               Back
             </Button>
             <Button size="md" leftSection={<IconUpload size={18} />} loading={loading} onClick={doImport} disabled={!readyResults}>
               Import into {project.name}
             </Button>
           </Group>
+          {loading && saving && (
+            <Paper withBorder p="sm" aria-live="polite">
+              <Text size="sm" mb={6}>
+                {saving.saved < saving.total ? `Saving results… ${saving.saved.toLocaleString('en-NZ')} of ${saving.total.toLocaleString('en-NZ')}` : `Saved ${saving.total.toLocaleString('en-NZ')} results – remembering names and checking them…`}
+              </Text>
+              <Progress value={saving.total ? (100 * saving.saved) / saving.total : 0} animated />
+              {saving.total > 10000 && (
+                <Text size="xs" c="dimmed" mt={6}>
+                  A big sheet takes a minute or two. Keep this tab open until it’s done – the file goes in whole or not at all.
+                </Text>
+              )}
+            </Paper>
+          )}
         </Stack>
       )}
 

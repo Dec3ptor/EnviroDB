@@ -23,7 +23,7 @@ import type {
   Sample,
   Settings,
   Site, InboxFile } from './types';
-import { BUILT_IN_PARAMETERS, splitPhysicalAndField, RETIRED_ALIASES } from '../data/parameters';
+import { BUILT_IN_PARAMETERS, splitPhysicalAndField, RETIRED_ALIASES, RETIRED_SHORT } from '../data/parameters';
 import { BUILT_IN_GUIDELINES } from '../data/guidelines';
 import { BUILT_IN_TEMPLATES, QUICK_CHECK_TEMPLATE, QUICK_CHECK_TEMPLATE_ID } from '../data/templates';
 import { captureMiddleware, markUncaptured } from '../sync/capture';
@@ -155,8 +155,9 @@ export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<voi
         const aliases = Array.from(new Set([...cur.aliases.filter((a) => !RETIRED_ALIASES[p.id]?.includes(a.toLowerCase())), ...p.aliases.filter((a) => !dropped.has(a.toLowerCase()))]));
         // the user's names, units and groups are kept; the old combined group is split, and the built-in order followed
         const group = cur.group === LEGACY_FIELD_GROUP ? p.group : cur.group;
-        if (aliases.join('\u0001') !== cur.aliases.join('\u0001') || cur.hardnessExponent !== p.hardnessExponent || !cur.builtIn || group !== cur.group || cur.order !== p.order) {
-          toPut.push({ ...cur, aliases, hardnessExponent: p.hardnessExponent, builtIn: true, group, order: p.order });
+        const short = RETIRED_SHORT[p.id] && cur.short === RETIRED_SHORT[p.id] ? p.short : cur.short;
+        if (short !== cur.short || aliases.join('\u0001') !== cur.aliases.join('\u0001') || cur.hardnessExponent !== p.hardnessExponent || !cur.builtIn || group !== cur.group || cur.order !== p.order) {
+          toPut.push({ ...cur, short, aliases, hardnessExponent: p.hardnessExponent, builtIn: true, group, order: p.order });
         }
       }
       existing.delete(p.id);

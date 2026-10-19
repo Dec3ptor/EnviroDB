@@ -98,7 +98,9 @@ export function buildParamIndex(params: Parameter[]): ParamIndex {
   const ordered = [...params].sort((a, b) => Number(!!b.builtIn) - Number(!!a.builtIn));
   for (const p of ordered) {
     const mine = new Set(own(p));
-    for (const n of [p.name, p.short ?? '', p.id, ...p.aliases.filter((a) => !mine.has(a))]) {
+    // the id only as itself: read as words, "as-as" (acid-soluble arsenic) would be "arsenic"
+    exact.set(normName(p.id), p.id);
+    for (const n of [p.name, p.short ?? '', ...p.aliases.filter((a) => !mine.has(a))]) {
       if (!n) continue;
       exact.set(normName(n), p.id);
       add(analyteKey(n), p.id, keyed);
@@ -139,6 +141,14 @@ function dice(a: string, b: string): number {
   return total ? (2 * inter) / total : 0;
 }
 
+/** The metal fraction a heading or category names ("Heavy metals, dissolved, trace", "Total Metals"), if any. */
+export function fractionOf(group: string | undefined): '' | 'acid soluble' | 'dissolved' | 'total' {
+  if (!group) return '';
+  const g = normName(group);
+  // "acid soluble" before "soluble": a different fraction
+  return /acid ?(soluble|sol|extractable)\b/.test(g) ? 'acid soluble' : /dissolved|filtered|soluble/.test(g) ? 'dissolved' : /total|recoverable|acid/.test(g) ? 'total' : '';
+}
+
 /** Match an analyte name (optionally with lab section/group context) to a parameter. */
 export function matchParameter(name: string, index: ParamIndex, group?: string): ParamMatch {
   const { name: bare } = splitHeaderUnit(name);
@@ -149,9 +159,7 @@ export function matchParameter(name: string, index: ParamIndex, group?: string):
 
   // Group context: lab sections like "Heavy metals, dissolved, trace" disambiguate "Zinc".
   if (group) {
-    const g = normName(group);
-    // "acid soluble" before "soluble": a different fraction
-    const fraction = /acid ?(soluble|sol|extractable)\b/.test(g) ? 'acid soluble' : /dissolved|filtered|soluble/.test(g) ? 'dissolved' : /total|recoverable|acid/.test(g) ? 'total' : '';
+    const fraction = fractionOf(group);
     if (fraction) {
       const k = analyteKey(`${fraction} ${bare}`);
       const hit = index.keyed.get(k);

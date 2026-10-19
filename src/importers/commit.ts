@@ -3,6 +3,7 @@ import type { ImportBatch, Parameter, Result, Sample } from '../db/types';
 import { addParameterAlias, addSiteAlias, touchProject } from '../db/repo';
 import { stableId, uid } from '../lib/ids';
 import { isQcSite } from '../lib/qc';
+import { fractionOf, normName } from '../lib/matching';
 import { analyteMapKey, PROVISIONAL_NOTE, type ParsedImport } from './model';
 
 export interface ImportMapping {
@@ -24,10 +25,60 @@ export interface CommitOptions {
   rememberAliases: boolean;
   fileName: string;
   labName?: string;
+  /** Told how many of the results are saved so far (a big master sheet takes a while). */
+  onProgress?: (saved: number, total: number) => void;
 }
+
+/** Results are written this many at a time, all in the one save – so a file goes in whole or not at all. */
+const CHUNK = 5000;
 
 export interface CommitSummary extends ImportBatch {
   newSamples: number;
+}
+
+/**
+ * Remembers the file's site and analyte names for next time – each once, and in one save each (a master sheet names
+ * a site on thousands of rows). A name isn't remembered where it would mislead: one this file used for two sites or
+ * two parameters ("Zinc" under "Dissolved Metals" and again under "Total Metals"), or one a category over it decided –
+ * a remembered name is matched before the category, so "Zinc" kept for dissolved zinc would take total zinc's column
+ * next time.
+ */
+async function rememberNames(parsed: ParsedImport, mapping: ImportMapping): Promise<void> {
+  const sitesByText = new Map<string, Set<string>>();
+  for (const raw of parsed.samples) {
+    const siteId = mapping.sites[raw.key];
+    const text = raw.siteText?.trim();
+    if (!siteId || mapping.include[raw.key] === false || !text) continue;
+    const k = text.toLowerCase();
+    sitesByText.set(k, (sitesByText.get(k) ?? new Set()).add(`${siteId}\u0000${text}`));
+  }
+  const siteNames = [...sitesByText.values()].filter((x) => new Set([...x].map((v) => v.split('\u0000')[0])).size === 1).map((x) => [...x][0].split('\u0000'));
+  if (siteNames.length)
+    await db.transaction('rw', db.sites, async () => {
+      for (const [siteId, text] of siteNames) await addSiteAlias(siteId, text);
+    });
+
+  const byName = new Map<string, { pids: Set<string>; name: string; byCategory: boolean }>();
+  const seen = new Set<string>();
+  for (const raw of parsed.samples) {
+    for (const rr of raw.results) {
+      const akey = analyteMapKey(rr);
+      if (seen.has(akey)) continue;
+      seen.add(akey);
+      const pid = mapping.params[akey];
+      if (!pid) continue;
+      const n = normName(rr.analyte);
+      const cur = byName.get(n) ?? { pids: new Set<string>(), name: rr.analyte, byCategory: false };
+      cur.pids.add(pid);
+      if (fractionOf(rr.group)) cur.byCategory = true;
+      byName.set(n, cur);
+    }
+  }
+  const paramNames = [...byName.values()].filter((x) => x.pids.size === 1 && !x.byCategory);
+  if (paramNames.length)
+    await db.transaction('rw', db.parameters, async () => {
+      for (const x of paramNames) await addParameterAlias([...x.pids][0], x.name);
+    });
 }
 
 export async function commitImport(projectId: string, parsed: ParsedImport, mapping: ImportMapping, opts: CommitOptions): Promise<CommitSummary> {
@@ -184,32 +235,22 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
     const sampleDate = new Map(samplesToPut.map((s) => [s.id, s.date]));
     for (const r of finalResults) if (sampleDate.has(r.sampleId)) r.date = sampleDate.get(r.sampleId)!;
     const deleted = new Set(toDelete);
-    const stale = existing.filter((r) => sampleDate.has(r.sampleId) && !deleted.has(r.id) && r.date !== sampleDate.get(r.sampleId));
-    for (const r of stale) await db.results.update(r.id, { date: sampleDate.get(r.sampleId)! });
+    const putIds = new Set(finalResults.map((r) => r.id));
+    const stale = existing.filter((r) => sampleDate.has(r.sampleId) && !deleted.has(r.id) && !putIds.has(r.id) && r.date !== sampleDate.get(r.sampleId));
+    if (stale.length) await db.results.bulkPut(stale.map((r) => ({ ...r, date: sampleDate.get(r.sampleId)! })));
 
     batch.results = finalResults.length;
     if (toDelete.length) await db.results.bulkDelete(toDelete);
     if (samplesToPut.length) await db.samples.bulkPut(samplesToPut);
-    if (finalResults.length) await db.results.bulkPut(finalResults);
+    opts.onProgress?.(0, finalResults.length);
+    for (let i = 0; i < finalResults.length; i += CHUNK) {
+      await db.results.bulkPut(finalResults.slice(i, i + CHUNK));
+      opts.onProgress?.(Math.min(i + CHUNK, finalResults.length), finalResults.length);
+    }
     await db.imports.put(batch);
   });
 
-  if (opts.rememberAliases) {
-    for (const raw of parsed.samples) {
-      const siteId = mapping.sites[raw.key];
-      if (siteId && mapping.include[raw.key] !== false && raw.siteText) await addSiteAlias(siteId, raw.siteText);
-    }
-    const seen = new Set<string>();
-    for (const raw of parsed.samples) {
-      for (const rr of raw.results) {
-        const akey = analyteMapKey(rr);
-        const pid = mapping.params[akey];
-        if (!pid || seen.has(akey)) continue;
-        seen.add(akey);
-        await addParameterAlias(pid, rr.analyte);
-      }
-    }
-  }
+  if (opts.rememberAliases) await rememberNames(parsed, mapping);
   await touchProject(projectId);
   return { ...batch, newSamples };
 }

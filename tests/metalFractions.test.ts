@@ -17,6 +17,8 @@ beforeAll(async () => {
   // a library from before: "acid soluble zinc" was a name for total zinc
   const old = BUILT_IN_PARAMETERS.find((p) => p.id === 'zn-t')!;
   await db.parameters.put({ ...old, aliases: [...old.aliases, 'acid soluble zinc', 'zinc (acid soluble)'] });
+  // and from 1.14.0: acid-soluble arsenic's short name read as arsenic twice
+  await db.parameters.put({ ...BUILT_IN_PARAMETERS.find((p) => p.id === 'as-as')!, short: 'As (AS)' });
   await ensureBuiltIns();
 });
 
@@ -45,7 +47,8 @@ describe('metal fractions', () => {
     expect(zt.aliases).not.toContain('zinc (acid soluble)');
     expect(zt.aliases).toContain('total recoverable zinc');
     const zas = (await db.parameters.get('zn-as'))!;
-    expect(zas).toMatchObject({ name: 'Acid Soluble Zinc', short: 'Zn (AS)', group: 'Metals (acid soluble)', unit: 'mg/L', builtIn: true });
+    expect(zas).toMatchObject({ name: 'Acid Soluble Zinc', short: 'Zn (acid sol)', group: 'Metals (acid soluble)', unit: 'mg/L', builtIn: true });
+    expect((await db.parameters.get('as-as'))!.short).toBe('As (acid sol)');
     expect((await db.parameters.get('zn-d'))!.aliases).toContain('soluble zinc');
   });
 

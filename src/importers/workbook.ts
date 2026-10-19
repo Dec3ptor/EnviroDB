@@ -98,6 +98,23 @@ export async function readWorkbook(data: ArrayBuffer, fileName: string): Promise
       }
       rows[r] = row;
     }
+    // merged cells: every cell of the merge reads as its first – a heading over several columns, a site or date
+    // over several rows. Across a row only in rows without numbers or dates (headings), so a note merged across a
+    // row of results isn't copied into every column.
+    const headingRow = (r: number) => (rows[r] ?? []).every((x) => isEmpty(x) || (typeof x.v === 'string' && !x.date));
+    for (const m of (ws['!merges'] ?? []) as XLSXTypes.Range[]) {
+      const top = rows[m.s.r]?.[m.s.c];
+      if (!top || isEmpty(top)) continue;
+      if (m.e.c > m.s.c && !headingRow(m.s.r)) continue;
+      // a merge reaching to Excel's last row or column (a whole-column merge) only as far as the sheet's data
+      const lastR = Math.min(m.e.r, rows.length - 1, m.s.r + 5000);
+      const lastC = Math.min(m.e.c, m.s.c + 1000);
+      for (let r = m.s.r; r <= lastR; r++) {
+        if (!rows[r]) rows[r] = [];
+        for (let c = m.s.c; c <= lastC; c++) if ((r !== m.s.r || c !== m.s.c) && isEmpty(rows[r][c])) rows[r][c] = top;
+        nCols = Math.max(nCols, rows[r].length);
+      }
+    }
     // fill holes
     for (let r = 0; r < rows.length; r++) {
       if (!rows[r]) rows[r] = [];
