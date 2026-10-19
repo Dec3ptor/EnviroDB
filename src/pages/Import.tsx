@@ -335,7 +335,12 @@ export function ImportWizard(_props: { projectId: string }) {
     for (const f of all.filter(isJson)) {
       try {
         const text = f instanceof File ? await f.text() : new TextDecoder().decode(f.data);
-        const results = checkResults(JSON.parse(text));
+        const raw = JSON.parse(text);
+        if (raw?.app === 'EnviroDB' && raw?.kind === 'report-templates') {
+          notifications.show({ title: `${f.name} is a report template file`, message: 'Import it on the Report templates page (Library → Report templates → Import).', color: 'blue' });
+          continue;
+        }
+        const results = checkResults(raw);
         setField({ results, name: f.name, inbox: fromInbox.current.filter((c) => c.name === f.name) });
       } catch (e) {
         notifications.show({ title: `${f.name} isn’t field results`, message: (e as Error).message, color: 'red' });

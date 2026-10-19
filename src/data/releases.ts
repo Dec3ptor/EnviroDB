@@ -11,6 +11,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.13.0',
+    date: '2026-10-19',
+    title: 'Share report templates',
+    items: [
+      'Report templates → Share… (or a template’s ⋯ → Share as a file…) saves the templates you pick as a file to send to anyone using EnviroDB outside your workspace.',
+      'Import on the Report templates page reads such a file, shows what’s in it and anything changed to fit your workspace, and adds the templates you tick – nothing you have is changed.',
+      'Analytes and guideline sets are matched by name; any your workspace doesn’t have are left out (and named). Sites and consent rules picked for the sender’s projects are cleared. Signature pictures are left out unless the sender ticks to include them.',
+    ],
+  },
+  {
     version: '1.12.0',
     date: '2026-10-19',
     title: 'Send field results straight to the computer',

@@ -4,12 +4,14 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconCopy, IconDots, IconPlus, IconTrash, IconPhoto, IconStar, IconTemplate, IconFileTypeDocx, IconFileTypePdf, IconFileText, IconRestore } from '@tabler/icons-react';
+import { IconCopy, IconDots, IconPlus, IconTrash, IconPhoto, IconStar, IconTemplate, IconFileTypeDocx, IconFileTypePdf, IconFileText, IconRestore, IconShare, IconFileImport } from '@tabler/icons-react';
 import { db, saveSettings } from '../db/db';
 import type { ReportBlock, ReportKind, ReportTemplate } from '../db/types';
 import { deleteTemplate, duplicateTemplate, restoreBuiltInTemplates, saveTemplate, templateFrom } from '../db/repo';
 import { BUILT_IN_TEMPLATES, REPORT_KINDS, STARTER_TEMPLATES } from '../data/templates';
 import { TemplateFromDocModal } from '../components/report/TemplateFromDoc';
+import { ImportTemplatesModal, ShareTemplatesModal } from '../components/report/TemplateShare';
+import { readTemplateFile, type TemplateImport } from '../lib/templateShare';
 import { MoreOptions, PageHeader, PeriodPicker, defaultPeriod, type PeriodValue } from '../components/common';
 import { PLACEHOLDERS, type ReportDoc } from '../reports/model';
 import { ProjectDataProvider, useProject } from '../hooks/useProjectData';
@@ -352,6 +354,20 @@ export function TemplatesPage() {
   const settings = useSettings();
   const navigate = useNavigate();
   const [fromDoc, setFromDoc] = useState(false);
+  const [sharing, setSharing] = useState<string[] | null>(null);
+  const [importing, setImporting] = useState<{ fileName: string; imports: TemplateImport[] } | null>(null);
+  const openFile = async (file: File | null) => {
+    if (!file) return;
+    try {
+      if (file.size > 40 * 1024 * 1024) throw new Error('The file is too big for a template file.');
+      const raw = JSON.parse(await file.text());
+      const [params, sets, all, sites] = await Promise.all([db.parameters.toArray(), db.guidelineSets.toArray(), db.templates.toArray(), db.sites.toCollection().primaryKeys()]);
+      const imports = readTemplateFile(raw, { params, sets, names: all.map((t) => t.name), siteIds: new Set(sites as string[]), hasLetterhead: !!settings.letterhead });
+      setImporting({ fileName: file.name, imports });
+    } catch (e) {
+      notifications.show({ color: 'red', title: `${file.name} couldn’t be imported`, message: e instanceof SyntaxError ? 'It isn’t a template file from EnviroDB.' : (e as Error).message });
+    }
+  };
   const missing = templates ? BUILT_IN_TEMPLATES.filter((b) => !templates.some((t) => t.id === b.id)).length : 0;
   const make = async (starter: ReportTemplate, name?: string) => {
     const t = await templateFrom(starter, name);
@@ -362,9 +378,19 @@ export function TemplatesPage() {
     <Stack>
       <PageHeader
         title="Report templates"
-        description="What goes in each kind of report, and how it looks. Make your own from a starter, from a document you’ve written before, or by duplicating one here – and delete the ones you don’t use."
+        description="What goes in each kind of report, and how it looks. Make your own from a starter, from a document you’ve written before, or by duplicating one here – and delete the ones you don’t use. Share them with people outside your workspace as a file, and import theirs."
         actions={
           <Group gap="xs">
+            <FileButton accept=".json,application/json" onChange={(f) => void openFile(f)}>
+              {(props) => (
+                <Button {...props} variant="default" leftSection={<IconFileImport size={16} />}>
+                  Import
+                </Button>
+              )}
+            </FileButton>
+            <Button variant="default" leftSection={<IconShare size={16} />} onClick={() => setSharing((templates ?? []).filter((t) => !t.builtIn).map((t) => t.id))} disabled={!templates?.length}>
+              Share…
+            </Button>
             {missing > 0 && (
               <Tooltip label="Put the built-in templates that were deleted back on everyone’s list">
                 <Button
@@ -467,6 +493,9 @@ export function TemplatesPage() {
                         <Menu.Item leftSection={<IconStar size={14} />} onClick={() => saveSettings({ defaultTemplateId: t.id })}>
                           Make default
                         </Menu.Item>
+                        <Menu.Item leftSection={<IconShare size={14} />} onClick={() => setSharing([t.id])}>
+                          Share as a file…
+                        </Menu.Item>
                         <Menu.Item
                           color="red"
                           leftSection={<IconTrash size={14} />}
@@ -498,6 +527,8 @@ export function TemplatesPage() {
           </SimpleGrid>
         </Stack>
       ))}
+      {sharing && templates && <ShareTemplatesModal templates={templates} initial={sharing} onClose={() => setSharing(null)} />}
+      {importing && <ImportTemplatesModal fileName={importing.fileName} imports={importing.imports} onClose={() => setImporting(null)} onDone={(added) => added.length === 1 && navigate(`/templates/${added[0].id}`)} />}
       {fromDoc && (
         <TemplateFromDocModal
           onClose={() => setFromDoc(false)}

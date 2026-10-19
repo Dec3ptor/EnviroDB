@@ -461,6 +461,15 @@ there as they work and show up for the others within seconds.
   can be deleted from the library, or removed from one project in its Setup tab (▸ *Display units or
   remove*); you're shown first what goes with it – its results in each project, its consent rules,
   the sampling schedules and guideline sets that name it.
+- **Sharing report templates.** Everyone in your workspace already has your templates. To give them to someone
+  outside it – another team or company – *Report templates → Share…* (or a template's ⋯ → *Share as a file…*)
+  saves the ones you pick as a file to send; they choose *Import* on their Report templates page and see what's in
+  it before adding it. The file has each template's layout, sections, wording, logo and figures – not your
+  letterhead (theirs is used), project data, or your settings. Analytes and guideline sets are matched by name in
+  their workspace (any they don't have are left out, and they're told which); sites and consent rules picked for
+  your projects are cleared, so the sections use the report's own. People's signature pictures are left out unless
+  you tick to include them. A file from someone else is checked before anything is added – only what a template
+  has, and pictures only as PNG or JPEG.
 - **Settings & backup** – your name, company, signature and letterhead, the app's colour (yours – pick
   any colour for buttons, links and highlights), the workspace (who's connected) and backups. The **Saved** badge top right shows when your changes are in the folder and who else is
   connected.
