@@ -1,4 +1,4 @@
-import type { ChartBlock, FigureImage, GuidelineSet, Letterhead, LetterheadItem, Parameter, ReportBlock, ReportTemplate, Result, ResultsTableBlock, Rule, Sample, Settings, Site, TableCalc } from '../db/types';
+import type { ChartBlock, FigureImage, GuidelineSet, Letterhead, LetterheadItem, Parameter, ReportBlock, ReportTemplate, Result, ResultsTableBlock, Rule, Sample, Settings, Site, TableCalc, TocBlock } from '../db/types';
 import { RULE_LEVELS } from '../db/types';
 import type { ProjectBundle } from '../lib/analysis';
 import { displayValue, evaluateAll, flagResults, isLimitLevel, keyParameters, limitToSites, statsTable, type CellFlag } from '../lib/analysis';
@@ -13,7 +13,7 @@ import { fmtNum } from '../lib/values';
 import { imageSize, logoSizeMm } from '../lib/image';
 import { buildChartSpec, chartOption } from '../charts/timeSeries';
 import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
-import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type RefTarget, type ReportDoc, type ReportLook, type Run } from './model';
+import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type RefTarget, type ReportDoc, type ReportLook, type Run, type TocEntry } from './model';
 import { CELL_PAD_MM, fontWidthFactor, longestWordMm as longestWord, textWidthMm as textWidth } from './measure';
 import { calcHead, calcNotes, calcValue, fillCalcs, tableCalcValue } from './calc';
 import { resultsFor } from '../lib/dataIndex';
@@ -284,6 +284,8 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     mark(caption, anchor);
     return caption;
   };
+  // tables of contents, filled in once the whole report is built
+  const contents: Array<[Extract<DocNode, { t: 'toc' }>, TocBlock]> = [];
   const autoNotes: Record<string, string[]> = {};
   /**
    * After a section: its captions get their anchors, or – for a section under headings – become headings; and your
@@ -398,6 +400,12 @@ export function buildReport(opts: BuildOptions): ReportDoc {
 
   const blockHandlers: { [K in ReportBlock['type']]: (blk: Extract<ReportBlock, { type: K }>) => void } = {
     spacer: (blk) => nodes.push({ t: 'space', mm: Math.max(1, Math.min(200, blk.heightMm || 10)) }),
+    toc: (blk) => {
+      const n: Extract<DocNode, { t: 'toc' }> = { t: 'toc', title: fill(blk.title).trim(), levels: blk.levels ?? 2, entries: [], lists: [] };
+      contents.push([n, blk]);
+      nodes.push(n);
+      if (blk.pageBreakAfter) nodes.push({ t: 'pagebreak' });
+    },
     calc: (blk) => {
       const flags = flagsFor(defaultSets);
       const rows = blk.rows.filter((r) => b.paramMap.has(r.parameterId)).map((r) => calcValue(b, r, start, end, flags));
@@ -1250,6 +1258,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     finishSection(blk, from);
   });
   resolveRefs(nodes, refs);
+  if (contents.length) fillContents(nodes, contents, targets, newAnchor);
   // placeholders in the letterhead's lines, e.g. {{company}} in a footer ({page} is left for the page number)
   const shownLetterhead: Letterhead | undefined = letterhead && {
     ...letterhead,
@@ -1279,6 +1288,39 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     author: settings.author || settings.company,
     fileName: `${project.name} - ${t.name} - ${wholeMonth(shownStart, shownEnd) ? monthLabel(shownStart, shownEnd) : `${formatDate(shownStart, { format: 'D MMM YYYY' })} to ${formatDate(shownEnd, { format: 'D MMM YYYY' })}`}`.replace(/[\\/:*?"<>|]+/g, '-'),
   };
+}
+
+/**
+ * Tables of contents: every heading (given an anchor to link to) to each one's levels, and the numbered captions in a
+ * list for each label – Tables, Figures, Photos … – as Word lists them (by caption label).
+ */
+function fillContents(nodes: DocNode[], contents: Array<[Extract<DocNode, { t: 'toc' }>, TocBlock]>, targets: Record<string, RefTarget>, newAnchor: () => string) {
+  const heads: TocEntry[] = [];
+  const byLabel = new Map<string, TocEntry[]>();
+  const caption = (text: string | undefined, anchor: string | undefined) => {
+    const tg = anchor ? targets[anchor] : undefined;
+    if (!text || !anchor || !tg?.label || !tg.num) return;
+    byLabel.set(tg.label, [...(byLabel.get(tg.label) ?? []), { text, level: 1, anchor }]);
+  };
+  for (const n of nodes) {
+    if (n.t === 'h') {
+      n.anchor ??= newAnchor();
+      heads.push({ text: n.text, number: n.number, level: n.level, anchor: n.anchor });
+    } else if (n.t === 'table' || n.t === 'image') caption(n.caption, n.anchor);
+    else if (n.t === 'figures') n.items.forEach((it) => caption(it.caption, it.anchor));
+    else if (n.t === 'gallery') {
+      n.items.forEach((it) => caption(it.caption, it.anchor));
+      caption(n.caption, n.anchor);
+    }
+  }
+  const plural = (label: string) => (/s$/i.test(label) ? label : `${label}s`);
+  for (const [n, blk] of contents) {
+    n.entries = heads.filter((h) => h.level <= n.levels);
+    n.lists = [...byLabel]
+      .filter(([label]) => (label === 'Table' ? blk.tables : blk.figures))
+      .sort(([a], [b]) => (a === 'Table' ? -1 : b === 'Table' ? 1 : 0))
+      .map(([label, entries]) => ({ title: plural(label), label, entries }));
+  }
 }
 
 /**

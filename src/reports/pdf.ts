@@ -36,6 +36,37 @@ const dest = (anchor?: string) => (anchor ? { id: anchor } : {});
 /** A link target at the top of a picture (its caption is under it, and a link shows the page from where it lands). */
 const spot = (anchor?: string): Content[] => (anchor ? [{ text: ' ', id: anchor, fontSize: 1, lineHeight: 1 } as Content] : []);
 
+/** A table of contents' pdfmake id: its headings, or one of its lists (Tables, Figures …). */
+const tocId = (k: number, label?: string) => `contents${k}${label ? `-${label.replace(/\W+/g, '_')}` : ''}`;
+type Listed = { ids: string[]; level: 1 | 2 | 3 };
+const listedCache = new WeakMap<ReportDoc, Map<string, Listed>>();
+/** The headings and captions in the report's tables of contents, by anchor: which ones each goes in, and its level. */
+function listedIn(doc: ReportDoc): Map<string, Listed> {
+  let m = listedCache.get(doc);
+  if (!m) {
+    const out = new Map<string, Listed>();
+    const add = (anchor: string, id: string, level: 1 | 2 | 3) => {
+      const e = out.get(anchor) ?? { ids: [], level };
+      e.ids.push(id);
+      out.set(anchor, e);
+    };
+    doc.nodes.filter((n) => n.t === 'toc').forEach((n, k) => {
+      n.entries.forEach((e) => add(e.anchor, tocId(k), e.level));
+      n.lists.forEach((l) => l.entries.forEach((e) => add(e.anchor, tocId(k, l.label), 1)));
+    });
+    listedCache.set(doc, (m = out));
+  }
+  return m;
+}
+/** A heading or caption in a table of contents: pdfmake lists it there, with its page number. */
+function listed(doc: ReportDoc, anchor: string | undefined, heading = false): object {
+  const e = anchor ? listedIn(doc).get(anchor) : undefined;
+  if (!e) return {};
+  // rows as close together as Word's (pdfmake adds 2pt above and below each)
+  const top = heading && e.level === 1 ? 3 : 0;
+  return { tocItem: e.ids, tocMargin: [heading ? (e.level - 1) * 12 : 0, top, 0, 0], tocStyle: { bold: heading && e.level === 1 && doc.look.style !== 'letter' } };
+}
+
 /** Table header rows: the accent colour with white text, light grey, or dark grey with white text. */
 function headerLook(doc: ReportDoc): { fill: string; color: string } {
   switch (doc.look.tableHeader) {
@@ -116,7 +147,22 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
       return out; // a title page's page break is applied to the content that follows (see toPdfDefinition)
     }
     case 'h':
-      return [{ text: `${n.number ? `${n.number}  ` : ''}${n.text}`, style: `h${n.level}`, headlineLevel: n.level, ...dest(n.anchor) } as Content];
+      return [{ text: `${n.number ? `${n.number}  ` : ''}${n.text}`, style: `h${n.level}`, headlineLevel: n.level, ...dest(n.anchor), ...listed(doc, n.anchor, true) } as Content];
+    case 'toc': {
+      // pdfmake fills in the page numbers once the pages are laid out
+      const k = doc.nodes.filter((x) => x.t === 'toc').indexOf(n);
+      const look = { textStyle: { fontSize: t.fontSize }, numberStyle: { fontSize: t.fontSize } };
+      const out: Content[] = [];
+      if (n.title) out.push({ text: n.title, style: 'h1' });
+      if (n.entries.length) out.push({ toc: { id: tocId(k), ...look }, margin: [0, 0, 0, 6] } as Content);
+      for (const l of n.lists) {
+        if (!l.entries.length) continue;
+        // as Word's "TOC List Heading": bold, in the heading colour
+        out.push({ text: l.title, bold: true, color: doc.look.headingColor, fontSize: t.fontSize + (letter ? 0 : 1), margin: [0, 12, 0, 3] });
+        out.push({ toc: { id: tocId(k, l.label), ...look }, margin: [0, 0, 0, 6] } as Content);
+      }
+      return out;
+    }
     case 'p':
       return n.quote ? [{ text: runs(n.runs), italics: true, margin: [5 * MM, 0, 0, gap] }] : [{ text: runs(n.runs), margin: [0, 0, 0, gap] }];
     case 'lines':
@@ -133,7 +179,7 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
       const w = Math.min(n.widthCm * 10 * MM, contentWidthPt);
       const out: Content[] = [...spot(n.anchor)];
       if (n.dataUrl) out.push({ image: n.dataUrl, width: w, margin: [0, 4, 0, 2] });
-      if (n.caption) out.push({ text: n.caption, style: 'caption' });
+      if (n.caption) out.push({ text: n.caption, style: 'caption', ...listed(doc, n.anchor) } as Content);
       return [{ stack: out, unbreakable: true } as Content];
     }
     case 'figures': {
@@ -147,7 +193,7 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
                 const w = Math.min(it.widthCm * 10 * MM, max);
                 const stack: Content[] = [...spot(it.anchor)];
                 if (it.dataUrl) stack.push({ image: it.dataUrl, width: w, margin: [0, 4, 0, 2] });
-                if (it.caption) stack.push({ text: it.caption, style: 'caption' });
+                if (it.caption) stack.push({ text: it.caption, style: 'caption', ...listed(doc, it.anchor) } as Content);
                 return { width: w, stack };
               }),
               columnGap: gapPt,
@@ -177,10 +223,10 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
               stack: [
                 ...(i === 0 ? spot(n.anchor) : []),
                 {
-                  columns: row.map((it) => ({ width: colW, stack: [...spot(it.anchor), picture(it), ...(it.caption ? [{ text: it.caption, style: 'caption', alignment: n.perRow > 1 ? 'center' : 'left', margin: [0, 3, 0, 0] }] : [])] })),
+                  columns: row.map((it) => ({ width: colW, stack: [...spot(it.anchor), picture(it), ...(it.caption ? [{ text: it.caption, style: 'caption', alignment: n.perRow > 1 ? 'center' : 'left', margin: [0, 3, 0, 0], ...listed(doc, it.anchor) }] : [])] })),
                   columnGap: n.gapMm * MM,
                 },
-                ...(last && n.caption ? [{ text: n.caption, style: 'caption', margin: [0, 4, 0, 0] }] : []),
+                ...(last && n.caption ? [{ text: n.caption, style: 'caption', margin: [0, 4, 0, 0], ...listed(doc, n.anchor) }] : []),
               ],
               unbreakable: true,
               margin: [0, i ? 8 : 4, 0, last ? 10 : 0],
@@ -216,7 +262,7 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
       const out: Content[] = [];
       const head = headerLook(doc);
       const rule = letter ? '#404040' : '#b9b9b9';
-      if (n.caption) out.push({ text: n.caption, style: 'tableCaption', headlineLevel: 9, ...dest(n.anchor) } as Content); // 9 = table caption (kept with its table)
+      if (n.caption) out.push({ text: n.caption, style: 'tableCaption', headlineLevel: 9, ...dest(n.anchor), ...listed(doc, n.anchor) } as Content); // 9 = table caption (kept with its table)
       const colWidths = fitWidths(n.widths, contentWidthPt);
       const pt = n.fontSize ?? t.fontSize - 1;
       const fit = { pt, widths: colWidths };
@@ -411,6 +457,30 @@ export async function downloadPdf(doc: ReportDoc): Promise<void> {
 export async function pdfBlob(doc: ReportDoc): Promise<Blob> {
   const pdfMake = await loadPdfMake();
   return new Promise((resolve) => pdfMake.createPdf(toPdfDefinition(doc)).getBlob(resolve));
+}
+
+/**
+ * The page each heading and caption falls on in the PDF, by anchor. Word's contents start with these page numbers
+ * (Word works out its own when it updates the fields on opening).
+ */
+export async function pdfPageNumbers(doc: ReportDoc): Promise<Record<string, number>> {
+  const pdfMake = await loadPdfMake();
+  const dd = toPdfDefinition(doc);
+  await new Promise<void>((resolve) => pdfMake.createPdf(dd).getBuffer(() => resolve()));
+  // pdfmake lays out the content in place: each node has its positions on the pages
+  const out: Record<string, number> = {};
+  const seen = new Set<object>();
+  const walk = (v: unknown) => {
+    if (!v || typeof v !== 'object' || seen.has(v)) return;
+    seen.add(v);
+    if (Array.isArray(v)) return v.forEach(walk);
+    const o = v as Record<string, unknown>;
+    const at = (o.positions as Array<{ pageNumber: number }> | undefined)?.[0];
+    if (typeof o.id === 'string' && at && !(o.id in out)) out[o.id] = at.pageNumber;
+    for (const [k, x] of Object.entries(o)) if (x && typeof x === 'object' && k !== 'positions' && !k.startsWith('_') && k !== 'image') walk(x);
+  };
+  walk(dd.content);
+  return out;
 }
 
 /** The PDF file's bytes (used for the on-screen preview). */

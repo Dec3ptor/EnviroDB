@@ -348,6 +348,7 @@ export type ReportBlockType =
   | 'signatures'
   | 'pageBreak'
   | 'spacer'
+  | 'toc'
   | 'calc'
   | 'programmeTable'
   | 'tarpTable'
@@ -591,6 +592,23 @@ export interface SpacerBlock extends ReportBlockBase {
   heightMm: number;
 }
 
+/**
+ * Table of contents: the headings to `levels` with their page numbers, and lists of the numbered tables and figures.
+ * In Word it is Word's own contents field, so it updates as the document is edited.
+ */
+export interface TocBlock extends ReportBlockBase {
+  type: 'toc';
+  /** e.g. "Contents"; blank = no title. */
+  title: string;
+  levels: 1 | 2 | 3;
+  /** A list of the numbered tables after the contents. */
+  tables: boolean;
+  /** Lists of the numbered figures (graphs, photos …), a list for each label. */
+  figures: boolean;
+  /** Start a new page after it. */
+  pageBreakAfter: boolean;
+}
+
 /** A statistic worked out from the results, e.g. the median nitrate-N at DS1 over the period. */
 export type CalcStat = 'mean' | 'median' | 'min' | 'max' | 'p95' | 'count' | 'latest' | 'exceed';
 export interface CalcRow {
@@ -647,6 +665,7 @@ export type ReportBlock =
   | SignaturesBlock
   | PageBreakBlock
   | SpacerBlock
+  | TocBlock
   | CalcBlock
   | ProgrammeTableBlock
   | TarpTableBlock

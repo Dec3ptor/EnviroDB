@@ -9,6 +9,7 @@ import {
   Header,
   HeadingLevel,
   ImageRun,
+  ImportedXmlComponent,
   InternalHyperlink,
   LevelFormat,
   SimpleField,
@@ -31,7 +32,7 @@ import {
   type ISectionOptions,
 } from 'docx';
 import type { LetterheadItem } from '../db/types';
-import type { Cell, DocNode, PageLine, RefTarget, ReportDoc, Run } from './model';
+import type { Cell, DocNode, PageLine, RefTarget, ReportDoc, Run, TocEntry } from './model';
 import { dataUrlToBytes } from '../charts/render';
 import { CHART_GAP_MM, SIGN_GAP_MM, pageSizeMm, type Orientation } from './build';
 import { fitCellSize, fontWidthFactor } from './measure';
@@ -120,6 +121,73 @@ function marked(anchor: string | undefined, text: string, style: IRunOptions = {
     return [bookmarked(anchor, [new TextRun({ ...style, text: `${t.label} ` }), field(`SEQ ${seqName(t.label)} \\* ARABIC`, String(t.num), style)]), ...(rest ? [new TextRun({ ...style, text: rest })] : [])];
   }
   return [bookmarked(anchor, [new TextRun({ ...style, text })])];
+}
+
+// ------------------------------------------------------------ tables of contents
+
+/** The page each heading and caption is on (from the PDF), for the contents' page numbers until Word updates them. */
+let PAGES: Record<string, number> = {};
+
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const xr = (inner: string, rPr = '') => `<w:r>${rPr ? `<w:rPr>${rPr}</w:rPr>` : ''}${inner}</w:r>`;
+const xt = (s: string, rPr = '') => xr(`<w:t xml:space="preserve">${esc(s)}</w:t>`, rPr);
+const fldChar = (type: 'begin' | 'separate' | 'end', rPr = '') => xr(`<w:fldChar w:fldCharType="${type}"/>`, rPr);
+const instr = (s: string, rPr = '') => xr(`<w:instrText xml:space="preserve"> ${esc(s)} </w:instrText>`, rPr);
+/** A field's start: Word's TOC field spans the entries' paragraphs, from the first to the end mark after the last. */
+const fieldStart = (code: string) => `${fldChar('begin')}${instr(code)}${fldChar('separate')}`;
+
+/** Where a contents level starts, from the body's left edge (twips): 5 mm a level. */
+const tocLeft = (level: number, indent: number) => indent + (level - 1) * twips(5);
+/** Room for a heading's number before its text. */
+const TOC_NUMBER = twips(10);
+
+/**
+ * A contents line as Word writes it: a link to the heading or caption, its number and text, then a dotted tab to its
+ * page number – a PAGEREF field, so Word keeps it right.
+ */
+function tocLineXml(e: TocEntry, style: string, indent: number, rightTwips: number, lead = ''): string {
+  const left = tocLeft(e.level, indent);
+  const hide = '<w:webHidden/>';
+  const name = bookmark(e.anchor);
+  const page = PAGES[e.anchor];
+  const label = e.number ? `${xt(e.number)}${xr('<w:tab/>')}${xt(e.text)}` : xt(e.text);
+  const tabs = `${e.number ? `<w:tab w:val="left" w:pos="${left + TOC_NUMBER}"/>` : ''}<w:tab w:val="right" w:leader="dot" w:pos="${rightTwips}"/>`;
+  const ind = e.number ? `<w:ind w:left="${left + TOC_NUMBER}" w:hanging="${TOC_NUMBER}"/>` : `<w:ind w:left="${left}"/>`;
+  return (
+    `<w:p><w:pPr><w:pStyle w:val="${style}"/><w:tabs>${tabs}</w:tabs>${ind}</w:pPr>${lead}` +
+    `<w:hyperlink w:anchor="${name}" w:history="1">${label}${xr('<w:tab/>', hide)}${fldChar('begin', hide)}${instr(`PAGEREF ${name} \\h`, hide)}${fldChar('separate', hide)}${xt(page ? String(page) : '', hide)}${fldChar('end', hide)}</w:hyperlink></w:p>`
+  );
+}
+
+/**
+ * A field over contents lines (each in Word's style for its level: "toc 1", "toc 2" … or "table of figures"), its
+ * result the lines as Word would make them; with none, Word's own words.
+ */
+function tocFieldXml(code: string, entries: TocEntry[], styleOf: (e?: TocEntry) => string, indent: number, rightTwips: number): string {
+  const lines = entries.length ? entries.map((e, i) => tocLineXml(e, styleOf(e), indent, rightTwips, i ? '' : fieldStart(code))) : [`<w:p><w:pPr><w:pStyle w:val="${styleOf()}"/></w:pPr>${fieldStart(code)}${xt('No table of contents entries found.')}</w:p>`];
+  return `${lines.join('')}<w:p><w:pPr><w:pStyle w:val="${styleOf()}"/></w:pPr>${fldChar('end')}</w:p>`;
+}
+
+/** Word XML as parts of the document (the library has no contents with entries). */
+function rawParts(xml: string): Array<Paragraph | Table> {
+  const wrapper = ImportedXmlComponent.fromXmlString(`<w:body>${xml}</w:body>`) as unknown as { root: Array<{ root: unknown[] }> };
+  return wrapper.root[0].root as Array<Paragraph | Table>;
+}
+
+/**
+ * A table of contents as Word makes one: its title, then Word's TOC field over the headings (in a contents block, so
+ * Word offers "Update Table"), and a list of tables and of figures – TOC fields over the captions of each label.
+ */
+function tocToDocx(n: Extract<DocNode, { t: 'toc' }>, x: Ctx, contentWidthMm: number): Array<Paragraph | Table> {
+  const right = twips(contentWidthMm) + x.indent;
+  const ind = x.indent ? `<w:ind w:left="${x.indent}"/>` : '';
+  const title = n.title ? `<w:p><w:pPr><w:pStyle w:val="TOCHeading"/>${ind}</w:pPr>${xt(n.title)}</w:p>` : '';
+  const contents = `<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/></w:docPartObj></w:sdtPr><w:sdtContent>${title}${tocFieldXml(`TOC \\o "1-${n.levels}" \\h \\z \\u`, n.entries, (e) => `TOC${e?.level ?? 1}`, x.indent, right)}</w:sdtContent></w:sdt>`;
+  const lists = n.lists
+    .filter((l) => l.entries.length)
+    .map((l) => `<w:p><w:pPr><w:pStyle w:val="TOCListHeading"/>${ind}</w:pPr>${xt(l.title)}</w:p>${tocFieldXml(`TOC \\h \\z \\c "${seqName(l.label)}"`, l.entries, () => 'TableofFigures', x.indent, right)}`)
+    .join('');
+  return rawParts(contents + lists);
 }
 
 function headerLook(doc: ReportDoc): { fill: string; color: string } {
@@ -219,6 +287,8 @@ function nodeToDocx(n: DocNode, x: Ctx, contentWidthMm: number): Array<Paragraph
       return [new Paragraph({ children: [new TextRun({ text: n.text, size: base - 4, color: '555555' })], indent: ind })];
     case 'pagebreak':
       return [new Paragraph({ children: [new PageBreak()] })];
+    case 'toc':
+      return tocToDocx(n, x, contentWidthMm);
     case 'space':
       return [new Paragraph({ children: [], spacing: { before: 0, after: 0, line: Math.max(20, Math.round(n.mm * 56.6929)), lineRule: 'exact' } })];
     case 'image': {
@@ -362,6 +432,34 @@ function nodeToDocx(n: DocNode, x: Ctx, contentWidthMm: number): Array<Paragraph
   }
 }
 
+/**
+ * Word's own styles for contents: "TOC Heading" for its title (not itself listed), "toc 1" – "toc 3" for the lines of
+ * each level and "table of figures" for the lists of tables and figures. Word uses them when it updates the contents.
+ */
+function tocStyles(doc: ReportDoc, title: { size: number; bold?: boolean; italics?: boolean; color?: string; font?: string }) {
+  const base = doc.template.fontSize * 2;
+  const indent = twips(doc.page.indent);
+  const letter = doc.look.style === 'letter';
+  const level = (n: 1 | 2 | 3) => ({
+    id: `TOC${n}`,
+    name: `toc ${n}`,
+    basedOn: 'Normal',
+    next: 'Normal',
+    uiPriority: 39,
+    unhideWhenUsed: true,
+    run: { size: base, bold: n === 1 && !letter },
+    paragraph: { spacing: { before: n === 1 ? 100 : 20, after: 20 }, indent: { left: tocLeft(n, indent) } },
+  });
+  return [
+    { id: 'TOCHeading', name: 'TOC Heading', basedOn: 'Normal', next: 'Normal', uiPriority: 39, unhideWhenUsed: true, run: { font: title.font, size: title.size, bold: title.bold, italics: title.italics, color: title.color }, paragraph: { keepNext: true, spacing: { before: 240, after: 120 } } },
+    { id: 'TOCListHeading', name: 'TOC List Heading', basedOn: 'TOCHeading', next: 'Normal', run: { size: base + (letter ? 0 : 2), bold: true, italics: false }, paragraph: { spacing: { before: 240, after: 60 } } },
+    level(1),
+    level(2),
+    level(3),
+    { id: 'TableofFigures', name: 'table of figures', basedOn: 'Normal', next: 'Normal', uiPriority: 99, unhideWhenUsed: true, run: { size: base }, paragraph: { spacing: { before: 20, after: 20 }, indent: { left: indent } } },
+  ];
+}
+
 function styles(doc: ReportDoc) {
   const base = doc.template.fontSize * 2;
   const look = doc.look;
@@ -374,10 +472,11 @@ function styles(doc: ReportDoc) {
     return {
       default: { document: { run: { font, size: base, color: text } } },
       paragraphStyles: [
-        { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { font: headingFont, size: base + 4, color: head }, paragraph: { spacing: { before: 240, after: 80 } } },
-        { id: 'Heading2', name: 'Heading 2', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { font: headingFont, size: base + 1, italics: true, color: head }, paragraph: { spacing: { before: 200, after: 60 } } },
-        { id: 'Heading3', name: 'Heading 3', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { font: headingFont, size: base, bold: true, color: text }, paragraph: { spacing: { before: 160, after: 60 } } },
+        { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { font: headingFont, size: base + 4, color: head }, paragraph: { spacing: { before: 240, after: 80 }, outlineLevel: 0 } },
+        { id: 'Heading2', name: 'Heading 2', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { font: headingFont, size: base + 1, italics: true, color: head }, paragraph: { spacing: { before: 200, after: 60 }, outlineLevel: 1 } },
+        { id: 'Heading3', name: 'Heading 3', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { font: headingFont, size: base, bold: true, color: text }, paragraph: { spacing: { before: 160, after: 60 }, outlineLevel: 2 } },
         { id: 'Caption', name: 'Caption', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: base - 1, italics: true, color: text }, paragraph: { spacing: { before: 60, after: 120 } } },
+        ...tocStyles(doc, { font: headingFont, size: base + 4, color: head }),
       ],
     };
   }
@@ -385,10 +484,11 @@ function styles(doc: ReportDoc) {
   return {
     default: { document: { run: { font: 'Calibri', size: base } } },
     paragraphStyles: [
-      { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: base + 10, bold: true, color: hex(accent) }, paragraph: { spacing: { before: 360, after: 120 } } },
-      { id: 'Heading2', name: 'Heading 2', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: base + 5, bold: true, color: hex(accent) }, paragraph: { spacing: { before: 240, after: 80 } } },
-      { id: 'Heading3', name: 'Heading 3', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: base + 2, bold: true, color: '333333' }, paragraph: { spacing: { before: 200, after: 60 } } },
+      { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: base + 10, bold: true, color: hex(accent) }, paragraph: { spacing: { before: 360, after: 120 }, outlineLevel: 0 } },
+      { id: 'Heading2', name: 'Heading 2', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: base + 5, bold: true, color: hex(accent) }, paragraph: { spacing: { before: 240, after: 80 }, outlineLevel: 1 } },
+      { id: 'Heading3', name: 'Heading 3', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: base + 2, bold: true, color: '333333' }, paragraph: { spacing: { before: 200, after: 60 }, outlineLevel: 2 } },
       { id: 'Caption', name: 'Caption', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { size: base - 2, color: '333333' }, paragraph: { spacing: { before: 60, after: 120 } } },
+      ...tocStyles(doc, { size: base + 10, bold: true, color: hex(accent) }),
     ],
   };
 }
@@ -518,17 +618,29 @@ function section(doc: ReportDoc, children: Array<Paragraph | Table>, orientation
   };
 }
 
-export async function docxBlob(doc: ReportDoc): Promise<Blob> {
+export async function docxBlob(doc: ReportDoc, opts: { pages?: Record<string, number> } = {}): Promise<Blob> {
   const t = doc.template;
   const [w, h] = pageSizeMm(t);
   TARGETS = doc.refTargets ?? {};
+  // contents: their page numbers to start with, from the PDF's pages (Word updates them when it opens the file)
+  const hasContents = doc.nodes.some((n) => n.t === 'toc');
+  PAGES = hasContents ? (opts.pages ?? (await import('./pdf').then((m) => m.pdfPageNumbers(doc)).catch(() => ({})))) : {};
   const x: Ctx = { doc, letter: doc.look.style === 'letter', indent: twips(doc.page.indent), head: headerLook(doc), rule: doc.look.style === 'letter' ? '404040' : 'B9B9B9', text: doc.look.textColor };
   const sides = doc.letterhead ? doc.page.left + doc.page.right + doc.page.indent : 2 * t.marginMm;
   const sections = splitSections(doc).map((s, i) => {
     const contentWidthMm = (s.orientation === 'landscape' ? h : w) - sides;
     return section(doc, s.nodes.flatMap((n) => nodeToDocx(n, x, contentWidthMm)), s.orientation, i === 0);
   });
-  const d = new Document({ creator: 'EnviroDB', title: doc.title, description: doc.title, styles: styles(doc), numbering: headingNumbering(twips(doc.page.indent)), sections });
+  const d = new Document({
+    creator: 'EnviroDB',
+    title: doc.title,
+    description: doc.title,
+    styles: styles(doc),
+    numbering: headingNumbering(twips(doc.page.indent)),
+    // Word updates the contents (its page numbers) as it opens the file
+    ...(hasContents ? { features: { updateFields: true } } : {}),
+    sections,
+  });
   const blob = await Packer.toBlob(d);
   if (!doc.letterhead?.docx || doc.letterhead.useWordFile === false) return blob;
   // on the company's own letterhead: its header and footers from the Word file, exactly as they are – with the

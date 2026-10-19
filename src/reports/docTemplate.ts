@@ -18,6 +18,8 @@ export interface DocOutline {
   title?: string;
   subtitle?: string;
   items: OutlineItem[];
+  /** It has a table of contents. */
+  contents?: boolean;
 }
 
 // ---------------------------------------------------------------- reading Word documents
@@ -95,7 +97,11 @@ export async function readWordOutline(data: ArrayBuffer | Uint8Array): Promise<D
     const styleId = attr(kid(pPr, 'w:pStyle'));
     const st = styleId ? styles.get(styleId) : undefined;
     const name = (st?.name ?? styleId ?? '').toLowerCase();
-    if (/^toc\b|toc heading|table of contents|^caption$|^header$|^footer$/.test(name)) return;
+    if (/^toc\b|toc heading|table of contents|table of figures/.test(name)) {
+      out.contents = true;
+      return;
+    }
+    if (/^caption$|^header$|^footer$/.test(name)) return;
     const text = paraText(p);
     if (!text) return;
     if (/^title$/.test(name)) {
@@ -328,6 +334,8 @@ export interface DocPlan {
   closing?: string;
   kind: ReportKind;
   tables: number;
+  /** It has a table of contents. */
+  contents?: boolean;
 }
 
 const markup = (items: OutlineItem[]) =>
@@ -360,6 +368,16 @@ export function planFromOutline(outline: DocOutline): DocPlan {
     closing = (items[closeAt] as { text: string }).text.split('\n')[0];
     items.splice(closeAt); // the signature block and what follows it
   }
+  // a table of contents: its title, and the lines under it ("2.1 Results ....... 7") – the template makes its own
+  let contents = !!outline.contents;
+  const tocAt = items.findIndex((i) => (i.kind === 'heading' || i.kind === 'para') && /^(table of )?contents$/i.test(i.text.trim()));
+  if (tocAt >= 0) {
+    contents = true;
+    let end = tocAt + 1;
+    const tocLine = (i: OutlineItem) => (i.kind === 'heading' || i.kind === 'para') && i.text.length < 160 && /(\.{3,}|…)\s*\d+$|\s\d{1,3}$/.test(i.text.trim());
+    while (end < items.length && tocLine(items[end])) end++;
+    items.splice(tocAt, end - tocAt);
+  }
   const firstHeading = items.findIndex((i) => i.kind === 'heading');
   const introItems = firstHeading < 0 ? items : items.slice(0, firstHeading);
   const sections: DocSection[] = [];
@@ -380,7 +398,7 @@ export function planFromOutline(outline: DocOutline): DocPlan {
   }
   tables += introItems.filter((i) => i.kind === 'table').length;
   const all = [outline.title, outline.subtitle, ...sections.map((s) => s.heading)].join(' ');
-  return { title: outline.title, subtitle: outline.subtitle, intro: markup(introItems), sections, letter, closing, kind: kindOfDocument(all, letter), tables };
+  return { title: outline.title, subtitle: outline.subtitle, intro: markup(introItems), sections, letter, closing, kind: kindOfDocument(all, letter), tables, contents: contents && !letter };
 }
 
 /** A data section as the template's starting block (built like the editor's new sections). */
@@ -399,6 +417,7 @@ export function templateFromPlan(plan: DocPlan, opts: { name: string; fileName: 
   } else {
     const title = newBlock('title') as Extract<ReportBlock, { type: 'title' }>;
     blocks.push({ ...title, subtitle: plan.subtitle || plan.title || title.subtitle });
+    if (plan.contents) blocks.push(newBlock('toc'));
   }
   if (opts.keepText && plan.intro) blocks.push(text(plan.intro));
   let signed = false;

@@ -42,7 +42,27 @@ export type DocNode =
   /** New page; `orientation` changes the orientation of the pages that follow. */
   | { t: 'pagebreak'; orientation?: 'portrait' | 'landscape' }
   /** Blank space. */
-  | { t: 'space'; mm: number };
+  | { t: 'space'; mm: number }
+  /**
+   * Table of contents: the headings to `levels`, then a list for each kind of numbered caption (Tables, Figures,
+   * Photos …). Entries are filled in once the whole report is built; each links to its heading's or caption's anchor.
+   */
+  | { t: 'toc'; title: string; levels: 1 | 2 | 3; entries: TocEntry[]; lists: TocList[] };
+
+/** A line in a table of contents: a heading ("2.1", "Results") or a caption ("Table 3: Monitoring results"). */
+export interface TocEntry {
+  text: string;
+  /** A heading's number. */
+  number?: string;
+  level: 1 | 2 | 3;
+  anchor: string;
+}
+/** A list of tables or figures: "Tables", with the captions labelled "Table". */
+export interface TocList {
+  title: string;
+  label: string;
+  entries: TocEntry[];
+}
 
 /** Margins and the header / footer distances from the page edge, in mm. */
 export interface PageGeometry {

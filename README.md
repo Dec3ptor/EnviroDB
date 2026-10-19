@@ -166,6 +166,14 @@ there as they work and show up for the others within seconds.
   numbering. Add, move or delete a table, figure or heading in Word, select all and press F9 (or
   print), and the numbers and references update themselves; Insert → Cross-reference lists the report's
   tables and figures to refer to.
+- **Table of contents.** Add a *Table of contents* section (under *Text and layout*), usually after the
+  title page: the headings to level 1, 2 or 3 with their page numbers, then a list of the tables and a
+  list of the figures (graphs and pictures – a list for each label, so Photos get their own). Give it
+  a title or none, and start a new page after it or not. Each line links to its heading or caption. In
+  the PDF the page numbers are worked out for you; in the Word file it is Word's own table of contents
+  – Word asks to update the fields as it opens the file (choose Yes for its page numbers), and after
+  editing, right-click it and choose *Update Field* (or press F9). A template made from a document
+  with a contents page gets one too.
 - **Write your own captions and notes.** Every table and graph has a *Caption* box (on the Reports tab,
   *Edit layout*, open the section) holding the wording it uses now, e.g. "Monitoring results – [site
   code] ([site name])". Change any of it; the words in square brackets are filled in for each table:

@@ -38,6 +38,7 @@ export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string
   signatures: { label: 'Signatures', help: 'Sign-off with names and signatures – paste a signature from an email or Word, or upload one' },
   pageBreak: { label: 'New page', help: 'Start a new page, and optionally switch to portrait or landscape from here' },
   spacer: { label: 'Space', help: 'Blank space between sections, as tall as you like' },
+  toc: { label: 'Table of contents', help: 'The headings with their page numbers, and lists of the tables and figures – Word’s own contents in the Word file' },
   calc: { label: 'Calculations', help: 'Values worked out from the results – the median nitrate-N downstream, the highest TSS, how many results were over a limit' },
   programmeTable: { label: 'Monitoring programme', help: 'Each sampling schedule: its sites, how often and what for' },
   tarpTable: { label: 'Trigger–action–response plan', help: 'Each consent limit and trigger level, when it is exceeded and the response required' },
@@ -46,7 +47,7 @@ export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string
 
 /** The sections offered to add, grouped as in the palette. */
 export const BLOCK_GROUPS: Array<{ label: string; types: ReportBlockType[] }> = [
-  { label: 'Text and layout', types: ['heading', 'text', 'spacer', 'pageBreak', 'title', 'letter', 'signatures'] },
+  { label: 'Text and layout', types: ['heading', 'text', 'spacer', 'pageBreak', 'title', 'toc', 'letter', 'signatures'] },
   { label: 'From the results', types: ['summary', 'calc', 'resultsTable', 'roundTable', 'roundReview', 'statsTable', 'chart', 'figures'] },
   { label: 'Compliance', types: ['complianceTable', 'exceedances', 'triggerTable'] },
   { label: 'Programme and plans', types: ['programmeTable', 'tarpTable', 'reportingTable', 'siteTable', 'samplingTable'] },
@@ -106,6 +107,8 @@ export function newBlock(type: ReportBlockType): ReportBlock {
       return { id, type, images: [], perRow: 2, heightMm: 0, numbering: 'each', label: 'Figure', caption: '', border: false };
     case 'spacer':
       return { id, type, heightMm: 10 };
+    case 'toc':
+      return { id, type, title: 'Contents', levels: 2, tables: true, figures: true, pageBreakAfter: true };
     case 'calc':
       return { id, type, title: '', rows: [], show: 'table' };
     case 'tarpTable':
@@ -146,6 +149,8 @@ export function blockSummary(b: ReportBlock): string {
       return b.orientation ? `New page – ${b.orientation} from here on` : 'New page';
     case 'spacer':
       return `${b.heightMm} mm`;
+    case 'toc':
+      return [b.levels === 1 ? 'Main headings' : `Headings to level ${b.levels}`, b.tables && 'tables', b.figures && 'figures', b.pageBreakAfter && 'then a new page'].filter(Boolean).join(' · ');
     case 'calc':
       return b.rows.length ? `${b.rows.length} value${b.rows.length === 1 ? '' : 's'}${b.show === 'list' ? ' as a list' : ' in a table'}` : 'No values chosen yet';
     case 'tarpTable':
@@ -932,6 +937,33 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
           </div>
           <Text size="xs" c="dimmed">
             From the project’s consent rules (Setup): the response is each rule’s “action if exceeded”.
+          </Text>
+        </Stack>
+      );
+    case 'toc':
+      return (
+        <Stack gap="xs">
+          <TextInput label="Title" placeholder="No title" value={block.title} onChange={(e) => set({ title: e.currentTarget.value })} />
+          <div>
+            <Text size="sm" fw={500} mb={4}>
+              Headings
+            </Text>
+            <SegmentedControl
+              size="xs"
+              value={String(block.levels)}
+              onChange={(v) => set({ levels: Number(v) as 1 | 2 | 3 })}
+              data={[
+                { value: '1', label: 'Level 1' },
+                { value: '2', label: 'Levels 1–2' },
+                { value: '3', label: 'Levels 1–3' },
+              ]}
+            />
+          </div>
+          <Switch label="List of tables" checked={block.tables} onChange={(e) => set({ tables: e.currentTarget.checked })} />
+          <Switch label="List of figures" description="Graphs, and the figures sections’ images (a list for each label – Figures, Photos …)" checked={block.figures} onChange={(e) => set({ figures: e.currentTarget.checked })} />
+          <Switch label="Start a new page after it" checked={block.pageBreakAfter} onChange={(e) => set({ pageBreakAfter: e.currentTarget.checked })} />
+          <Text size="xs" c="dimmed">
+            The lists have the numbered tables and figures. In the Word file this is Word’s own table of contents: Word asks to update the fields as it opens the file – choose Yes for its page numbers – and after editing, right-click it and choose Update Field.
           </Text>
         </Stack>
       );
