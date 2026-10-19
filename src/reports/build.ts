@@ -17,7 +17,8 @@ import { scheduleStep, frequencyLabel, nextObligation } from '../lib/schedule';
 import { unitLabel } from '../lib/units';
 import { fmtNum } from '../lib/values';
 import { imageSize, logoSizeMm } from '../lib/image';
-import { buildChartSpec, chartOption } from '../charts/timeSeries';
+import { buildChartSpec, chartOption, chartOverlay } from '../charts/timeSeries';
+import { overlayFor } from '../lib/continuous';
 import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
 import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type RefTarget, type ReportDoc, type ReportLook, type Run, type TocEntry } from './model';
 import { CELL_PAD_MM, fontWidthFactor, longestWordMm as longestWord, textWidthMm as textWidth } from './measure';
@@ -824,6 +825,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const cStart = blk.range === 'all' ? undefined : blk.range === 'years' ? addDays(addMonths(end, -12 * (blk.years ?? 3)), 1) : start;
       const sets = blk.showGuidelines ? setsFor(blk.guidelineSetIds) : [];
       const size = chartSizeCm(blk, t, orientation, geo);
+      const overlay = overlayFor(blk.overlay, opts.bundle.continuous);
       const figures: Array<{ dataUrl: string; widthCm: number; heightCm: number; caption?: string }> = [];
       for (const pid of pids) {
         const p = b.paramMap.get(pid);
@@ -834,6 +836,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const spec = buildChartSpec({ index: b.index, param: p, sites: opts.bundle.sites, siteIds: chartSites, start: cStart, end, guidelineSets: sets, rules: limitRules, setMap: b.setMap, showRules: blk.showRules, log: blk.logScale });
         if (blk.markPeriod && blk.range !== 'period') spec.band = { from: toUtcMs(start), to: toUtcMs(addDays(end, 1)) };
         if (blk.trendLines) spec.trends = chartTrends(b, p.id, spec.series.map((x) => x.id), cStart, end);
+        if (overlay) spec.overlay = chartOverlay(overlay.series, overlay.years, cStart, end);
         if (!spec.series.length) continue;
         const caption = figCaption(capText(blk, { parameter: p.name, unit: unitLabel(p.unit), sites: listText(spec.series.map((s) => s.name)), dates: `${formatDate(cStart ?? spec.series[0].points[0].date)} – ${formatDate(end)}` }));
         const option = chartOption({ ...spec, subtitle: undefined, title: `${p.name} (${unitLabel(p.unit)})` }, { forExport: true, width: Math.round((size.widthCm / 2.54) * 96) });

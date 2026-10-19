@@ -8,6 +8,7 @@ import { convert, unitLabel } from '../lib/units';
 import { siteLatLng } from '../lib/nztm';
 import { addDays, addMonths, formatDate } from '../lib/dates';
 import { SERIES_LIGHT } from '../theme';
+import { overlayFor, seriesDays } from '../lib/continuous';
 
 export const PACK_FORMAT = 1;
 
@@ -34,6 +35,8 @@ export interface PackData {
   compliance: Array<{ name: string; condition?: string; status: RuleStatus; summary: string }>;
   /** An aerial photo behind the map, and where it is (Web Mercator, 0–1). */
   map?: { image: string; box: [number, number, number, number]; attribution: string };
+  /** Rainfall or flow behind the graphs: a value a day from `start` (null: no record). */
+  overlay?: { name: string; unit: string; kind: string; start: string; v: Array<number | null> };
 }
 
 export const DEFAULT_SECTIONS: PackSection[] = [
@@ -154,6 +157,16 @@ export function buildPackData(b: ProjectBundle, settings: PackSettings, ctx: Pac
   );
 
   const colorOf = new Map(b.sites.map((x, i) => [x.id, SERIES_LIGHT[i % SERIES_LIGHT.length]]));
+  // rainfall or flow behind the graphs, a value a day over the pack's dates
+  const o = overlayFor(s.overlay, b.continuous);
+  let overlay: PackData['overlay'];
+  const odays = o ? seriesDays(o.years, period.start, period.end) : [];
+  if (o && odays.length) {
+    const t0 = Date.parse(`${odays[0][0]}T00:00:00Z`);
+    const v: Array<number | null> = [];
+    for (const [d, x] of odays) v[Math.round((Date.parse(`${d}T00:00:00Z`) - t0) / 864e5)] = x;
+    overlay = { name: o.series.name, unit: o.series.unit, kind: o.series.kind, start: odays[0][0], v: Array.from(v, (x) => (x === undefined ? null : x)) };
+  }
   return {
     format: PACK_FORMAT,
     pack: { version: ctx.version, made: ctx.made, app: ctx.app, company: ctx.company || undefined },
@@ -180,5 +193,6 @@ export function buildPackData(b: ProjectBundle, settings: PackSettings, ctx: Pac
     lines,
     compliance: evals.map((e) => ({ name: e.rule.name, condition: e.rule.condition || undefined, status: e.status, summary: e.summary })),
     map: ctx.map,
+    overlay,
   };
 }

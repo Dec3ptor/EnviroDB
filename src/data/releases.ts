@@ -11,6 +11,18 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.9.0',
+    date: '2026-10-19',
+    title: 'Rainfall and flow',
+    items: [
+      'Add a rain gauge’s or flow recorder’s records to a project (Setup tab) from its data file – a council’s export, NIWA’s CliFlo, a logger’s CSV or a spreadsheet. EnviroDB finds the dates and readings and keeps daily values: rainfall the day’s total, flow and level the day’s mean and highest.',
+      'Show it behind the graphs on the Graphs tab: daily rainfall as bars from the top, flow or level as a line, on its own scale; hover a result for the rain that day.',
+      'In reports too: a graph section can show the project’s rain gauge (or flow) behind its graphs – and issued reports keep the records they showed.',
+      'Each sample shows how wet it was: the rain on the day and in the 3 days before.',
+      'The client data pack can show it behind its graphs, with a switch to turn it off.',
+    ],
+  },
+  {
     version: '1.8.0',
     date: '2026-10-19',
     title: 'Client data pack',

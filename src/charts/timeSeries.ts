@@ -8,6 +8,8 @@ import { fmtNum } from '../lib/values';
 import { formatDate, MONTH_SHORT, toUtcMs } from '../lib/dates';
 import { statLabel } from '../lib/stats';
 import { INK, SERIES_DARK, SERIES_LIGHT } from '../theme';
+import type { ContinuousSeries, SeriesKind, SeriesYear } from '../db/types';
+import { seriesDays } from '../lib/continuous';
 
 export interface ChartPoint {
   t: number;
@@ -45,7 +47,27 @@ export interface ChartSpec {
   band?: { from: number; to: number };
   /** Trend lines (Sen's slope) for some of the series: points along each, [UTC ms, value]. */
   trends?: Array<{ seriesId: string; points: Array<[number, number]> }>;
+  /** Continuous data behind the results: daily rainfall as bars from the top, flow or level as a line. */
+  overlay?: ChartOverlay;
 }
+
+export interface ChartOverlay {
+  name: string;
+  unit: string;
+  kind: SeriesKind;
+  /** [UTC ms of the day, value] */
+  points: Array<[number, number]>;
+}
+
+/** A gauge's daily values as a graph's background, over its dates. */
+export function chartOverlay(series: ContinuousSeries, years: SeriesYear[], start?: string, end?: string): ChartOverlay {
+  const from = start && start > '1901' ? start : undefined;
+  const to = end && end < '2199' ? end : undefined;
+  return { name: series.name, unit: series.unit, kind: series.kind, points: seriesDays(years, from, to).filter(([, v]) => series.kind !== 'rainfall' || v > 0).map(([d, v]) => [toUtcMs(d), v]) };
+}
+
+const OVERLAY_COLOR = { bar: 'rgba(56, 131, 214, 0.42)', line: 'rgba(56, 131, 214, 0.75)' };
+const overlayLabel = (o: ChartOverlay) => `${o.kind === 'rainfall' ? 'Daily rainfall' : o.kind === 'flow' ? 'Daily mean flow' : o.kind === 'level' ? 'Daily mean level' : 'Daily mean'}${o.unit ? ` (${o.unit})` : ''} – ${o.name}`;
 
 export interface ChartInput {
   index: DataIndex;
@@ -268,9 +290,12 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
   const rowH = Math.round(17 * fs);
   const swatch = 28;
   const trendKey = spec.trends?.length ? [{ text: 'Trend (Sen’s slope)', w: swatch, line: { text: '', values: [], color: ink.secondary, dash: [6, 4] } as ThresholdStyle }] : [];
+  const overlay = spec.overlay?.points.length ? spec.overlay : undefined;
+  const overlayKey = overlay ? [{ text: overlayLabel(overlay), w: swatch, line: null as ThresholdStyle | null, bar: overlay.kind === 'rainfall' ? OVERLAY_COLOR.bar : undefined, overlayLine: overlay.kind === 'rainfall' ? undefined : OVERLAY_COLOR.line }] : [];
   const keyItems = [
     ...styles.map((s) => ({ text: s.text, w: swatch, line: s as ThresholdStyle | null })),
     ...trendKey,
+    ...overlayKey,
     ...(spec.hasNd ? [{ text: 'Below detection limit (plotted at the limit)', w: 12, line: null }] : []),
   ].map((it) => {
     // text wider than the chart wraps onto more lines
@@ -301,7 +326,11 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
           { type: 'rect', shape: { x: 0, y: 0, width: it.width, height: it.lines.length * rowH }, style: { fill: 'transparent' } },
           it.line
             ? { type: 'line', shape: { x1: 1, y1: mid, x2: it.w - 1, y2: mid }, style: { stroke: it.line.color, lineWidth: 2, lineDash: it.line.dash ?? undefined, lineCap: 'round' } }
-            : { type: 'circle', shape: { cx: 6, cy: mid, r: 3.5 }, style: { fill: ink.surface, stroke: ink.secondary, lineWidth: 2 } },
+            : 'bar' in it && it.bar
+              ? { type: 'group', children: [4, 11, 18].map((x, k) => ({ type: 'rect', shape: { x, y: mid - 6, width: 5, height: [9, 5, 12][k] }, style: { fill: it.bar } })) }
+              : 'overlayLine' in it && it.overlayLine
+                ? { type: 'line', shape: { x1: 1, y1: mid, x2: it.w - 1, y2: mid }, style: { stroke: it.overlayLine, lineWidth: 1.5 } }
+                : { type: 'circle', shape: { cx: 6, cy: mid, r: 3.5 }, style: { fill: ink.surface, stroke: ink.secondary, lineWidth: 2 } },
           { type: 'text', x: it.w + 6, y: (it.lines.length * rowH) / 2, style: { text: it.lines.join('\n'), lineHeight: rowH, fill: ink.secondary, font: `${keyFont}px ${FONT}`, verticalAlign: 'middle' } },
         ],
       });
@@ -344,6 +373,14 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
       tooltip: { show: false },
       data: tr.points.filter(([, v]) => !spec.log || v > 0).map(([t, v]) => ({ value: [t, v] })),
     });
+  }
+  if (overlay) {
+    const inRange = overlay.points.filter(([t]) => (xMin === undefined || t >= xMin - 864e5) && (xMax === undefined || t <= xMax + 864e5));
+    series.push(
+      overlay.kind === 'rainfall'
+        ? { type: 'bar', name: '__overlay', yAxisIndex: 1, z: 1, barMaxWidth: 8, barMinWidth: 1, itemStyle: { color: OVERLAY_COLOR.bar }, emphasis: { disabled: true }, data: inRange.map(([t, v]) => ({ value: [t, v], over: true })) }
+        : { type: 'line', name: '__overlay', yAxisIndex: 1, z: 1, showSymbol: false, lineStyle: { width: 1.5, color: OVERLAY_COLOR.line }, itemStyle: { color: OVERLAY_COLOR.line }, emphasis: { disabled: true }, data: inRange.map(([t, v]) => ({ value: [t, v], over: true })) },
+    );
   }
   if (spec.band) {
     series.push({
@@ -411,9 +448,11 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
           backgroundColor: opts.dark ? '#262624' : '#ffffff',
           borderColor: opts.dark ? '#383835' : '#e1e0d9',
           textStyle: { color: ink.primary, fontSize: 12 },
-          formatter: (params: Array<{ seriesName: string; color: string; data: { meta?: ChartPoint } }>) => {
+          formatter: (params: Array<{ seriesName: string; color: string; data: { meta?: ChartPoint; over?: boolean; value?: [number, number] } }>) => {
             const rows = params.filter((p) => p.data?.meta);
             if (!rows.length) return '';
+            const over = overlay && params.find((p) => p.data?.over && p.data.value && utcDate(p.data.value[0]) === rows[0].data.meta!.date.slice(0, 10));
+            const overText = over ? `<div style="margin-top:4px;color:${ink.secondary}">${overlay!.kind === 'rainfall' ? 'Rain that day' : 'That day'}: ${fmtNum(over.data.value![1])} ${overlay!.unit.replace(/[&<>"]/g, '')}</div>` : '';
             const date = formatDate(rows[0].data.meta!.date, { time: true });
             const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
             return (
@@ -423,7 +462,8 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
                   (p) =>
                     `<div style="display:flex;align-items:center;gap:8px"><span style="display:inline-block;width:14px;height:2px;background:${p.color}"></span><b style="font-variant-numeric:tabular-nums">${esc(p.data.meta!.text)}</b> <span style="color:${ink.secondary}">${esc(unitText)} · ${esc(p.seriesName)}</span></div>`,
                 )
-                .join('')
+                .join('') +
+              overText
             );
           },
         },
@@ -448,7 +488,7 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
       },
       splitLine: { show: false },
     },
-    yAxis: {
+    yAxis: [{
       type: spec.log ? 'log' : 'value',
       name: unitText,
       nameLocation: 'end',
@@ -460,9 +500,29 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
       splitLine: { lineStyle: { color: ink.grid, width: 1, type: 'solid' } },
       max: spec.log ? undefined : zeroBased ? (v: { max: number }) => niceMax(Math.max(v.max, lineMax, dataMax) * 1.08) : Math.ceil((hi + step * 0.3) / step) * step,
       min: spec.log ? undefined : zeroBased ? (v: { min: number }) => (v.min >= 0 ? 0 : v.min) : Math.floor((lo - step * 0.3) / step) * step,
-    },
+    }, ...(overlay ? [overlayAxis(overlay, ink, opts.forExport, fs)] : [])],
     graphic: graphics,
     series,
+  };
+}
+
+/** The right-hand axis for the overlay: rainfall hangs from the top (and keeps to the top part of the graph). */
+function overlayAxis(o: ChartOverlay, ink: typeof INK.light, forExport: boolean | undefined, fs: number) {
+  const top = Math.max(0, ...o.points.map(([, v]) => v));
+  return {
+    type: 'value',
+    position: 'right',
+    inverse: o.kind === 'rainfall',
+    name: o.unit,
+    nameLocation: o.kind === 'rainfall' ? 'start' : 'end',
+    nameGap: 10,
+    nameTextStyle: { color: ink.secondary, fontSize: 11 * fs, align: 'right' },
+    min: 0,
+    max: o.kind === 'rainfall' ? niceMax(top * 2.6 || 10) : undefined,
+    axisLine: { show: false },
+    axisTick: { show: false },
+    splitLine: { show: false },
+    axisLabel: { color: forExport ? ink.secondary : ink.muted, fontSize: 10.5 * fs, formatter: (v: number) => (o.kind === 'rainfall' && v > top * 1.3 ? '' : fmtNum(v)) },
   };
 }
 

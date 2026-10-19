@@ -1,4 +1,4 @@
-import type { ConditionAssessment, ConsentCondition, ExceedanceNote, GuidelineSet, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, Site } from '../db/types';
+import type { ConditionAssessment, ConsentCondition, ContinuousSeries, ExceedanceNote, GuidelineSet, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, SeriesYear, Site } from '../db/types';
 import type { DataIndex } from './dataIndex';
 import { buildIndex, resultsFor } from './dataIndex';
 import { evaluateRules, ruleParamIds, type EvalContext, type RuleEvaluation } from './compliance';
@@ -29,6 +29,8 @@ export interface ProjectBundle {
   qc?: { sites: Site[]; samples: Sample[]; records: QaRecord[] };
   /** The compliance register: the consent's conditions and their grades. */
   register?: { conditions: ConsentCondition[]; assessments: ConditionAssessment[] };
+  /** Continuous data – rainfall, flow, level – as daily values. */
+  continuous?: { series: ContinuousSeries[]; days: SeriesYear[] };
 }
 
 /**

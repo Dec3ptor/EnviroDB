@@ -249,7 +249,7 @@ export function ReportsTab() {
   // Build the report for the preview (debounced; graphs at a lower resolution than the export)
   const [doc, setDoc] = useState<ReportDoc | null>(null);
   // the project's sites and parameters, for the calculation pickers
-  const reportProject = useMemo(() => ({ name: project.name, sites: data.sites, paramIds: projectParamIds(data) }), [project.name, data]);
+  const reportProject = useMemo(() => ({ name: project.name, sites: data.sites, paramIds: projectParamIds(data), series: data.continuous.series.map((x) => ({ id: x.id, name: x.name, kind: x.kind })) }), [project.name, data]);
   // the sampling rounds up to the report's end, to choose a rounds table's earlier rounds from
   const roundSamples = useMemo(() => data.samples.filter((x) => x.date.slice(0, 10) <= period.end), [data.samples, period.end]);
   const [building, setBuilding] = useState(false);

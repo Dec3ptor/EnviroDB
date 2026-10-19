@@ -2,7 +2,7 @@
 // file – one HTML page with the project's data that opens in any browser, offline.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActionIcon, Alert, Button, Card, ColorInput, FileButton, Grid, Group, NumberInput, SegmentedControl, Stack, Switch, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
+import { ActionIcon, Alert, Button, Card, ColorInput, FileButton, Grid, Group, NumberInput, SegmentedControl, Select, Stack, Switch, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconArrowDown, IconArrowUp, IconDeviceDesktop, IconDeviceMobile, IconDownload, IconPhoto, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
@@ -23,6 +23,7 @@ import { downloadBlob, safeFileName } from '../../db/backup';
 import { readImageFile } from '../../lib/image';
 import { uid } from '../../lib/ids';
 import { unitLabel } from '../../lib/units';
+import { KIND_TEXT } from '../../lib/continuous';
 
 const NONE: PackSettings = {};
 const ACCENTS = ['#0f766e', '#1c7ed6', '#2f3b52', '#5f3dc4', '#c2255c', '#e8590c', '#2b8a3e', '#495057'];
@@ -287,6 +288,16 @@ export function PackTab() {
                   { label: 'Every analyte', ids: data.index.paramIdsWithData },
                 ]}
               />
+              {data.continuous.series.length > 0 && (
+                <Select
+                  label="Rainfall or flow behind the graphs"
+                  placeholder="Nothing"
+                  clearable
+                  data={data.continuous.series.map((x) => ({ value: `series:${x.id}`, label: `${x.name} (${KIND_TEXT[x.kind].toLowerCase()})` }))}
+                  value={pack.overlay ?? null}
+                  onChange={(v) => set({ overlay: v ?? undefined })}
+                />
+              )}
               <PopupPicker label="Guideline values" description="On the graphs and highlighted in the tables" data={setData} value={pack.guidelineSetIds ?? []} onChange={(v) => set({ guidelineSetIds: v.length ? v : undefined })} placeholder="None" noun="guideline sets" />
             </Stack>
           </Card>

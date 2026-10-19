@@ -14,6 +14,8 @@ export interface ReportProject {
   sites: Site[];
   /** Parameters with results in the project (before any: those in its consent rules). */
   paramIds: string[];
+  /** Its rainfall, flow and level records. */
+  series?: Array<{ id: string; name: string; kind: string }>;
 }
 
 /** On a project's Reports tab, and in the template editor while previewing with a project. */

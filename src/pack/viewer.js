@@ -552,7 +552,7 @@ export function renderPack(data, host) {
       ['2 years', 2],
       ['1 year', 1],
     ].filter(([, y]) => y === null || (lastTime - firstTime) / (365.25 * DAY) > y * 1.05);
-    const state = { range: null, limits: !!can.limits, sites: new Set(S.map((_, i) => i)), param: paramsWithData[0] };
+    const state = { range: null, limits: !!can.limits, overlay: !!data.overlay, sites: new Set(S.map((_, i) => i)), param: paramsWithData[0] };
     const charts = [];
     const redraw = () => charts.forEach((c) => c.draw());
     const out = el('div', null);
@@ -594,6 +594,14 @@ export function renderPack(data, host) {
         redraw();
       });
       controls.append(el('label', { class: 'check' }, cb, 'Limits and guidelines'));
+    }
+    if (data.overlay) {
+      const cb = el('input', { type: 'checkbox', checked: true });
+      cb.addEventListener('change', () => {
+        state.overlay = cb.checked;
+        redraw();
+      });
+      controls.append(el('label', { class: 'check' }, cb, data.overlay.kind === 'rainfall' ? 'Rainfall' : data.overlay.kind === 'flow' ? 'Flow' : 'Water level'));
     }
     // sites shown: chips that turn sites on and off
     const chips = el('div', { class: 'chips' });
@@ -652,7 +660,8 @@ export function renderPack(data, host) {
       const W = Math.max(300, Math.round(node.clientWidth || 720));
       lastWidth = node.clientWidth;
       const H = W < 520 ? 250 : 320;
-      const m = { l: 56, r: 14, t: 14, b: 30 };
+      const ov = data.overlay && state.overlay ? data.overlay : null;
+      const m = { l: 56, r: ov ? 40 : 14, t: 14, b: 30 };
       const from = state.range ? lastTime - state.range * 365.25 * DAY : -Infinity;
       const series = [];
       S.forEach((s, i) => {
@@ -706,6 +715,32 @@ export function renderPack(data, host) {
       axis.append(sv('line', { x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b }));
       if (P[p].unit) axis.append(sv('text', { x: 8, y: m.t + 2, transform: `rotate(-90 8 ${m.t + 2})`, 'text-anchor': 'end', text: P[p].unit }));
       svg.append(grid, axis);
+      // rainfall hanging from the top (flow or level as a line), on its own scale at the right
+      if (ov) {
+        const ot0 = toTime(ov.start);
+        const pts = [];
+        ov.v.forEach((v, i) => {
+          const t = ot0 + i * DAY;
+          if (v !== null && t >= t0 && t <= t1) pts.push([t, v]);
+        });
+        if (pts.length) {
+          const top = Math.max(...pts.map((q) => q[1])) || 1;
+          const rain = ov.kind === 'rainfall';
+          const plotH = H - m.t - m.b;
+          const scaleMax = rain ? top * 2.6 : top * 1.1;
+          const yo = (v) => (rain ? m.t + (v / scaleMax) * plotH : H - m.b - (v / scaleMax) * plotH);
+          const g = sv('g', null);
+          if (rain) {
+            const bw = Math.max(1, ((W - m.l - m.r) / Math.max(1, (t1 - t0) / DAY)) * 0.8);
+            for (const [t, v] of pts) if (v > 0) g.append(sv('rect', { x: x(t) - bw / 2, y: m.t, width: bw, height: Math.max(0.6, yo(v) - m.t), fill: 'rgba(56,131,214,.42)' }));
+          } else g.append(sv('polyline', { points: pts.map(([t, v]) => `${x(t).toFixed(1)},${yo(v).toFixed(1)}`).join(' '), fill: 'none', stroke: 'rgba(56,131,214,.75)', 'stroke-width': 1.4 }));
+          svg.append(g);
+          for (const v of niceTicks(0, top, 2)) if (v > 0 && v <= top * 1.05) axis.append(sv('text', { x: W - m.r + 5, y: yo(v) + 4, text: fmtNum(v) }));
+          axis.append(sv('text', { x: W - m.r + 5, y: rain ? H - m.b : m.t + 2, text: ov.unit || '' }));
+          const sw = sv('svg', { width: 22, height: 10 }, rain ? [3, 9, 15].map((xx, k) => sv('rect', { x: xx, y: 0, width: 4, height: [7, 4, 10][k], fill: 'rgba(56,131,214,.55)' })) : sv('line', { x1: 0, x2: 22, y1: 5, y2: 5, stroke: 'rgba(56,131,214,.8)', 'stroke-width': 2 }));
+          keyBox.append(el('span', null, sw, `${rain ? 'Daily rainfall' : 'Daily mean'} (${ov.unit}) – ${ov.name}`));
+        }
+      }
       // limits, triggers and guidelines
       const style = { limit: ['var(--bad)', '', 1.6], trigger: ['var(--warn)', '7 4', 1.4], guideline: ['var(--muted)', '2 3', 1.3] };
       lines.forEach((l, k) => {
@@ -752,6 +787,10 @@ export function renderPack(data, host) {
         const note = d.r.f ? noteOf(d.r) : '';
         tip.replaceChildren(el('b', { text: `${d.s.code} · ${fmtDate(d.r.date)}` }), el('div', { text: `${valueText(d.r)} ${P[p].unit || ''}`.trim() }));
         if (note) tip.append(el('div', { class: 'small', style: `color:${d.r.f === 1 ? 'var(--bad)' : 'var(--muted)'}`, text: note }));
+        if (ov) {
+          const rain = ov.v[Math.round((toTime(d.r.date) - toTime(ov.start)) / DAY)];
+          if (rain !== undefined && rain !== null) tip.append(el('div', { class: 'small muted', text: `${ov.kind === 'rainfall' ? 'Rain that day' : 'That day'}: ${fmtNum(rain)} ${ov.unit}` }));
+        }
         tip.style.display = 'block';
         const left = d.cx / k + 14;
         const nodeW = node.clientWidth;

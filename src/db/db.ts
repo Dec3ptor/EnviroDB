@@ -5,6 +5,7 @@ import type {
   ArchivePart,
   ConditionAssessment,
   ConsentCondition,
+  ContinuousSeries,
   ExceedanceNote,
   GuidelineSet,
   ImportBatch,
@@ -16,6 +17,7 @@ import type {
   QaRecord,
   ReportObligation,
   ReportTemplate,
+  SeriesYear,
   Result,
   Rule,
   Sample,
@@ -55,6 +57,8 @@ export class EnviroDatabase extends Dexie {
   assessments!: Table<ConditionAssessment, string>;
   issues!: Table<IssuedReport, string>;
   archive!: Table<ArchivePart, string>;
+  series!: Table<ContinuousSeries, string>;
+  seriesDays!: Table<SeriesYear, string>;
   meta!: Table<MetaRecord, string>;
   // the shared workspace: what changed when (syncState), what is still to be written to the folder (syncDirty),
   // colleagues' files already read (syncFiles) and this browser's own details (syncLocal)
@@ -107,13 +111,17 @@ export class EnviroDatabase extends Dexie {
       issues: 'id, projectId',
       archive: 'id, projectId',
     });
+    this.version(9).stores({
+      series: 'id, projectId',
+      seriesDays: 'id, projectId, seriesId',
+    });
   }
 }
 
 export const db = new EnviroDatabase();
 
 export const DATA_TABLES = [
-  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa', 'conditions', 'assessments', 'issues', 'archive',
+  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa', 'conditions', 'assessments', 'issues', 'archive', 'series', 'seriesDays',
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 

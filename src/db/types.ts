@@ -99,6 +99,8 @@ export interface PackSettings {
   download?: boolean;
   /** An aerial photo behind the site map (taken when the pack is made). */
   aerial?: boolean;
+  /** Rainfall or flow behind the graphs: "kind:rainfall" or "series:<id>". */
+  overlay?: string;
   /** The last pack made: its version (1, 2 …), when and by whom. */
   version?: number;
   madeAt?: string;
@@ -521,6 +523,42 @@ export interface ImportBatch {
   notes?: string;
 }
 
+// ---------------------------------------------------------------- continuous data (rainfall, flow, level)
+
+export type SeriesKind = 'rainfall' | 'flow' | 'level' | 'other';
+
+/**
+ * Continuous records from a gauge – rainfall, flow, water level – imported from its data file and kept as daily
+ * values, to show behind the graphs and say how wet it was when samples were taken.
+ */
+export interface ContinuousSeries {
+  id: ID;
+  projectId: ID;
+  /** e.g. "Kōwhai at Quarry Rd rain gauge". */
+  name: string;
+  kind: SeriesKind;
+  /** e.g. mm, m³/s, L/s, m. */
+  unit: string;
+  /** Where the records came from, e.g. the council and the file. */
+  source?: string;
+  /** The days it has records for. */
+  first?: string;
+  last?: string;
+  updatedAt: string;
+}
+
+/** A year of a series' daily values: rainfall the day's total, flow and level the day's mean (and highest). */
+export interface SeriesYear {
+  /** `${seriesId}|${year}` */
+  id: string;
+  projectId: ID;
+  seriesId: ID;
+  year: string;
+  /** By day from 1 January; null where there's no record. */
+  v: Array<number | null>;
+  hi?: Array<number | null>;
+}
+
 // ---------------------------------------------------------------- issued reports
 
 /** Where what an issued report was built from is kept: its parts in the archive, by fingerprint. */
@@ -730,6 +768,11 @@ export interface ChartBlock extends ReportBlockBase {
   markPeriod?: boolean;
   /** Each site's trend line (Sen's slope) over the graph's dates, where there are enough results. */
   trendLines?: boolean;
+  /**
+   * Continuous data behind the graphs: "kind:rainfall" (the project's rain gauge – the first if it has several),
+   * "kind:flow", "kind:level", or one series ("series:<id>").
+   */
+  overlay?: string;
 }
 export interface SiteTableBlock extends ReportBlockBase {
   type: 'siteTable';

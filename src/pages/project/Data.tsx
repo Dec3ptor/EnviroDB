@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending, IconEyeOff } from '@tabler/icons-react';
+import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending, IconEyeOff, IconCloudRain } from '@tabler/icons-react';
 import { excludeResult, restoreResults } from '../../db/qa';
 import { useProject } from '../../hooks/useProjectData';
 import { ConsentViewControl, EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, consentPresets, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
@@ -21,7 +21,8 @@ const NO_PARAMETERS = '\u0000none';
 import type { ReportBlock, Result, Sample } from '../../db/types';
 import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
-import { parseValue } from '../../lib/values';
+import { fmtNum, parseValue } from '../../lib/values';
+import { rainAround, rainSeries } from '../../lib/continuous';
 import { cellClass, SET_COLOURS, setColourIndex } from '../../lib/highlight';
 import { AiInputModal } from '../../components/AiInputModal';
 import { reviveIds, revivePeriod, useViewState } from '../../hooks/useViewState';
@@ -75,7 +76,7 @@ function Withheld({ r, p }: { r?: Result; p: Parameter }) {
 }
 
 function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () => void }) {
-  const { sites: monitoring, qc, index, paramMap } = useProject();
+  const { sites: monitoring, qc, index, paramMap, continuous } = useProject();
   const sites = [...monitoring, ...qc.sites];
   const [leaving, setLeaving] = useState<Result | null>(null);
   const [why, setWhy] = useState('');
@@ -119,6 +120,18 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
           <TextInput label="Lab number" value={s.labNumber ?? ''} onChange={(e) => setDraft({ ...s, labNumber: e.currentTarget.value })} />
         </Group>
         <Textarea label="Notes" autosize minRows={2} value={s.notes ?? ''} onChange={(e) => setDraft({ ...s, notes: e.currentTarget.value })} placeholder="e.g. sampled after heavy rain" />
+        {rainSeries(continuous).map(({ series, years }) => {
+          const rain = rainAround(years, s.date);
+          if (rain.day === null && rain.before === null) return null;
+          return (
+            <Text size="sm" key={series.id}>
+              <IconCloudRain size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
+              {series.name}: {rain.day === null ? 'no record on the day' : `${fmtNum(rain.day)} ${series.unit} on the day`}
+              {rain.before !== null ? `, ${fmtNum(rain.before)} ${series.unit} in the 3 days before` : ''}
+              {!rain.complete && rain.before !== null ? ' (some days missing)' : ''}.
+            </Text>
+          );
+        })}
         <Text fw={600} size="sm" mt="xs">
           Results ({results.length})
         </Text>

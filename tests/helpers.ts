@@ -32,6 +32,7 @@ export async function loadBundle(projectId: string): Promise<ProjectBundle> {
     index: buildIndex(samples, results, sites, params),
     qc: { sites: qcSites, samples: samples.filter(isQc), records: await db.qa.where('projectId').equals(projectId).toArray() },
     register: { conditions: await db.conditions.where('projectId').equals(projectId).toArray(), assessments: await db.assessments.where('projectId').equals(projectId).toArray() },
+    continuous: { series: await db.series.where('projectId').equals(projectId).toArray(), days: await db.seriesDays.where('projectId').equals(projectId).toArray() },
   };
 }
 

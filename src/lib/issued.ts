@@ -8,6 +8,7 @@ import type {
   ArchivePart,
   ConditionAssessment,
   ConsentCondition,
+  ContinuousSeries,
   ExceedanceNote,
   FigureImage,
   GuidelineSet,
@@ -21,9 +22,11 @@ import type {
   Result,
   Rule,
   Sample,
+  SeriesYear,
   Settings,
   Site,
 } from '../db/types';
+import { overlayFor } from './continuous';
 import type { ProjectBundle } from './analysis';
 import { buildIndex } from './dataIndex';
 import { compareParams } from '../data/parameters';
@@ -106,6 +109,8 @@ export interface SnapshotContent {
   settings: Partial<Settings>;
   /** QA/QC decisions name results by id: the result each named (sample, parameter, which of them). */
   resultRefs: Record<string, [string, string, number]>;
+  /** The rainfall or flow records the report's graphs show. */
+  continuous?: { series: ContinuousSeries[]; days: SeriesYear[] };
   /** The samples and results the project had, by site and year. */
   data: DataPart[];
 }
@@ -193,8 +198,21 @@ export function snapshotContent(input: SnapshotInput): SnapshotContent {
     figures: input.figures ?? {},
     settings: kept,
     resultRefs,
+    continuous: usedContinuous(b, template),
     data: [...parts.values()].sort((x, y) => (x.site < y.site ? -1 : x.site > y.site ? 1 : x.year < y.year ? -1 : 1)),
   };
+}
+
+/** The rainfall and flow records a layout's graphs show. */
+function usedContinuous(b: ProjectBundle, template: ReportTemplate): SnapshotContent['continuous'] {
+  const used = new Map<string, { series: ContinuousSeries; years: SeriesYear[] }>();
+  for (const blk of template.blocks) {
+    if (blk.type !== 'chart') continue;
+    const o = overlayFor(blk.overlay, b.continuous);
+    if (o) used.set(o.series.id, o);
+  }
+  if (!used.size) return undefined;
+  return { series: [...used.values()].map((o) => o.series), days: [...used.values()].flatMap((o) => o.years) };
 }
 
 // ------------------------------------------------------------ packing it small
@@ -350,6 +368,7 @@ export function snapshotBundle(content: SnapshotContent): ProjectBundle {
     index: buildIndex(samples, results, sites, params),
     qc: { sites: sites.filter((s) => qcSites.has(s.id)), samples: byDate.filter(isQc), records },
     register: { conditions: content.conditions, assessments: content.assessments },
+    continuous: content.continuous ?? { series: [], days: [] },
   };
 }
 
@@ -567,6 +586,10 @@ export function diffSnapshots(old: SnapshotContent, cur: SnapshotContent): Issue
   const notesA = byId(old.notes), notesB = byId(cur.notes);
   const notesChanged = [...new Set([...notesA.keys(), ...notesB.keys()])].filter((id) => json(without(notesA.get(id) ?? {}, ['updatedAt'])) !== json(without(notesB.get(id) ?? {}, ['updatedAt']))).length;
   if (notesChanged) add('notes', `${plural(notesChanged, 'note')} added or changed`);
+  for (const sr of old.continuous?.series ?? []) {
+    const days = (c: SnapshotContent) => json((c.continuous?.days ?? []).filter((d) => d.seriesId === sr.id).sort((a, b) => (a.year < b.year ? -1 : 1)).map((d) => d.v));
+    if (days(old) !== days(cur)) add('other', `${sr.name}: records changed`);
+  }
   if (json(old.settings.letterhead) !== json(cur.settings.letterhead) && old.template.letterhead) add('other', 'The letterhead changed');
   if ((old.settings.company ?? '') !== (cur.settings.company ?? '')) add('other', 'The company name changed');
 

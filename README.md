@@ -374,6 +374,18 @@ there as they work and show up for the others within seconds.
   - **Revise** unlocks it (with the reason), and *Issue Rev 1* locks the revision; earlier revisions stay as
     issued, and *Issued* lists them – with what changed between them – and the project's other issued
     reports. Issued reports are shared with the team and kept in project backups.
+- **Rainfall and flow.** Add a rain gauge's or flow recorder's records to a project (*Setup → Rainfall and
+  flow → Add from a file*) from its data file: a council's export (Environment Data portals, Hilltop), NIWA's
+  CliFlo, a logger's CSV or a spreadsheet. EnviroDB finds the column of dates (and times) and the readings
+  beside it, and keeps daily values – rainfall the day's total (a reading at midnight counts for the day before,
+  as gauges record the time just ended), flow and level the day's mean and highest. Add later files to the same
+  record; their days replace the ones kept.
+  - **Behind the graphs**: on the Graphs tab, choose it to show daily rainfall as bars hanging from the top (flow or
+    level as a line) on its own scale at the right; hover a result for the rain that day. A report's graph
+    section can show the project's rain gauge (or flow) too, and issued reports keep the records they showed.
+  - **With each sample**: a sample's details say how much rain fell on the day and in the 3 days before.
+  - EnviroDB doesn't fetch gauges' records itself: councils' data services don't let a web page read them, and
+    EnviroDB contacts nothing but its own address and the map services. Download the CSV and add it.
 - **Client data packs.** A project's *Data pack* tab makes one HTML file with its data for the client –
   set up the way you want them to see it, and previewed as they will (on a computer or a phone):
   - **Sections** in the order you choose, each switched on or off and named as you like: a summary, the sites

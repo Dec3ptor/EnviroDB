@@ -127,7 +127,7 @@ export async function restoreWorkspace(obj: unknown, mode: 'replace' | 'merge'):
 export async function exportProjectPackage(projectId: string): Promise<WorkspaceBackup> {
   const project = await db.projects.get(projectId);
   if (!project) throw new Error('Project not found');
-  const [sites, samples, results, rules, notes, schedules, obligations, imports, calendarRows, qa, conditions, assessments, issues, archive] = await Promise.all([
+  const [sites, samples, results, rules, notes, schedules, obligations, imports, calendarRows, qa, conditions, assessments, issues, archive, series, seriesDays] = await Promise.all([
     db.sites.where('projectId').equals(projectId).toArray(),
     db.samples.where('projectId').equals(projectId).toArray(),
     db.results.where('projectId').equals(projectId).toArray(),
@@ -142,6 +142,8 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     db.assessments.where('projectId').equals(projectId).toArray(),
     db.issues.where('projectId').equals(projectId).toArray(),
     db.archive.where('projectId').equals(projectId).toArray(),
+    db.series.where('projectId').equals(projectId).toArray(),
+    db.seriesDays.where('projectId').equals(projectId).toArray(),
   ]);
   const calendarMarks = calendarRows.length ? await db.calendarMarks.where('item').anyOf(calendarRows.map((r) => r.id)).toArray() : [];
   const usedParams = new Set(results.map((r) => r.parameterId));
@@ -157,7 +159,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     appVersion: APP_VERSION,
-    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks, qa, conditions, assessments, issues, archive },
+    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks, qa, conditions, assessments, issues, archive, series, seriesDays },
   };
 }
 
@@ -230,6 +232,12 @@ export async function importProjectPackage(obj: unknown): Promise<string> {
     await put('assessments', (r) => {
       const conditionId = remap(r.conditionId as string)!;
       return { ...r, id: `${conditionId}|${r.start}|${r.end}`, projectId: newProjectId, conditionId };
+    });
+    // continuous data: the series and their daily values (which name the series)
+    await put('series', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId }));
+    await put('seriesDays', (r) => {
+      const seriesId = remap(r.seriesId as string)!;
+      return { ...r, id: `${seriesId}|${r.year}`, projectId: newProjectId, seriesId };
     });
     // issued reports and what they were built from – not into a copy: the issues are the original project's
     if (!exists) {

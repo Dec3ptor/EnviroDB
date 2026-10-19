@@ -16,6 +16,7 @@ import { MoreOptions } from '../../components/common';
 import { compareParams } from '../../data/parameters';
 import { SaveButton, SaveIcon, UnsavedBadge } from '../../components/Unsaved';
 import { confirmDeleteParameter } from '../../components/DeleteParameter';
+import { ContinuousCard } from '../../components/ContinuousCard';
 
 function SiteRow({ site, index, count, onMove }: { site: Site; index: number; count: number; onMove: (dir: -1 | 1) => void }) {
   const [s, setS, { dirty, reset }] = useEditable(site);
@@ -195,7 +196,13 @@ function ParametersCard() {
 }
 
 export function SetupTab() {
-  const { project, sites: monitoring, qc, rules } = useProject();
+  const data = useProject();
+  const { project, sites: monitoring, qc, rules } = data;
+  const dayCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const y of data.continuous.days) m.set(y.seriesId, (m.get(y.seriesId) ?? 0) + y.v.filter((v) => v !== null).length);
+    return m;
+  }, [data.continuous.days]);
   // quality control sites (duplicates, blanks) are set up here too
   const sites = useMemo(() => [...monitoring, ...qc.sites].sort((a, b) => a.order - b.order || a.code.localeCompare(b.code)), [monitoring, qc.sites]);
   // the details as saved, with your unsaved edits on top (a colleague's change to anything else shows straight away)
@@ -332,6 +339,8 @@ export function SetupTab() {
           </Text>
         )}
       </Card>
+
+      <ContinuousCard projectId={project.id} series={data.continuous.series} dayCounts={dayCounts} />
 
       <ParametersCard />
 

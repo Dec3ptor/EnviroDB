@@ -2,7 +2,7 @@
 
 /** Tables shared with everyone in the workspace. */
 export const SHARED_TABLES = [
-  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa', 'conditions', 'assessments', 'issues', 'archive', 'meta',
+  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa', 'conditions', 'assessments', 'issues', 'archive', 'series', 'seriesDays', 'meta',
 ] as const;
 export type SharedTable = (typeof SHARED_TABLES)[number];
 export const SHARED = new Set<string>(SHARED_TABLES);
@@ -67,6 +67,8 @@ export function segmentOf(table: string, rec: Record<string, unknown>): string {
     case 'archive':
       // issued reports' parts never change once kept: a file a year, so a new issue doesn't rewrite the old ones
       return `archive.${rec.projectId}.${String(rec.y ?? '') || 'undated'}`;
+    case 'seriesDays':
+      return `continuous.${rec.projectId}.${String(rec.year ?? '') || 'undated'}`;
     case 'samples':
     case 'results':
       return `data.${rec.projectId}.${String(rec.date ?? '').slice(0, 4) || 'undated'}`;

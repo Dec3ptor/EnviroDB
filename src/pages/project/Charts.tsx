@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
 import { ActionIcon, Button, Card, Group, Select, SimpleGrid, Stack, Switch, Text, TextInput, Tooltip, useComputedColorScheme } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconCopy, IconDownload, IconFileTypeDocx, IconPhoto } from '@tabler/icons-react';
+import { IconCloudRain, IconCopy, IconDownload, IconFileTypeDocx, IconPhoto } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, consentPresets, defaultPeriod, type PeriodValue } from '../../components/common';
-import { buildChartSpec, chartOption, type ChartSpec } from '../../charts/timeSeries';
+import { buildChartSpec, chartOption, chartOverlay, type ChartSpec } from '../../charts/timeSeries';
+import { KIND_TEXT } from '../../lib/continuous';
+import { Link } from 'react-router-dom';
 import { EChart, type EChartHandle } from '../../charts/EChart';
 import { cmToPx, copyPngToClipboard, renderChartPng } from '../../charts/render';
 import { keyParameters } from '../../lib/analysis';
@@ -78,6 +80,9 @@ export function ChartsTab() {
   const [trendLines, setTrendLines] = useViewState(k('trends'), false);
   const [sizeKey, setSizeKey] = useViewState(k('size'), 'half', (v) => (SIZE_PRESETS[v] ? v : undefined));
   const [titles, setTitles] = useViewState<Record<string, string>>(k('titles'), {});
+  // rainfall, flow or level behind the graphs
+  const [overlayId, setOverlayId] = useViewState<string | null>(k('overlay'), null, (v) => (v === null || data.continuous.series.some((x) => x.id === v) ? v : undefined));
+  const overlaySeries = data.continuous.series.find((x) => x.id === overlayId);
   const [busy, setBusy] = useState(false);
   const withData = useMemo(() => new Set(index.paramIdsWithData), [index]);
   const presets = useMemo(() => consentPresets(data, withData), [data, withData]);
@@ -94,9 +99,10 @@ export function ChartsTab() {
           const spec = buildChartSpec({ index, param: p, sites, siteIds, start: period.start, end: period.end, guidelineSets: sets, rules: limitRules, setMap, showRules, log });
           // each site's Sen's slope over the graph's dates
           if (trendLines) spec.trends = chartTrends(data, p.id, spec.series.map((x) => x.id), period.start, period.end);
+          if (overlaySeries) spec.overlay = chartOverlay(overlaySeries, data.continuous.days.filter((d) => d.seriesId === overlaySeries.id), period.start, period.end);
           return { p, spec };
         }),
-    [paramIds, data, index, sites, siteIds, period, sets, limitRules, showRules, log, trendLines],
+    [paramIds, data, index, sites, siteIds, period, sets, limitRules, showRules, log, trendLines, overlaySeries],
   );
 
   const exportDocx = async () => {
@@ -134,6 +140,34 @@ export function ChartsTab() {
             <Tooltip label="Each site’s Sen’s slope over the dates shown, where there are enough results (see the Trends tab)">
               <Switch label="Trend lines" checked={trendLines} onChange={(e) => setTrendLines(e.currentTarget.checked)} />
             </Tooltip>
+            {data.continuous.series.length ? (
+              <Select
+                aria-label="Rainfall or flow behind the graphs"
+                placeholder="No rainfall or flow"
+                data={data.continuous.series.map((x) => ({ value: x.id, label: x.name }))}
+                renderOption={({ option }) => {
+                  const x = data.continuous.series.find((y) => y.id === option.value);
+                  return (
+                    <div>
+                      <Text size="sm">{option.label}</Text>
+                      <Text size="xs" c="dimmed">
+                        {x ? `${KIND_TEXT[x.kind]}${x.unit ? ` (${x.unit})` : ''}` : ''}
+                      </Text>
+                    </div>
+                  );
+                }}
+                leftSection={<IconCloudRain size={16} />}
+                value={overlayId}
+                onChange={setOverlayId}
+                clearable
+                w={250}
+                comboboxProps={{ width: 'max-content' }}
+              />
+            ) : (
+              <Text size="xs" c="dimmed">
+                <Link to={`/projects/${project.id}/setup#continuous`}>Add rainfall or flow</Link> to show it behind the graphs
+              </Text>
+            )}
             <Group gap="sm" ml="auto" wrap="wrap">
               <Select aria-label="Graph size" data={Object.entries(SIZE_PRESETS).map(([value, v]) => ({ value, label: v.label }))} value={sizeKey} onChange={(v) => v && setSizeKey(v)} w={230} allowDeselect={false} comboboxProps={{ width: 'max-content' }} />
               <Button variant="default" leftSection={<IconFileTypeDocx size={16} />} loading={busy} onClick={exportDocx} disabled={!specs.length}>

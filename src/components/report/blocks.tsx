@@ -779,6 +779,7 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
             {block.range !== 'period' && <Switch label="Shade the report period" checked={!!block.markPeriod} onChange={(e) => set({ markPeriod: e.currentTarget.checked })} />}
             <Switch label="Trend lines (Sen’s slope)" checked={!!block.trendLines} onChange={(e) => set({ trendLines: e.currentTarget.checked })} />
           </Group>
+          <OverlayField value={block.overlay} onChange={(overlay) => set({ overlay })} />
         </Stack>
       );
     case 'roundReview':
@@ -1259,5 +1260,31 @@ function UpDownSettings({ block, onChange }: { block: Extract<ReportBlock, { typ
         />
       </Group>
     </Stack>
+  );
+}
+
+/** Rainfall, flow or level behind a section's graphs: by kind (any project's), or one of this project's records. */
+function OverlayField({ value, onChange }: { value: string | undefined; onChange: (v: string | undefined) => void }) {
+  const project = useContext(ReportProjectContext);
+  const own = project?.series ?? [];
+  const data = [
+    { value: 'kind:rainfall', label: 'Rainfall (the project’s rain gauge)' },
+    { value: 'kind:flow', label: 'Flow (the project’s flow records)' },
+    { value: 'kind:level', label: 'Water level' },
+    ...own.map((x) => ({ value: `series:${x.id}`, label: `${x.name} (this project)` })),
+  ];
+  if (value && !data.some((d) => d.value === value)) data.push({ value, label: 'Records of another project' });
+  return (
+    <Select
+      label="Behind the graphs"
+      description={own.length ? undefined : 'Add a rain gauge’s or flow records to a project in its Setup tab'}
+      placeholder="Nothing"
+      data={data}
+      value={value ?? null}
+      onChange={(v) => onChange(v ?? undefined)}
+      clearable
+      w={320}
+      comboboxProps={{ width: 'max-content' }}
+    />
   );
 }
