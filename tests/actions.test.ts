@@ -41,16 +41,23 @@ describe('actions to take', () => {
     const actions = actionsToTake([b], sheet(), TODAY);
     const brief = actions.map((a) => [a.kind, a.urgency, a.title]);
     expect(brief).toEqual([
+      ['sampling', 0, 'Not sampled: Landfill'], // August planned, nothing recorded
       ['exceedance', 0, 'Follow up: Ammonia limit'],
-      ['results', 0, 'Send or report the results: Landfill'], // sampled 10 September, still not sent
+      ['results', 0, 'Send the results: Landfill'], // sampled 10 September, still not sent (due 17 Sep)
       ['report', 0, 'Gas survey report is overdue'],
       ['report', 1, 'Annual report due 30 Oct 2026'],
       ['sampling', 2, 'Sample GW1, GW2'],
     ]);
-    // the September results can be marked done from the action – and once they are, it goes
+    // the September results can be recorded sent from the action – and once they are (or the month is green), it goes
     expect(actions.find((a) => a.kind === 'results')?.calendar).toEqual({ item: 'row1', month: '2026-09' });
+    const sent = sheet([{ id: 'row1|2026-09', item: 'row1', month: '2026-09', resultsSentOn: '2026-10-01', status: 'done', updatedAt: '' }]);
+    expect(actionsToTake([b], sent, TODAY).some((a) => a.kind === 'results')).toBe(false);
     const done = sheet([{ id: 'row1|2026-09', item: 'row1', month: '2026-09', status: 'done', updatedAt: '' }]);
     expect(actionsToTake([b], done, TODAY).some((a) => a.kind === 'results')).toBe(false);
+    // sent to the lab in October, nothing back after 10 working days: overdue from the lab
+    const atLab = sheet([{ id: 'row1|2026-10', item: 'row1', month: '2026-10', labSentOn: '2026-10-01', lab: 'Hill Labs', updatedAt: '' }]);
+    expect(actionsToTake([b], atLab, TODAY).find((a) => a.kind === 'lab')).toMatchObject({ urgency: 0, title: 'Results overdue from Hill Labs: Landfill' });
+    expect(actionsToTake([b], atLab, TODAY, { labDays: 15 }).some((a) => a.kind === 'lab')).toBe(false);
     // nothing planned that month: nothing to send
     const unplanned = buildSheet({ rows: [{ ...row, m09: undefined }], marks: [], projects: [b.project], samples: b.samples, obligations: b.obligations, sites: b.sites }, 2026);
     expect(actionsToTake([b], unplanned, TODAY).some((a) => a.kind === 'results')).toBe(false);

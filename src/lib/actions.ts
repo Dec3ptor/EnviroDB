@@ -1,16 +1,17 @@
 // "Actions to take": what needs doing across the projects, most pressing first – reports overdue or due soon,
-// results that are in for a month on the monitoring calendar but not yet marked done (sent or reported), sampling
-// rounds still to do, and exceedances nobody has followed up yet.
+// sampling rounds on the monitoring calendar that need something (results overdue from the lab, results back but not
+// sent on, planned but not sampled), sampling still to do, and exceedances nobody has followed up yet.
 
 import type { ProjectBundle } from './analysis';
 import { evaluateAll } from './analysis';
-import { cellValue, markId, plannedIn, rowMonths, windowsOf, type CalendarSheet } from './calendar';
+import { cellValue, type CalendarSheet } from './calendar';
+import { openRounds, roundText, type RoundOptions } from './rounds';
 import { addDays, addMonths, daysBetween, formatDate, todayStr } from './dates';
 import { nextObligation, scheduleStatus } from './schedule';
 
 export interface Action {
   id: string;
-  kind: 'report' | 'results' | 'sampling' | 'exceedance';
+  kind: 'report' | 'results' | 'lab' | 'sampling' | 'exceedance';
   /** 0 overdue or needing a response, 1 due soon, 2 to keep in mind. */
   urgency: 0 | 1 | 2;
   title: string;
@@ -20,11 +21,11 @@ export interface Action {
   link: string;
   /** When it's due (or happened). */
   date: string;
-  /** Results in: the calendar row and month (YYYY-MM) it's marked done on. */
+  /** A round's results to send: the calendar row and month (YYYY-MM) of the round, to record them sent. */
   calendar?: { item: string; month: string };
 }
 
-export function actionsToTake(bundles: ProjectBundle[], sheet: CalendarSheet | null = null, today = todayStr()): Action[] {
+export function actionsToTake(bundles: ProjectBundle[], sheet: CalendarSheet | null = null, today = todayStr(), rounds: Omit<RoundOptions, 'today'> = {}): Action[] {
   const out: Action[] = [];
   const thisMonth = today.slice(0, 7);
   for (const b of bundles) {
@@ -84,31 +85,31 @@ export function actionsToTake(bundles: ProjectBundle[], sheet: CalendarSheet | n
       }
     }
   }
-  // results in that haven't been sent or reported: a month planned on the calendar with results in, not yet done
-  const recent = [-2, -1, 0].map((n) => addMonths(`${thisMonth}-01`, n).slice(0, 7));
-  for (const row of sheet?.rows ?? []) {
-    const project = row.projectId ? sheet!.projects.get(row.projectId) : undefined;
-    const facts = sheet!.facts.get(row.id);
-    if (!project || project.status !== 'active' || row.onHold || !facts) continue;
-    const windows = windowsOf(rowMonths(row));
-    const job = cellValue(row, 'job', project);
-    for (const month of recent) {
-      const res = facts.results.get(month);
-      if (!res || !plannedIn(row, Number(month.slice(5, 7)) - 1, windows)) continue;
-      const status = sheet!.marks.get(markId(row.id, month))?.status;
-      if (status === 'done' || status === 'cancelled') continue;
-      out.push({
-        id: `results:${row.id}:${month}`,
-        kind: 'results',
-        urgency: month < thisMonth ? 0 : 1,
-        title: `Send or report the results: ${job}`,
-        detail: `${monthLabel(month)} · sampled ${res.days.map((d) => formatDate(d)).join(', ')}${status === 'doing' ? ' · under way' : ''}`,
-        projectId: project.id,
-        projectName: project.name,
-        link: `/projects/${project.id}/data`,
-        date: res.days[res.days.length - 1],
-        calendar: { item: row.id, month },
-      });
+  // sampling rounds on the calendar: results overdue from the lab, results back but not sent on, planned but not sampled
+  if (sheet) {
+    const since = addMonths(`${thisMonth}-01`, -2).slice(0, 7);
+    for (const r of openRounds(sheet, { ...rounds, today }, since)) {
+      const row = sheet.rows.find((x) => x.id === r.rowId)!;
+      const project = row.projectId ? sheet.projects.get(row.projectId) : undefined;
+      if (!project) continue;
+      const job = cellValue(row, 'job', project);
+      const when = r.months.length > 1 ? `${monthLabel(r.months[0])} – ${monthLabel(r.months[r.months.length - 1])}` : monthLabel(r.month);
+      const base = { projectId: project.id, projectName: project.name, date: r.overdue?.due ?? r.next?.due ?? `${r.month}-01` };
+      const progress = roundText(r);
+      if (r.overdue?.kind === 'lab')
+        out.push({ ...base, id: `lab:${r.rowId}:${r.month}`, kind: 'lab', urgency: 0, title: `Results overdue from ${r.lab ?? 'the lab'}: ${job}`, detail: `${when} · ${progress}`, link: '/calendar' });
+      else if (r.stages.results.done)
+        out.push({
+          ...base,
+          id: `results:${r.rowId}:${r.month}`,
+          kind: 'results',
+          urgency: r.overdue ? 0 : 1,
+          title: `Send the results: ${job}`,
+          detail: `${when} · ${progress}${r.overdue ? '' : r.next ? ` · ${r.next.text.charAt(0).toLowerCase()}${r.next.text.slice(1)}` : ''}`,
+          link: `/projects/${project.id}/data`,
+          calendar: { item: r.rowId, month: r.month },
+        });
+      else if (r.overdue?.kind === 'sample') out.push({ ...base, id: `notsampled:${r.rowId}:${r.month}`, kind: 'sampling', urgency: 0, title: `Not sampled: ${job}`, detail: r.overdue.text, link: '/calendar' });
     }
   }
   return out.sort((a, b) => a.urgency - b.urgency || a.date.localeCompare(b.date) || a.title.localeCompare(b.title));

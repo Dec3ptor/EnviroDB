@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Anchor, Badge, Button, Card, FileButton, Group, Modal, Select, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { APP_BUILD, APP_VERSION } from '../lib/version';
+import { DEFAULT_LAB_DAYS, DEFAULT_SEND_DAYS } from '../lib/rounds';
+import { Anchor, Badge, Button, Card, FileButton, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -104,6 +106,35 @@ export function SettingsPage() {
         </SimpleGrid>
       </Card>
 
+      <Card>
+        <Title order={4} mb={4}>
+          Sampling rounds
+        </Title>
+        <Text size="xs" c="dimmed" mb="xs">
+          For the team: when a round on the monitoring calendar counts as overdue. Weekdays only.
+        </Text>
+        <SimpleGrid cols={{ base: 1, sm: 2 }}>
+          <NumberInput
+            label="Results due from the lab"
+            description="Working days after the samples go to the lab"
+            min={1}
+            max={60}
+            value={settings.labTurnaroundDays ?? DEFAULT_LAB_DAYS}
+            onChange={(v) => typeof v === 'number' && v > 0 && void saveSettings({ labTurnaroundDays: v })}
+            suffix=" working days"
+          />
+          <NumberInput
+            label="Results to be sent on"
+            description="Working days after they come back"
+            min={1}
+            max={60}
+            value={settings.sendResultsDays ?? DEFAULT_SEND_DAYS}
+            onChange={(v) => typeof v === 'number' && v > 0 && void saveSettings({ sendResultsDays: v })}
+            suffix=" working days"
+          />
+        </SimpleGrid>
+      </Card>
+
       <LetterheadCard />
 
       <WorkspaceCard />
@@ -174,7 +205,7 @@ export function SettingsPage() {
       </Card>
 
       <Text size="xs" c="dimmed">
-        EnviroDB v{__APP_VERSION__} · open source ·{' '}
+        EnviroDB {APP_VERSION} (build {APP_BUILD.commit}{APP_BUILD.date ? `, ${APP_BUILD.date}` : ''}) · open source ·{' '}
         <Anchor href="https://github.com/Dec3ptor/EnviroDB" target="_blank" size="xs">
           GitHub
         </Anchor>

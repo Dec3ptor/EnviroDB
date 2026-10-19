@@ -19,6 +19,7 @@ import {
 } from '@tabler/icons-react';
 import { db } from '../db/db';
 import { WorkspaceBadge } from './workspace/Workspace';
+import { VersionFooter } from './Version';
 
 export function Shell() {
   const [opened, { toggle, close }] = useDisclosure();
@@ -104,6 +105,7 @@ export function Shell() {
           <Text size="xs" c="dimmed" px="sm" py={4}>
             Saved to your team’s workspace folder as you work.
           </Text>
+          <VersionFooter />
         </AppShell.Section>
       </AppShell.Navbar>
       <AppShell.Main>

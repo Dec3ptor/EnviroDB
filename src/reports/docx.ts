@@ -36,6 +36,7 @@ import type { Cell, DocNode, PageLine, RefTarget, ReportDoc, Run, TocEntry } fro
 import { dataUrlToBytes } from '../charts/render';
 import { CHART_GAP_MM, SIGN_GAP_MM, pageSizeMm, type Orientation } from './build';
 import { fitCellSize, fontWidthFactor } from './measure';
+import { MADE_BY } from '../lib/version';
 
 const hex = (c?: string) => (c ? c.replace('#', '').toUpperCase() : undefined);
 const TWIP_PER_MM = 56.6929;
@@ -632,7 +633,8 @@ export async function docxBlob(doc: ReportDoc, opts: { pages?: Record<string, nu
     return section(doc, s.nodes.flatMap((n) => nodeToDocx(n, x, contentWidthMm)), s.orientation, i === 0);
   });
   const d = new Document({
-    creator: 'EnviroDB',
+    creator: MADE_BY,
+    lastModifiedBy: MADE_BY,
     title: doc.title,
     description: doc.title,
     styles: styles(doc),
@@ -666,6 +668,6 @@ export async function chartsToDocx(title: string, subtitle: string, images: Arra
     children.push(new Paragraph({ style: 'Caption', children: [new TextRun({ text: `Figure ${i + 1}: ${img.title}` })] }));
   });
   const plain = { style: 'report' as const, accent: '#0f766e', headingColor: '#0f766e', tableHeader: 'accent' as const, highlight: 'fill' as const };
-  const d = new Document({ creator: 'EnviroDB', styles: styles({ template: { fontSize: 10 }, look: plain } as ReportDoc), sections: [{ children }] });
+  const d = new Document({ creator: MADE_BY, styles: styles({ template: { fontSize: 10 }, look: plain } as ReportDoc), sections: [{ children }] });
   return Packer.toBlob(d);
 }

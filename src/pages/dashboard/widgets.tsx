@@ -1,10 +1,10 @@
+import { todayStr } from '../../lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActionIcon, Anchor, Badge, Button, Group, List, Paper, SegmentedControl, SimpleGrid, Stack, Table, Text, Textarea, ThemeIcon, Tooltip, UnstyledButton } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  IconAlertTriangle, IconBook2, IconCalendarDue, IconCalendarMonth, IconCheck, IconCircleCheck, IconCircleX, IconFileReport, IconFlask, IconFolders, IconListCheck, IconSettings, IconUpload,
-} from '@tabler/icons-react';
+  IconAlertTriangle, IconBook2, IconCalendarDue, IconCalendarMonth, IconCheck, IconCircleCheck, IconCircleX, IconFileReport, IconFlask, IconFolders, IconListCheck, IconSettings, IconUpload, IconHourglassHigh } from '@tabler/icons-react';
 import { db } from '../../db/db';
 import type { ProjectBundle } from '../../lib/analysis';
 import type { RuleEvaluation } from '../../lib/compliance';
@@ -12,7 +12,7 @@ import type { Action } from '../../lib/actions';
 import { cellValue, markId, MONTH_FIELDS, monthName, monthText, plannedIn, rowMonths, STATUS_INFO, STATUSES, windowRange, windowsOf, type CalendarSheet as SheetData } from '../../lib/calendar';
 import { addMonths, daysUntil, formatDate, MONTH_SHORT, relativeDays } from '../../lib/dates';
 import { nextObligation, obligationPeriods } from '../../lib/schedule';
-import { setCalendarStatus } from '../../db/repo';
+import { recordRound, setCalendarStatus } from '../../db/repo';
 import { LevelBadge, StatTile } from '../../components/common';
 import { CalendarSheet } from '../../components/calendar/CalendarSheet';
 import { NewProjectButton } from '../Projects';
@@ -90,7 +90,7 @@ function KeyFigures({ bundles, dash, today }: WidgetCtx) {
   );
 }
 
-const ACTION_ICON: Record<Action['kind'], typeof IconFlask> = { report: IconFileReport, results: IconListCheck, sampling: IconFlask, exceedance: IconAlertTriangle };
+const ACTION_ICON: Record<Action['kind'], typeof IconFlask> = { report: IconFileReport, results: IconListCheck, lab: IconHourglassHigh, sampling: IconFlask, exceedance: IconAlertTriangle };
 const URGENCY_COLOR = ['red', 'orange', 'gray'] as const;
 
 function ActionsToTake({ actions }: WidgetCtx) {
@@ -123,14 +123,14 @@ function ActionsToTake({ actions }: WidgetCtx) {
                 </Text>
               </div>
               {a.calendar && (
-                <Tooltip label="Mark done – the results have been sent or reported">
+                <Tooltip label="Results sent today – the round is done">
                   <ActionIcon
                     variant="light"
                     color="teal"
-                    aria-label="Mark done"
+                    aria-label="Results sent"
                     onClick={(e) => {
                       e.stopPropagation();
-                      void setCalendarStatus(a.calendar!.item, a.calendar!.month, 'done');
+                      void recordRound(a.calendar!.item, a.calendar!.month, { resultsSentOn: todayStr() });
                     }}
                   >
                     <IconCheck size={16} />

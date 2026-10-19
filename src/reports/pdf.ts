@@ -4,6 +4,7 @@ import type { Cell, DocNode, PageLine, ReportDoc, Run } from './model';
 import { CHART_GAP_MM, SIGN_GAP_MM, pageSizeMm, type Orientation } from './build';
 import { downloadBlob } from '../db/backup';
 import { fitCellSize } from './measure';
+import { MADE_BY } from '../lib/version';
 
 const MM = 2.834645669; // points per mm
 
@@ -417,7 +418,7 @@ export function toPdfDefinition(doc: ReportDoc): TDocumentDefinitions {
     pageSize: t.pageSize,
     pageOrientation: firstOrientation,
     pageMargins: margins,
-    info: { title: doc.title, author: doc.author, creator: 'EnviroDB' },
+    info: { title: doc.title, author: doc.author, creator: MADE_BY, producer: MADE_BY },
     header,
     footer,
     content,

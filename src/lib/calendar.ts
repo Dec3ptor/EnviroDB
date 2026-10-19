@@ -5,7 +5,7 @@
 // colours (done, doing, cancelled) are kept for each year.
 
 import type { CalendarMark, CalendarRow, CalendarStatus, CalendarTextField, MonitoringSchedule, MonthField, Project, ReportObligation, Sample, Site } from '../db/types';
-import { MONTH_LONG, MONTH_SHORT } from './dates';
+import { daysBetween, MONTH_LONG, MONTH_SHORT } from './dates';
 import { frequencyLabel, obligationPeriod, scheduleStep } from './schedule';
 
 export const MONTH_FIELDS: MonthField[] = ['m01', 'm02', 'm03', 'm04', 'm05', 'm06', 'm07', 'm08', 'm09', 'm10', 'm11', 'm12'];
@@ -265,22 +265,46 @@ export interface ResultsIn {
   days: string[];
   /** Site ids sampled. */
   sites: string[];
+  /** When the results came in: the first import of them (YYYY-MM-DD), if known. */
+  received?: string;
+  /** The labs and their job numbers, from the lab files. */
+  labs: string[];
+  jobs: string[];
 }
 
-/** The months (YYYY-MM) a row's project has results in, at its sites. */
-export function resultsByMonth(samples: Array<Pick<Sample, 'siteId' | 'date'>>, siteIds?: string[]): Map<string, ResultsIn> {
+export type CalendarSample = Pick<Sample, 'siteId' | 'date'> & Partial<Pick<Sample, 'importId' | 'labName' | 'labJob'>>;
+
+/** An import this long after the sampling is of old results: when they came back isn't known from it. */
+export const LATE_IMPORT_DAYS = 45;
+
+/** The months (YYYY-MM) a row's project has results in, at its sites; `imported`: each import's date. */
+export function resultsByMonth(samples: CalendarSample[], siteIds?: string[], imported?: Map<string, string>): Map<string, ResultsIn> {
   const only = siteIds?.length ? new Set(siteIds) : null;
   const out = new Map<string, ResultsIn>();
+  const add = (list: string[], v?: string) => v && !list.includes(v) && list.push(v);
   for (const s of samples) {
     if (only && !only.has(s.siteId)) continue;
     const day = s.date.slice(0, 10);
-    const m = out.get(day.slice(0, 7)) ?? { days: [], sites: [] };
-    if (!m.days.includes(day)) m.days.push(day);
-    if (!m.sites.includes(s.siteId)) m.sites.push(s.siteId);
+    const m = out.get(day.slice(0, 7)) ?? { days: [], sites: [], labs: [], jobs: [] };
+    add(m.days, day);
+    add(m.sites, s.siteId);
+    add(m.labs, s.labName?.trim());
+    add(m.jobs, s.labJob?.trim());
+    // when the results came in – unless the import came long after the sampling (old results imported later)
+    const got = s.importId ? imported?.get(s.importId) : undefined;
+    if (got && daysBetween(day, got) <= LATE_IMPORT_DAYS && (!m.received || got < m.received)) m.received = got;
     out.set(day.slice(0, 7), m);
   }
   for (const m of out.values()) m.days.sort();
   return out;
+}
+
+/** A report sent: the period it covers and when. */
+export interface ReportSent {
+  name: string;
+  periodStart: string;
+  periodEnd: string;
+  submittedOn: string;
 }
 
 export interface ReportDue {
@@ -289,6 +313,9 @@ export interface ReportDue {
   index: number;
   due: string;
   submitted?: string;
+  /** The period it reports on. */
+  periodStart?: string;
+  periodEnd?: string;
 }
 
 /** A project's reports due in a year. */
@@ -298,7 +325,7 @@ export function reportsDueIn(obligations: ReportObligation[], year: number): Rep
     for (let k = 0; k < (ob.every ? 600 : 1); k++) {
       const p = obligationPeriod(ob, k);
       if (p.dueDate > `${year}-12-31`) break;
-      if (p.dueDate.startsWith(String(year))) out.push({ obligationId: ob.id, name: ob.name, index: k, due: p.dueDate, submitted: p.submission?.submittedOn });
+      if (p.dueDate.startsWith(String(year))) out.push({ obligationId: ob.id, name: ob.name, index: k, due: p.dueDate, submitted: p.submission?.submittedOn, periodStart: p.periodStart, periodEnd: p.periodEnd });
     }
   }
   return out.sort((a, b) => a.due.localeCompare(b.due));
@@ -334,17 +361,22 @@ export interface CalendarSheet {
   marks: Map<string, CalendarMark>;
   projects: Map<string, Project>;
   sites: Map<string, Site>;
-  /** For rows with a project: the months results came in (at the row's sites), and the reports due in the year. */
-  facts: Map<string, { results: Map<string, ResultsIn>; reports: ReportDue[] }>;
+  /**
+   * For rows with a project: the months results came in (at the row's sites), the reports due in the year, and the
+   * reports sent (each with the period it covers).
+   */
+  facts: Map<string, { results: Map<string, ResultsIn>; reports: ReportDue[]; sent: ReportSent[] }>;
 }
 
 export interface SheetInput {
   rows: CalendarRow[];
   marks: CalendarMark[];
   projects: Project[];
-  samples: Array<Pick<Sample, 'projectId' | 'siteId' | 'date'>>;
+  samples: Array<CalendarSample & Pick<Sample, 'projectId'>>;
   obligations: ReportObligation[];
   sites: Site[];
+  /** Each import's date (YYYY-MM-DD), by id: when results came in. */
+  imported?: Map<string, string>;
 }
 
 /** The calendar for a year: its rows in order, their colours, and for each row with a project what EnviroDB knows. */
@@ -360,7 +392,8 @@ export function buildSheet(input: SheetInput, year: number): CalendarSheet {
   const facts: CalendarSheet['facts'] = new Map();
   for (const r of input.rows) {
     if (!r.projectId || !projects.has(r.projectId)) continue;
-    facts.set(r.id, { results: resultsByMonth(smp.get(r.projectId) ?? [], r.siteIds), reports: reportsDueIn(obl.get(r.projectId) ?? [], year) });
+    const sent = (obl.get(r.projectId) ?? []).flatMap((ob) => ob.submissions.map((s) => ({ name: ob.name, periodStart: s.periodStart, periodEnd: s.periodEnd, submittedOn: s.submittedOn })));
+    facts.set(r.id, { results: resultsByMonth(smp.get(r.projectId) ?? [], r.siteIds, input.imported), reports: reportsDueIn(obl.get(r.projectId) ?? [], year), sent });
   }
   return {
     rows: [...input.rows].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id)),

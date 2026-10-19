@@ -20,6 +20,7 @@ import { NewProjectButton } from './Projects';
 import { db } from '../db/db';
 import { useCalendarSheet } from '../hooks/useCalendarSheet';
 import { actionsToTake } from '../lib/actions';
+import { useSettings } from '../hooks/useSettings';
 import { autoScale, GRID, readLayout, WIDGET_MAP, WIDGETS, type DashboardData, type PlacedWidget, type WidgetCtx, type WidgetId } from './dashboard/widgets';
 import type { Deadline } from './dashboard/widgets';
 import type { RuleEvaluation } from '../lib/compliance';
@@ -155,7 +156,8 @@ export function DashboardPage() {
   const dash = useDashboard(bundles);
   const today = todayStr();
   const sheet = useCalendarSheet(Number(today.slice(0, 4)));
-  const actions = useMemo(() => actionsToTake(bundles, sheet, today), [bundles, sheet, today]);
+  const settings = useSettings();
+  const actions = useMemo(() => actionsToTake(bundles, sheet, today, { labDays: settings.labTurnaroundDays, sendDays: settings.sendResultsDays }), [bundles, sheet, today, settings.labTurnaroundDays, settings.sendResultsDays]);
   const saved = useLiveQuery(() => db.meta.get(DASHBOARD_KEY), [], null);
   const [editing, setEditing] = useState(false);
   const [narrow, setNarrow] = useState(false);

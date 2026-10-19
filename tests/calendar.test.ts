@@ -82,9 +82,9 @@ describe('the monitoring calendar: filled in from a project', () => {
       { siteId: 'us', date: '2026-04-01' },
     ];
     const all = resultsByMonth(samples);
-    expect(all.get('2026-03')).toEqual({ days: ['2026-03-02', '2026-03-20'], sites: ['gw1', 'gw2'] });
+    expect(all.get('2026-03')).toEqual({ days: ['2026-03-02', '2026-03-20'], sites: ['gw1', 'gw2'], labs: [], jobs: [] });
     expect(resultsByMonth(samples, ['us']).has('2026-03')).toBe(false);
-    expect(reportsDueIn([annual], 2026)).toEqual([{ obligationId: 'annual', name: 'Annual report', index: 0, due: '2026-09-30', submitted: undefined }]);
+    expect(reportsDueIn([annual], 2026)).toMatchObject([{ obligationId: 'annual', name: 'Annual report', index: 0, due: '2026-09-30', submitted: undefined }]);
     expect(reportsDueIn([annual], 2027).map((r) => r.due)).toEqual(['2027-09-30']);
   });
 });

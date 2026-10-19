@@ -13,6 +13,7 @@ import type { MonitoringSchedule, ReportObligation } from '../../db/types';
 import { db } from '../../db/db';
 import { downloadBlob, safeFileName } from '../../db/backup';
 import { CalendarSheet } from '../../components/calendar/CalendarSheet';
+import { RoundsList } from '../../components/calendar/RoundsList';
 import { CALENDAR_SYMBOLS, scheduleSymbols } from '../../lib/calendar';
 
 function ScheduleModal({ value, onClose }: { value: MonitoringSchedule; onClose: () => void }) {
@@ -178,9 +179,12 @@ export function ScheduleTab() {
       <Card>
         <Title order={4}>On the monitoring calendar</Title>
         <Text size="sm" c="dimmed" mb="sm">
-          The project’s rows on the team’s monitoring calendar – colour a month green once its results are sent or reported. The months results came in are dotted.
+          The project’s rows on the team’s monitoring calendar. Select a month and click Round to record it – sampled, sent to the lab, results back, results sent – and its colour follows. Results back is ticked by itself when the lab’s results are imported.
         </Text>
-        <CalendarSheet projectId={project.id} />
+        <Stack gap="sm">
+          <RoundsList projectId={project.id} />
+          <CalendarSheet projectId={project.id} />
+        </Stack>
       </Card>
       <Group justify="flex-end">
         <Tooltip label="Download an .ics file of upcoming deadlines to add to Outlook (with 7-day reminders)">

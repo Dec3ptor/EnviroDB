@@ -2,6 +2,7 @@ import { db, DATA_TABLES, DEFAULT_SETTINGS, ensureBuiltIns, getSettings, REPORT_
 import type { MetaRecord, Project, Settings } from './types';
 import { uid } from '../lib/ids';
 import { todayStr } from '../lib/dates';
+import { APP_VERSION } from '../data/releases';
 
 export const BACKUP_APP = 'EnviroDB';
 export const BACKUP_VERSION = 1;
@@ -11,6 +12,8 @@ export interface WorkspaceBackup {
   kind: 'workspace' | 'project';
   version: number;
   exportedAt: string;
+  /** The EnviroDB version that made it. */
+  appVersion?: string;
   data: Partial<Record<DataTable, unknown[]>>;
   /** Workspace backups: report work (commentary, figures, layout changes, site choices) and the settings. */
   meta?: MetaRecord[];
@@ -32,7 +35,7 @@ export async function exportWorkspace(opts: { reportWork?: boolean } = { reportW
     // the team's settings and your own, together as before
     meta = [{ key: 'settings', value: await getSettings() }, ...(opts.reportWork ? (await db.meta.toArray()).filter((r) => REPORT_WORK.test(r.key)) : [])];
   });
-  return { app: BACKUP_APP, kind: 'workspace', version: BACKUP_VERSION, exportedAt: new Date().toISOString(), data, meta };
+  return { app: BACKUP_APP, kind: 'workspace', version: BACKUP_VERSION, exportedAt: new Date().toISOString(), appVersion: APP_VERSION, data, meta };
 }
 
 /**
@@ -148,6 +151,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     kind: 'project',
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
+    appVersion: APP_VERSION,
     data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks },
   };
 }

@@ -285,6 +285,17 @@ export interface CalendarMark {
   field?: CalendarTextField;
   status?: CalendarStatus;
   note?: string;
+  /**
+   * A month's sampling round, stage by stage (YYYY-MM-DD): sampled, sent to the lab (which lab, its job or chain of
+   * custody number), results back, and the results sent on (to whom). Results back is also known from imports.
+   */
+  sampledOn?: string;
+  labSentOn?: string;
+  lab?: string;
+  labRef?: string;
+  resultsOn?: string;
+  resultsSentOn?: string;
+  sentTo?: string;
   /** Kept by the first version of the calendar. */
   projectId?: ID;
   updatedAt: string;
@@ -740,6 +751,10 @@ export interface Settings {
   signatureDetails?: string;
   /** Your company letterhead for letter reports. */
   letterhead?: Letterhead;
+  /** Sampling rounds: results are due from the lab this many working days after sending (default 10). */
+  labTurnaroundDays?: number;
+  /** Sampling rounds: results are to be sent on this many working days after they're back (default 5). */
+  sendResultsDays?: number;
 }
 
 /** Something in a letterhead's header or footer: a line of text ({page} = page number) or a picture. */

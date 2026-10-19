@@ -1,3 +1,4 @@
+import { roundEdits, type RoundPatch } from '../lib/rounds';
 import type { Table } from 'dexie';
 import { db, getSettings, saveSettings } from './db';
 import { same } from '../sync/model';
@@ -324,6 +325,14 @@ export async function setCalendarStatus(rowId: string, month: string, status: Ca
   const cur = await db.calendarMarks.get(id);
   const mark: CalendarMark | null = status || cur?.note ? { ...(cur ?? { id, item: rowId, month: field ? month.slice(0, 4) : month, field }), status, updatedAt: nowIso() } : null;
   return applyCalendarEdits([{ t: 'mark', id, mark }]);
+}
+
+/** Records stages of a sampling round (see roundEdits): e.g. the results sent today. */
+export async function recordRound(rowId: string, month: string, patch: RoundPatch): Promise<CalendarEdit[]> {
+  const row = await db.calendarRows.get(rowId);
+  if (!row) return [];
+  const marks = new Map((await db.calendarMarks.where('item').equals(rowId).toArray()).map((m) => [m.id, m]));
+  return applyCalendarEdits(roundEdits(row, month, patch, marks));
 }
 
 export function newCalendarRow(patch: Partial<CalendarRow> = {}): CalendarRow {

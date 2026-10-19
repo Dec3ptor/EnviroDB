@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import type { ReportObligation, Site } from '../db/types';
+import type { ImportBatch, ReportObligation, Site } from '../db/types';
 import { buildSheet, type CalendarSheet } from '../lib/calendar';
 
 export type { CalendarSheet };
@@ -24,7 +24,7 @@ export function useCalendarSheet(year: number, projectId?: string): CalendarShee
             .where('[projectId+date]')
             .between([id, `${year - 1}-11-01`], [id, `${year + 1}-01-01`], true, false)
             .toArray()
-            .then((list) => list.map((s) => ({ projectId: s.projectId, siteId: s.siteId, date: s.date }))),
+            .then((list) => list.map((s) => ({ projectId: s.projectId, siteId: s.siteId, date: s.date, importId: s.importId, labName: s.labName, labJob: s.labJob }))),
         ),
       ).then((l) => l.flat()),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -32,8 +32,11 @@ export function useCalendarSheet(year: number, projectId?: string): CalendarShee
   );
   const obligations = useLiveQuery(() => (linked.length ? db.obligations.where('projectId').anyOf(linked).toArray() : Promise.resolve([] as ReportObligation[])), [key]);
   const sites = useLiveQuery(() => (linked.length ? db.sites.where('projectId').anyOf(linked).toArray() : Promise.resolve([] as Site[])), [key]);
+  // when each import came in: when the round's results came back
+  const imports = useLiveQuery(() => (linked.length ? db.imports.where('projectId').anyOf(linked).toArray() : Promise.resolve([] as ImportBatch[])), [key]);
   return useMemo(() => {
-    if (!rows || !marks || !projects || !samples || !obligations || !sites) return null;
-    return buildSheet({ rows, marks, projects, samples, obligations, sites }, year);
-  }, [rows, marks, projects, samples, obligations, sites, year]);
+    if (!rows || !marks || !projects || !samples || !obligations || !sites || !imports) return null;
+    const imported = new Map(imports.map((i) => [i.id, i.importedAt.slice(0, 10)]));
+    return buildSheet({ rows, marks, projects, samples, obligations, sites, imported }, year);
+  }, [rows, marks, projects, samples, obligations, sites, imports, year]);
 }

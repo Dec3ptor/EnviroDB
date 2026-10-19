@@ -165,6 +165,8 @@ export interface ClientFile {
   id: string;
   name: string;
   lastSeen: string;
+  /** The EnviroDB version they last used. */
+  appVersion?: string;
 }
 
 export interface WorkspaceFile {

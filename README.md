@@ -234,9 +234,30 @@ there as they work and show up for the others within seconds.
   *Excel* downloads the calendar in the same layout. A row linked to a project shows the project's job
   code, PO, consents and folder (changing them on the calendar changes the project's), dots the months its
   results came in, lists its reports due, and can be filled in from the project's sampling schedules
-  (a schedule's mark and sampling window are set when editing it). Results in for a month that isn't green
-  yet show up in *Actions to take*, with a button to mark it done. Each project's *Schedule* tab shows its
+  (a schedule's mark and sampling window are set when editing it). Each project's *Schedule* tab shows its
   rows.
+- **Sampling rounds, from bottle to sent.** Select a month on the calendar and click *Round* (or Alt+R) to
+  record how the round is going:
+  - **Sampled**, with the date.
+  - **Sent to the lab**: which lab, and its job or chain of custody number.
+  - **Results back.** This ticks itself when the lab's results are imported, with the lab and job number
+    from the file.
+  - **Results sent**, and to whom. A report sent that covers the month counts as the results sent.
+
+  A sampling window is one round. The month's colour follows: under way once anything is recorded, done
+  (green) once the results are sent. A strip along the foot of the month shows the four stages. A round
+  is outlined in red when it's overdue:
+  - results not back from the lab after the turnaround (10 working days unless you change it);
+  - results back but not sent on (5 working days);
+  - a planned month gone by and not sampled.
+
+  The times are in *Settings → Sampling rounds*, for the whole team. *Sampling rounds in progress* lists
+  what each round needs next, on the calendar and each project's *Schedule* tab. *Actions to take* on the
+  dashboard includes them, with a button to tick the results sent. An import long after the sampling
+  (old results brought in later) isn't taken as when the results came back.
+- **Version numbers.** The version is at the foot of the menu – click it for what's new. Reports, Excel
+  files and backups record the version that made them. When a new version is published EnviroDB offers to
+  reload, and it tells you if someone in your workspace is already using a newer one.
 - **Your own dashboard.** The dashboard is made of widgets you arrange yourself (*Customise*): drag them
   by their title, resize them from their sides or corners on a fine grid, and make them as small as
   you like – a widget smaller than its contents need shows everything smaller to fit (the *Tt* button

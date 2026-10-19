@@ -10,6 +10,7 @@
 // same data, whatever order the files arrive in.
 
 import type { Dexie, Table } from 'dexie';
+import { APP_VERSION } from '../data/releases';
 import { markUncaptured } from './capture';
 import { stamp } from './hlc';
 import { applyChanges, type Conflict, type RemoteChange } from './merge';
@@ -202,10 +203,12 @@ export interface Person {
   name: string;
   lastSeen: string;
   me: boolean;
+  /** The EnviroDB version they last used (not known for people who haven't opened it since versions began). */
+  appVersion?: string;
 }
 
 export async function writePresence(ctx: SyncContext, name: string): Promise<void> {
-  const file: ClientFile = { app: FILE_APP, kind: 'client', format: FILE_FORMAT, workspace: ctx.workspace.id, id: ctx.clientId, name, lastSeen: new Date().toISOString() };
+  const file: ClientFile = { app: FILE_APP, kind: 'client', format: FILE_FORMAT, workspace: ctx.workspace.id, id: ctx.clientId, name, lastSeen: new Date().toISOString(), appVersion: APP_VERSION };
   await ctx.folder.write(`${clientDir(ctx.clientId)}/client.json`, JSON.stringify(file));
 }
 
@@ -224,7 +227,7 @@ export async function readPeople(ctx: SyncContext): Promise<Person[]> {
       if (person === undefined) {
         const got = await ctx.folder.read(path);
         const f = got ? (JSON.parse(got.text) as ClientFile) : null;
-        person = f?.app === FILE_APP && f.kind === 'client' ? { id, name: String(f.name || 'Someone'), lastSeen: String(f.lastSeen ?? ''), me: id === ctx.clientId } : null;
+        person = f?.app === FILE_APP && f.kind === 'client' ? { id, name: String(f.name || 'Someone'), lastSeen: String(f.lastSeen ?? ''), me: id === ctx.clientId, appVersion: typeof f.appVersion === 'string' ? f.appVersion : undefined } : null;
         peopleCache.set(path, { info: got?.info ?? info, person });
       }
       if (person) out.push(person);

@@ -349,6 +349,7 @@ function PeopleList({ people }: { people: Person[] }) {
           </Group>
           <Text size="xs" c="dimmed">
             {p.me || isOnline(p) ? 'connected' : `last seen ${ago(p.lastSeen)}`}
+            {p.appVersion ? ` · ${p.appVersion}` : ''}
           </Text>
         </Group>
       ))}

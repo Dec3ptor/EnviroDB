@@ -1,8 +1,10 @@
+import { roundOf, roundText } from '../lib/rounds';
 import type { Cell, Worksheet } from 'exceljs';
+import { MADE_BY } from '../lib/version';
 import type { CalendarRow, CalendarStatus } from '../db/types';
 import type { CalendarSheet } from '../hooks/useCalendarSheet';
 import { CALENDAR_COLUMNS, cellValue, HIGHLIGHT_FILL, markId, monthKey, monthText, MONTH_FIELDS, reportsToShow, rowMonths, STATUS_INFO, windowsOf } from '../lib/calendar';
-import { formatDate, MONTH_SHORT } from '../lib/dates';
+import { formatDate, MONTH_SHORT, todayStr } from '../lib/dates';
 import { downloadBlob } from '../db/backup';
 
 // The monitoring calendar as a spreadsheet laid out like a team's "Schedule All Monitoring" sheet: the job, job code
@@ -34,7 +36,7 @@ function windowText(label: string, part: 'start' | 'mid' | 'end' | 'whole', span
 export async function buildCalendarWorkbook(sheet: CalendarSheet, rows: CalendarRow[], year: number): Promise<ArrayBuffer> {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'EnviroDB';
+  wb.creator = MADE_BY;
   const ws = wb.addWorksheet('Schedule All Monitoring', {
     views: [{ state: 'frozen', xSplit: 1, ySplit: 3 }],
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
@@ -104,7 +106,10 @@ export async function buildCalendarWorkbook(sheet: CalendarSheet, rows: Calendar
       const label = monthText(texts[m]);
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
       paint(cell, statusAt(m));
-      const note = sheet.marks.get(markId(row.id, monthKey(year, MONTH_FIELDS[m])))?.note;
+      // the month's note, with its sampling round when one was recorded (sent to the lab …, results sent …)
+      const month = monthKey(year, MONTH_FIELDS[m]);
+      const round = roundOf(sheet, row, month, { today: todayStr() });
+      const note = [round && round.month === month && round.tracked ? roundText(round) : '', sheet.marks.get(markId(row.id, month))?.note].filter(Boolean).join('\n');
       if (note) cell.note = note;
       if (!w.inWindow) {
         cell.value = label || null;

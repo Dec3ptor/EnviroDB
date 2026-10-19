@@ -6,7 +6,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   IconArrowBackUp, IconArrowDown, IconArrowForwardUp, IconArrowUp, IconBracketsContain, IconChevronLeft, IconChevronRight, IconColumns3, IconCopy, IconDots, IconDownload,
   IconEraser, IconExternalLink, IconFolder, IconHighlight, IconLink, IconMessagePlus, IconPlayerPause, IconPlayerPlay, IconPlus, IconRowInsertBottom, IconRowInsertTop, IconSearch,
-  IconTableImport, IconTrash, IconWand,
+  IconTableImport, IconTrash, IconWand, IconProgressCheck,
 } from '@tabler/icons-react';
 import type { CalendarRow, CalendarStatus, CalendarTextField, MonthField, Project } from '../../db/types';
 import { addCalendarRows, applyCalendarEdits, deleteCalendarRows, swapCalendarRows, type CalendarEdit } from '../../db/repo';
@@ -18,6 +18,9 @@ import { cellEdit, fromTsv, noteEdit, sheetColumns, statusEdits, symbolEdits, to
 import { formatDate, MONTH_SHORT, todayStr } from '../../lib/dates';
 import { AddProjectRowsModal, FillFromProjectModal, LinkRowModal, projectRows } from './CalendarDialogs';
 import { ImportCalendarModal } from './ImportCalendarModal';
+import { RoundModal } from './RoundModal';
+import { roundOf, roundOptions, roundText, STAGES, type Round, type RoundOptions } from '../../lib/rounds';
+import { useSettings } from '../../hooks/useSettings';
 
 // The monitoring calendar as a spreadsheet, laid out like the team's "Schedule All Monitoring" sheet: a row per job,
 // the months with what's planned and coloured by how it went this year, the key and notes beside them. Click or drag
@@ -114,7 +117,9 @@ export function CalendarSheet({ projectId, compact = false, columns, onColumnsCh
   const rows = useMemo(() => (sheet ? sheet.rows.filter((r) => !q || rowSearchText(r, projectOf(sheet, r)).includes(q)) : []), [sheet, q]);
   const [sel, setSel] = useState<Sel | null>(null);
   const [editing, setEditing] = useState<{ r: number; c: number; value: string } | null>(null);
-  const [dialog, setDialog] = useState<null | { kind: 'link' | 'fill'; row: CalendarRow } | { kind: 'projects' | 'import' }>(null);
+  const [dialog, setDialog] = useState<null | { kind: 'link' | 'fill'; row: CalendarRow } | { kind: 'projects' | 'import' } | { kind: 'round'; row: CalendarRow; month: string }>(null);
+  const settings = useSettings();
+  const roundOpts = useMemo(() => roundOptions(settings, today), [settings.labTurnaroundDays, settings.sendResultsDays, today]); // eslint-disable-line react-hooks/exhaustive-deps
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const undoStack = useRef<CalendarEdit[][]>([]);
@@ -214,6 +219,14 @@ export function CalendarSheet({ projectId, compact = false, columns, onColumnsCh
     if (how !== 'cancel') void commit(e.r, e.c, e.value);
   };
 
+  // the sampling round of the month selected
+  const openRound = () => {
+    const p = sel?.f;
+    const row = p ? rows[p.r] : undefined;
+    const col = p ? cols[p.c] : undefined;
+    if (row && col?.kind === 'month') setDialog({ kind: 'round', row, month: monthKey(year, col.key) });
+  };
+
   const colour = (status: CalendarStatus | undefined) => {
     if (!sheet || !sel) return;
     void run(statusEdits(cells().map(({ row, col }) => ({ row, key: col.key })), status, year, sheet.marks));
@@ -276,6 +289,11 @@ export function CalendarSheet({ projectId, compact = false, columns, onColumnsCh
     if (e.altKey && /^Digit[0-3]$/.test(e.code)) {
       e.preventDefault();
       colour(STATUS_KEYS[Number(e.code.slice(5))]);
+      return;
+    }
+    if (e.altKey && e.code === 'KeyR') {
+      e.preventDefault();
+      openRound();
       return;
     }
     switch (e.key) {
@@ -498,6 +516,11 @@ export function CalendarSheet({ projectId, compact = false, columns, onColumnsCh
             <IconEraser size={16} />
           </ActionIcon>
         </Tooltip>
+        <Tooltip label="The sampling round of the month selected: sampled, sent to the lab, results back, results sent (Alt+R)" multiline maw={280}>
+          <Button size="compact-sm" variant="default" leftSection={<IconProgressCheck size={14} />} onMouseDown={(e) => e.preventDefault()} onClick={openRound} disabled={focusCol?.kind !== 'month'}>
+            Round
+          </Button>
+        </Tooltip>
         {!compact && (
           <>
             <Divider orientation="vertical" />
@@ -651,6 +674,7 @@ export function CalendarSheet({ projectId, compact = false, columns, onColumnsCh
                 onCellEnter={onCellEnter}
                 onCellDouble={(c) => startEdit(undefined, rect && r >= rect.r0 && r <= rect.r1 && c >= rect.c0 && c <= rect.c1 ? sel!.f : { r, c })}
                 menu={compact ? null : rowActions(row, r)}
+                roundOpts={roundOpts}
               />
             ))}
             {!rows.length && (
@@ -685,13 +709,26 @@ export function CalendarSheet({ projectId, compact = false, columns, onColumnsCh
         </Group>
       )}
 
-      <InfoBar sheet={sheet} row={focusRow} col={focusCol} year={year} compact={compact} />
+      <InfoBar sheet={sheet} row={focusRow} col={focusCol} year={year} compact={compact} roundOpts={roundOpts} />
       {!compact && <CalendarLegend />}
 
       {dialog?.kind === 'link' && <LinkRowModal row={dialog.row} year={year} onClose={() => setDialog(null)} run={run} />}
       {dialog?.kind === 'fill' && <FillFromProjectModal row={dialog.row} year={year} onClose={() => setDialog(null)} run={run} />}
       {dialog?.kind === 'projects' && <AddProjectRowsModal year={year} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'import' && <ImportCalendarModal onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'round' && (
+        <RoundModal
+          sheet={sheet}
+          row={rows.find((r) => r.id === dialog.row.id) ?? dialog.row}
+          month={dialog.month}
+          opts={roundOpts}
+          run={run}
+          onClose={() => {
+            setDialog(null);
+            refocus();
+          }}
+        />
+      )}
     </Stack>
   );
 }
@@ -714,9 +751,10 @@ interface SheetRowProps {
   onCellEnter: (r: number, c: number) => void;
   onCellDouble: (c: number) => void;
   menu: ReactNode;
+  roundOpts: RoundOptions;
 }
 
-function SheetRow({ row, r, sheet, cols, year, compact, rect, focusC, editing, onEditChange, onEditDone, onCellDown, onCellEnter, onCellDouble, menu }: SheetRowProps) {
+function SheetRow({ row, r, sheet, cols, year, compact, rect, focusC, editing, onEditChange, onEditDone, onCellDown, onCellEnter, onCellDouble, menu, roundOpts }: SheetRowProps) {
   const project = projectOf(sheet, row);
   const texts = rowMonths(row);
   const windows = windowsOf(texts);
@@ -752,6 +790,7 @@ function SheetRow({ row, r, sheet, cols, year, compact, rect, focusC, editing, o
           const month = monthKey(year, col.key);
           const mark = sheet.marks.get(markId(row.id, month));
           const w = windows[col.month];
+          const round = roundOf(sheet, row, month, roundOpts);
           return (
             <MonthCell
               key={col.key}
@@ -764,6 +803,8 @@ function SheetRow({ row, r, sheet, cols, year, compact, rect, focusC, editing, o
               status={mark?.status}
               note={mark?.note}
               results={facts ? resultsText(sheet, row, month) : null}
+              round={round && (round.started || round.overdue) ? round : null}
+              first={round?.month === month}
               props={props}
               editor={editor}
             />
@@ -795,7 +836,7 @@ function SheetRow({ row, r, sheet, cols, year, compact, rect, focusC, editing, o
 }
 
 function MonthCell({
-  cls, text, window: w, windows, texts, index, status, note, results, props, editor,
+  cls, text, window: w, windows, texts, index, status, note, results, round, first, props, editor,
 }: {
   cls: string[];
   text: string;
@@ -806,6 +847,9 @@ function MonthCell({
   status?: CalendarStatus;
   note?: string;
   results: string | null;
+  /** The month's sampling round, when something's recorded or overdue; `first`: the month it's kept on. */
+  round: Round | null;
+  first: boolean;
   props: Record<string, unknown>;
   editor: ReactNode;
 }) {
@@ -816,7 +860,9 @@ function MonthCell({
   if (w.inWindow && !w.end && index < 11 && windows[index + 1].inWindow && !windows[index + 1].start) c.push('cal-win-joined');
   // the label of a window spans it, unless its other months have marks of their own
   const span = w.start && w.span > 1 && texts.slice(index + 1, index + w.span).every((t) => !monthText(t)) ? w.span : 1;
-  const title = [STATUS_INFO[status!]?.label, note, results].filter(Boolean).join('\n');
+  const progress = round && first ? roundText(round) : '';
+  const title = [STATUS_INFO[status!]?.label, progress, round?.overdue?.text ?? (round && first ? round.next?.text : undefined), note, results].filter(Boolean).join('\n');
+  if (round?.overdue && !round.cancelled) c.push('cal-od');
   return (
     <td className={c.join(' ')} {...props} title={title || undefined}>
       {w.inWindow && <span className={`cal-win${w.start ? ' s' : ''}${w.end ? ' e' : ''}`} />}
@@ -825,7 +871,15 @@ function MonthCell({
           {shown}
         </span>
       )}
-      {results && <span className="cal-dot" />}
+      {round && first && round.tracked && !round.cancelled ? (
+        <span className="cal-stages" aria-hidden>
+          {STAGES.map((s) => (
+            <i key={s.key} className={round.stages[s.key].done ? 'on' : undefined} />
+          ))}
+        </span>
+      ) : (
+        results && <span className="cal-dot" />
+      )}
       {note && <span className="cal-flag" />}
       {editor}
     </td>
@@ -996,7 +1050,7 @@ function NoteButton({ sheet, row, col, year, run, onDone }: { sheet: SheetData; 
   );
 }
 
-function InfoBar({ sheet, row, col, year, compact }: { sheet: SheetData; row?: CalendarRow; col?: SheetColumn; year: number; compact: boolean }) {
+function InfoBar({ sheet, row, col, year, compact, roundOpts }: { sheet: SheetData; row?: CalendarRow; col?: SheetColumn; year: number; compact: boolean; roundOpts: RoundOptions }) {
   if (!row || !col)
     return compact ? null : (
       <Text size="xs" c="dimmed">
@@ -1010,10 +1064,18 @@ function InfoBar({ sheet, row, col, year, compact }: { sheet: SheetData; row?: C
     const mark = sheet.marks.get(markId(row.id, month));
     parts.push(`${MONTH_SHORT[col.month]} ${year}${row[col.key] ? `: ${row[col.key]}` : ''}`);
     if (mark?.status) parts.push(STATUS_INFO[mark.status].label);
+    const round = roundOf(sheet, row, month, roundOpts);
+    if (round) {
+      const progress = roundText(round);
+      if (progress) parts.push(progress);
+      if (round.overdue && !round.cancelled) parts.push(`⚠ ${round.overdue.text}`);
+      else if (round.next && !round.cancelled) parts.push(round.next.text);
+    }
     if (mark?.note) parts.push(`Note: ${mark.note}`);
     const res = resultsText(sheet, row, month);
     if (res) parts.push(res);
     else if (project) parts.push('No results in EnviroDB this month');
+    if (!compact) parts.push('Alt+R or Round: record the round');
   } else {
     const value = cellValue(row, col.key, project);
     parts.push(value ? `${col.label}: ${value.replace(/\s*\n\s*/g, ' / ')}` : col.label);
@@ -1045,7 +1107,7 @@ export function CalendarLegend() {
         </Text>
       </Group>
       <Text size="xs" c="dimmed">
-        <span className="cal-dot cal-dot-inline" /> results in EnviroDB that month · <span className="cal-win-key" /> sampling window · <span className="cal-flag-key" /> note
+        <span className="cal-dot cal-dot-inline" /> results in EnviroDB that month · <span className="cal-stages-key"><i /><i /><i /><i /></span> round: sampled, lab, results back, sent · <span className="cal-od-key" /> overdue · <span className="cal-win-key" /> sampling window · <span className="cal-flag-key" /> note
       </Text>
     </Group>
   );

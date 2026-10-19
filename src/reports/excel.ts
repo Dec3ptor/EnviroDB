@@ -1,4 +1,5 @@
 import type { Parameter, Result } from '../db/types';
+import { MADE_BY } from '../lib/version';
 import type { CellFlag, PivotRow } from '../lib/analysis';
 import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
 import { displayValue } from '../lib/analysis';
@@ -22,7 +23,7 @@ export interface PivotExport {
 export async function exportPivotXlsx(x: PivotExport): Promise<void> {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'EnviroDB';
+  wb.creator = MADE_BY;
   const ws = wb.addWorksheet('Results');
   const head = { font: { bold: true }, fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFE6F2F0' } } };
   const writeCell = (cell: import('exceljs').Cell, r: Result | undefined, p: Parameter) => {
