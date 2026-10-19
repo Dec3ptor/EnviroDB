@@ -9,7 +9,7 @@ import { useViewState, reviveIds } from '../../hooks/useViewState';
 import { EmptyState, MoreOptions, ParamPicker, SitePicker, consentPresets } from '../../components/common';
 import { keyParameters } from '../../lib/analysis';
 import { compareSites, defaultPairs, latestDate, projectTrends, trendRange, TREND_SPANS, type SitePair, type TrendRow, type TrendSpan } from '../../lib/projectTrends';
-import { CATEGORY_TEXT, categoryTone, trendLinePoints, type SeasonChoice, type TrendResult } from '../../lib/trends';
+import { CATEGORY_TEXT, categoryTone, likelihood, likelihoodPct, likelihoodText, trendLinePoints, type SeasonChoice, type TrendResult } from '../../lib/trends';
 import { buildChartSpec, chartOption } from '../../charts/timeSeries';
 import { EChart } from '../../charts/EChart';
 import { expandRules } from '../../lib/compliance';
@@ -124,7 +124,7 @@ export function TrendsTab() {
                       </Table.Td>
                       <Table.Td ta="right" className="tabular">
                         {r.ok && r.slope !== null ? (
-                          <Tooltip label={`Sen’s slope ${fmtNum(r.slope)} ${unitLabel(p?.unit)} a year; 90% confidence ${r.slopeLo === null ? '?' : fmtNum(r.slopeLo)} to ${r.slopeHi === null ? '?' : fmtNum(r.slopeHi)}${r.approximate ? ' – approximate: many results below detection' : ''}`}>
+                          <Tooltip label={`Sen’s slope ${fmtNum(r.slope)} ${unitLabel(p?.unit)} a year; 90% confidence ${r.slopeLo === null ? '?' : fmtNum(r.slopeLo)} to ${r.slopeHi === null ? '?' : fmtNum(r.slopeHi)}${r.disagree ? ' – the other way from the test, because of results below detection: a rough size' : r.approximate ? ' – approximate: many results below detection' : ''}`}>
                             <span>
                               {r.slope > 0 ? '+' : ''}
                               {fmtNum(r.slope)} {unitLabel(p?.unit)}
@@ -137,7 +137,7 @@ export function TrendsTab() {
                         )}
                       </Table.Td>
                       <Table.Td ta="right" className="tabular">
-                        {r.ok ? (r.pImproving !== undefined ? `${pct(r.pImproving)} improving` : `${pct(r.pIncreasing)} rising`) : ''}
+                        {likelihoodText(r)}
                       </Table.Td>
                       <Table.Td>
                         <Text size="xs" c="dimmed">
@@ -162,7 +162,7 @@ export function TrendsTab() {
             As in NZ’s national water quality reporting (LAWA; Snelder &amp; Fraser 2021): results are first reduced to one value per month or quarter (the median), by how often the site is sampled. The Mann-Kendall test then says how likely the values are to be rising or falling – the seasonal
             Kendall test, comparing each season only with itself, when results vary with the season (Kruskal-Wallis, p &lt; 0.05). Sen’s slope gives the size: the median of the slopes between every pair of values (in the same season), with a 90% confidence interval; as a percentage of the
             median, the change a year. Results below detection count as equal (below the highest detection limit) for the test, and as half their detection limit for the slope – marked ~ when more than 15% are. For most analytes a fall is an improvement; for dissolved oxygen and
-            clarity a rise is; pH and temperature are only rising or falling. Very likely: 90% or more; likely: 67–90%; indeterminate in between. At least 8 values over two years are needed, 5 of them above detection.
+            clarity a rise is; pH and temperature are only rising or falling. Very likely: 90% or more; likely: 67–90%; indeterminate in between. The likelihood shown is the chance of the more likely direction – “80% degrading” is a 20% chance of improving. At least 8 values over two years are needed, 5 of them above detection.
           </Text>
         </MoreOptions>
       </Card>
@@ -185,6 +185,11 @@ function TrendChart({ row, range, dark, rules }: { row: TrendRow; range: { start
   }, [p, data, row, range.start, range.end, rules, dark]);
   if (!p || !option) return null;
   const r = row.result;
+  const size = !r.slope
+    ? 'Sen’s slope 0 – too many equal values (or results below detection) to give a size'
+    : r.disagree
+      ? `Sen’s slope ${r.slope > 0 ? '+' : ''}${fmtNum(r.slope)} ${unitLabel(p.unit)} a year – the other way from the test, because results below detection count differently in each (a high detection limit ties every value under it for the test): check those results`
+      : `${r.slope > 0 ? 'Rising' : 'Falling'} by ${fmtNum(Math.abs(r.slope))} ${unitLabel(p.unit)} a year${r.pctPerYear !== null ? ` (${Math.abs(r.pctPerYear).toFixed(1)}% of the median)` : ''}${r.approximate ? ' – a rough size, because of results below detection' : ''}`;
   return (
     <Card padding="md">
       <Group justify="space-between" wrap="wrap" gap="xs" mb={4}>
@@ -194,9 +199,7 @@ function TrendChart({ row, range, dark, rules }: { row: TrendRow; range: { start
         <TrendBadge r={r} />
       </Group>
       <Text size="xs" c="dimmed" mb={4}>
-        {r.ok
-          ? `${r.slope ? `${r.slope > 0 ? 'Rising' : 'Falling'} by ${fmtNum(Math.abs(r.slope))} ${unitLabel(p.unit)} a year${r.pctPerYear !== null ? ` (${Math.abs(r.pctPerYear).toFixed(1)}% of the median)` : ''}` : 'Sen’s slope 0 – too many equal values (or results below detection) to give a size'}; ${r.pImproving !== undefined ? `${pct(r.pImproving)} likely to be improving` : `${pct(r.pIncreasing)} likely to be rising`}. Mann-Kendall${r.seasonal ? ' (seasonal)' : ''} p = ${r.p < 0.001 ? '< 0.001' : r.p.toFixed(3)}.`
-          : r.reason}
+        {r.ok ? `${size}; ${likelihood(r) ? `${likelihoodPct(likelihood(r)!.p)} likely to be ${likelihood(r)!.direction}` : ''}. Mann-Kendall${r.seasonal ? ' (seasonal)' : ''} p = ${r.p < 0.001 ? '< 0.001' : r.p.toFixed(3)}.` : r.reason}
       </Text>
       <EChart option={option} height={300} />
     </Card>

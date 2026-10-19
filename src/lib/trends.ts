@@ -100,8 +100,11 @@ export interface TrendResult {
   median: number | null;
   /** Sen's slope as a percentage of the median, per year. */
   pctPerYear: number | null;
-  /** The slope involves many non-detects: a rough size only. */
+  /** The slope involves many non-detects, or points the other way from the test: a rough size only. */
   approximate: boolean;
+  /** The slope points the other way from the test – only results below detection, counted differently by each, can do
+   *  that (a high detection limit ties every value under it for the test). */
+  disagree?: boolean;
   category: TrendCategory;
   /** The Sen's slope line: value at a time (UTC ms). */
   line?: { t0: number; v0: number; perMs: number };
@@ -336,6 +339,7 @@ export function trend(raw: TrendPoint[], opts: TrendOptions = {}): TrendResult {
   const med = median(slopeY)!;
   const tMed = median(steps.map((s) => s.t))!;
   const category = categorise(pIncreasing, pImproving);
+  const disagree = S !== 0 && slope !== 0 && Math.sign(slope) !== Math.sign(S);
   return {
     ...res,
     ok: true,
@@ -353,7 +357,8 @@ export function trend(raw: TrendPoint[], opts: TrendOptions = {}): TrendResult {
     slopeHi,
     median: med,
     pctPerYear: med > 0 ? (slope / med) * 100 : null,
-    approximate: censored > 0.15,
+    approximate: censored > 0.15 || disagree,
+    disagree,
     category,
     line: { t0: tMed, v0: med, perMs: slope / YEAR_MS },
   };
@@ -372,6 +377,25 @@ function categorise(pIncreasing: number, pImproving?: number): TrendCategory {
   if (pIncreasing > 0.33) return 'indeterminate';
   if (pIncreasing > 0.1) return 'likely-decreasing';
   return 'very-likely-decreasing';
+}
+
+/**
+ * How likely the trend's more likely direction is, named: "80% degrading" for a likely-degrading trend – rather than
+ * "20% improving", which says the same but reads as if it contradicts the trend.
+ */
+export function likelihood(r: TrendResult): { p: number; direction: 'improving' | 'degrading' | 'rising' | 'falling' } | null {
+  if (!r.ok) return null;
+  if (r.pImproving !== undefined) return r.pImproving >= 0.5 ? { p: r.pImproving, direction: 'improving' } : { p: 1 - r.pImproving, direction: 'degrading' };
+  return r.pIncreasing >= 0.5 ? { p: r.pIncreasing, direction: 'rising' } : { p: 1 - r.pIncreasing, direction: 'falling' };
+}
+
+/** As a percentage, rounded down so it never reaches a category's threshold it isn't in ("89%", not "90%"). */
+export const likelihoodPct = (p: number) => `${Math.floor(p * 100 + 1e-9)}%`;
+
+/** e.g. "80% degrading" ('' when not assessed). */
+export function likelihoodText(r: TrendResult): string {
+  const l = likelihood(r);
+  return l ? `${likelihoodPct(l.p)} ${l.direction}` : '';
 }
 
 /** Whether a category is good, bad or neither news – for colours. */

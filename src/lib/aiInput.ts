@@ -379,7 +379,7 @@ export function buildAiInput(b: ProjectBundle, o: AiInputOptions): AiInput {
             r.years.toFixed(1),
             r.ok ? (r.seasonal ? 'yes' : 'no') : '',
             r.ok ? String(Math.round(r.censored * 100)) : '',
-            r.ok ? (r.approximate ? 'slope approximate (many non-detects)' : '') : r.reason ?? '',
+            r.ok ? (r.disagree ? 'slope and test disagree (results below detection; check detection limits)' : r.approximate ? 'slope approximate (many non-detects)' : '') : r.reason ?? '',
           ]),
         );
       }

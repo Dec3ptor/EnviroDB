@@ -39,7 +39,8 @@ describe('backups', () => {
     const s = await getSettings();
     expect(s.author).toBe('Jane Doe');
     expect(s.signatureImage).toBe(backup.meta.find((r: { key: string }) => r.key === 'settings').value.signatureImage);
-  });
+    // three full exports and restores of the demo workspace: about 2.5 s here, nearly 5 s on GitHub's runners
+  }, 30_000);
 
   it('leave report work and settings out of project files shared with others', async () => {
     const pkg = await exportProjectPackage(projectId);

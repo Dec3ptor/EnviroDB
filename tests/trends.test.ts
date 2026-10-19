@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { betterFor, chiSqP, comparePaired, kruskalWallis, normCdf, trend, trendLinePoints, type TrendPoint } from '../src/lib/trends';
+import { betterFor, chiSqP, comparePaired, kruskalWallis, likelihoodText, normCdf, trend, trendLinePoints, type TrendPoint, type TrendResult } from '../src/lib/trends';
 
 const pt = (date: string, value: number, nd = false): TrendPoint => ({ date, value, nd });
 /** Monthly results from Jan 2018, value by month index. */
@@ -70,6 +70,41 @@ describe('trends', () => {
     const nd = trend(monthly(60, (i) => (i % 15 === 0 ? 0.05 : 0.01), (i) => i % 15 !== 0));
     expect(nd.ok).toBe(false);
     expect(nd.reason).toMatch(/above the detection limit/);
+  });
+
+  it('a high detection limit can turn the test against the slope: said, and the size marked rough', () => {
+    // falling, but one sample's detection limit (1.0, diluted) is above most values – the test ties them all, and
+    // sees only the later high values
+    const spikes = new Set([48, 51, 54, 57]);
+    const r = trend(monthly(60, (i) => (i === 5 ? 1.0 : spikes.has(i) ? 1.2 + i / 100 : 0.9 - i * 0.01), (i) => i === 5), { seasons: 'none' });
+    expect(r.ok).toBe(true);
+    expect(r.censored).toBeLessThan(0.15);
+    expect(r.S).toBeGreaterThan(0);
+    expect(r.slope).toBeLessThan(0);
+    expect(r.disagree).toBe(true);
+    expect(r.approximate).toBe(true);
+    // a clean fall: no disagreement
+    const clean = trend(monthly(60, (i) => 0.9 - i * 0.01 + noise(i) * 0.05), { seasons: 'none' });
+    expect(clean.disagree).toBe(false);
+    expect(clean.approximate).toBe(false);
+  });
+
+  it('gives the chance of the direction it names (not “20% improving” for a degrading trend)', () => {
+    const r = (x: Partial<TrendResult>) => ({ ok: true, pIncreasing: 0.5, ...x }) as TrendResult;
+    expect(likelihoodText(r({ pImproving: 0.2, pIncreasing: 0.8, category: 'likely-degrading' }))).toBe('80% degrading');
+    expect(likelihoodText(r({ pImproving: 0.95, category: 'very-likely-improving' }))).toBe('95% improving');
+    // rounded down, so never a category's threshold it isn't in
+    expect(likelihoodText(r({ pImproving: 0.896, category: 'likely-improving' }))).toBe('89% improving');
+    expect(likelihoodText(r({ pImproving: 0.104, category: 'likely-degrading' }))).toBe('89% degrading');
+    // indeterminate: the side it leans to
+    expect(likelihoodText(r({ pImproving: 0.45, category: 'indeterminate' }))).toBe('55% degrading');
+    // pH, temperature: rising or falling
+    expect(likelihoodText(r({ pIncreasing: 0.25, category: 'likely-decreasing' }))).toBe('75% falling');
+    expect(likelihoodText({ ...r({}), ok: false })).toBe('');
+    // from a real trend
+    const up = trend(Array.from({ length: 10 }, (_, i) => pt(`${2010 + i}-06-15`, i + 1)));
+    expect(up.category).toBe('very-likely-degrading');
+    expect(likelihoodText(up)).toMatch(/^9\d% degrading$/);
   });
 
   it('says why it can’t assess', () => {

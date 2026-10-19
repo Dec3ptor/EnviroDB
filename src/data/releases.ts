@@ -11,6 +11,15 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.11.1',
+    date: '2026-10-19',
+    title: 'Clearer trend likelihoods',
+    items: [
+      'Trends tab and report trend tables: the likelihood is now the chance of the direction the trend names – “Likely degrading · 80% degrading”, not “20% improving”, which said the same but read as if it contradicted it.',
+      'When one result’s high detection limit makes the trend test and Sen’s slope point different ways, the trend now says so (and marks the size ~ rough) – check the results below detection.',
+    ],
+  },
+  {
     version: '1.11.0',
     date: '2026-10-19',
     title: 'Choose the app’s colour',

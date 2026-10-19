@@ -3,7 +3,7 @@ import { RULE_LEVELS } from '../db/types';
 import type { ProjectBundle } from '../lib/analysis';
 import { QA_DEFAULTS, qaInputFor, qcKind, runQa, withRecords } from '../lib/qa';
 import { chartTrends, compareSites, defaultPairs, projectTrends } from '../lib/projectTrends';
-import { CATEGORY_TEXT, categoryTone } from '../lib/trends';
+import { CATEGORY_TEXT, categoryTone, likelihoodText } from '../lib/trends';
 import { projectNpsfm, type AttributeGrade } from '../lib/npsfm';
 import { GRADE_ORDER, GRADE_TEXT, overallGrade, registerRows } from '../lib/register';
 import { NPSFM_ATTRIBUTES, NPSFM_SOURCE } from '../data/npsfm';
@@ -1023,7 +1023,6 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         nodes.push({ t: 'p', runs: [{ text: 'There are not yet enough results to assess trends.', italic: true }] });
         return;
       }
-      const pct = (x: number) => `${Math.round(x * 100)}%`;
       const head: Cell[][] = [[{ text: 'Site' }, { text: 'Analyte' }, { text: 'Trend' }, { text: 'Change a year', align: 'right' }, { text: 'Likelihood', align: 'right' }, { text: 'Results' }]];
       const body: Cell[][] = rows.map(({ siteId, parameterId, result: r }) => {
         const p = b.paramMap.get(parameterId);
@@ -1034,7 +1033,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           { text: p?.name ?? parameterId },
           { text: CATEGORY_TEXT[r.category], ...flag },
           { text: r.ok && r.slope !== null ? `${r.slope > 0 ? '+' : ''}${fmtNum(r.slope)} ${unitLabel(p?.unit)}${r.pctPerYear !== null && r.slope ? ` (${r.pctPerYear > 0 ? '+' : ''}${r.pctPerYear.toFixed(1)}%)` : ''}${r.approximate ? ' ~' : ''}` : '', align: 'right' },
-          { text: r.ok ? (r.pImproving !== undefined ? `${pct(r.pImproving)} improving` : `${pct(r.pIncreasing)} rising`) : '', align: 'right' },
+          { text: likelihoodText(r), align: 'right' },
           { text: r.ok ? `${r.n} ${r.step === 'sample' ? 'results' : `${r.step}ly values`}, ${r.years.toFixed(1)} years${r.seasonal ? ', seasonal' : ''}` : r.reason ?? '' },
         ] as Cell[];
       });
@@ -1046,7 +1045,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         widths: [width * 0.08, '*', width * 0.17, width * 0.17, width * 0.13, width * 0.2],
         fontSize: t.fontSize - 1,
         notes: [
-          `Trends to ${formatDate(end)}${from ? ` from ${formatDate(from)}` : ''}: the Mann-Kendall test (the seasonal Kendall test where results vary with the season, Kruskal-Wallis p < 0.05) on one value per month or quarter; Sen’s slope for the change a year (with the percentage of the median). Results below detection are tied for the test and halved for the slope (~: more than 15% below detection). Likelihood categories as used by LAWA: very likely 90% or more, likely 67–90%, otherwise indeterminate.`,
+          `Trends to ${formatDate(end)}${from ? ` from ${formatDate(from)}` : ''}: the Mann-Kendall test (the seasonal Kendall test where results vary with the season, Kruskal-Wallis p < 0.05) on one value per month or quarter; Sen’s slope for the change a year (with the percentage of the median). Results below detection are tied for the test and halved for the slope (~: a rough size – more than 15% below detection, or the slope and the test disagree because of them). Likelihood: the chance of the more likely direction; categories as used by LAWA – very likely 90% or more, likely 67–90%, otherwise indeterminate.`,
         ],
       });
     },
