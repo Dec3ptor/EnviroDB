@@ -128,6 +128,8 @@ export function defaultCaption(b: ReportBlock): string {
       return 'Field duplicate results, [period]';
     case 'trendTable':
       return 'Trends in water quality';
+    case 'npsfmTable':
+      return 'NPS-FM attribute bands';
     case 'upDownTable':
       return 'Downstream compared with upstream, [period]';
     case 'samplingTable':

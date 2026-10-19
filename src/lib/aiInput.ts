@@ -6,6 +6,8 @@ import type { Result, Rule } from '../db/types';
 import { evaluateAll, keyParameters, pivot, statsTable, type ProjectBundle } from './analysis';
 import { compareSites, defaultPairs, projectTrends, trendRange } from './projectTrends';
 import { CATEGORY_TEXT } from './trends';
+import { projectNpsfm } from './npsfm';
+import { NPSFM_SOURCE } from '../data/npsfm';
 import { exceededWhen, ruleParamIds, siteLabel, type Exceedance, type RuleStatus } from './compliance';
 import { formatDate, MONTH_LONG, todayStr } from './dates';
 import { guidelineFor } from './guidelines';
@@ -31,7 +33,7 @@ export const AI_SECTION_LABELS: Record<keyof AiInputSections, string> = {
   rules: 'Consent conditions & triggers',
   guidelines: 'Guideline values',
   schedule: 'Monitoring schedule & reporting dates',
-  trends: 'Trends & upstream vs downstream (worked out by EnviroDB)',
+  trends: 'Trends, NPS-FM bands & upstream vs downstream (worked out by EnviroDB)',
 };
 
 export const DEFAULT_SECTIONS: AiInputSections = { results: true, stats: true, compliance: true, rules: true, guidelines: true, schedule: true, trends: true };
@@ -381,6 +383,28 @@ export function buildAiInput(b: ProjectBundle, o: AiInputOptions): AiInput {
           ]),
         );
       }
+      L.push('```');
+    }
+    // NPS-FM attribute bands over the 5 years to the end
+    const nStart = trendRange('5y', tEnd).start;
+    const graded = projectNpsfm(b, nStart, tEnd).filter((s) => sites.some((x) => x.id === s.site.id) && s.grades.some((g) => g.band));
+    if (graded.length) {
+      section(`NPS-FM attribute bands (${day(nStart ?? start)} to ${day(tEnd)})`);
+      L.push(`Worked out by EnviroDB against the ${NPSFM_SOURCE} (Hazen percentiles; non-detects at the detection limit; ammonia adjusted to pH 8). meets_bottom_line is blank where the attribute has no national bottom line.`);
+      L.push('```csv', csvRow(['site', 'attribute', 'band', 'meets_bottom_line', 'statistics', 'results', 'note']));
+      for (const s of graded)
+        for (const g of s.grades.filter((x) => x.band))
+          L.push(
+            csvRow([
+              s.site.code,
+              g.attribute.name,
+              g.band!,
+              g.meetsBottomLine === undefined ? '' : g.meetsBottomLine ? 'yes' : 'no',
+              g.stats.map((st) => `${st.label} ${st.value === null ? '–' : st.key.startsWith('over') ? `${st.value.toFixed(1)}%` : plain(Number(st.value.toPrecision(3)))} (${st.band})`).join('; '),
+              String(g.n),
+              g.provisional ?? '',
+            ]),
+          );
       L.push('```');
     }
     const pairs = defaultPairs(b).filter((x) => sites.some((s) => s.id === x.upId) && sites.some((s) => s.id === x.downId));

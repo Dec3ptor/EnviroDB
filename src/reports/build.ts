@@ -4,6 +4,8 @@ import type { ProjectBundle } from '../lib/analysis';
 import { QA_DEFAULTS, qaInputFor, qcKind, runQa, withRecords } from '../lib/qa';
 import { chartTrends, compareSites, defaultPairs, projectTrends } from '../lib/projectTrends';
 import { CATEGORY_TEXT, categoryTone } from '../lib/trends';
+import { projectNpsfm, type AttributeGrade } from '../lib/npsfm';
+import { NPSFM_ATTRIBUTES, NPSFM_SOURCE } from '../data/npsfm';
 import { displayValue, evaluateAll, flagResults, isLimitLevel, keyParameters, limitToSites, statsTable, type CellFlag } from '../lib/analysis';
 import type { RuleEvaluation } from '../lib/compliance';
 import { describeRule, expandRules, ruleParamIds, STATUS_META } from '../lib/compliance';
@@ -1036,6 +1038,55 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           `Trends to ${formatDate(end)}${from ? ` from ${formatDate(from)}` : ''}: the Mann-Kendall test (the seasonal Kendall test where results vary with the season, Kruskal-Wallis p < 0.05) on one value per month or quarter; Sen’s slope for the change a year (with the percentage of the median). Results below detection are tied for the test and halved for the slope (~: more than 15% below detection). Likelihood categories as used by LAWA: very likely 90% or more, likely 67–90%, otherwise indeterminate.`,
         ],
       });
+    },
+    npsfmTable: (blk) => {
+      const years = blk.years ?? 5;
+      const from = years ? addDays(addMonths(end, -12 * years), 1) : undefined;
+      const keep = new Set(sectionSites(blk, b.sites).map((s) => s.id));
+      const graded = projectNpsfm(b, from, end).filter((s) => keep.has(s.site.id) && s.grades.some((g) => g.band));
+      if (!graded.length) {
+        nodes.push({ t: 'p', runs: [{ text: 'No sites have results to grade against the NPS-FM attribute bands.', italic: true }] });
+        return;
+      }
+      const attrs = NPSFM_ATTRIBUTES.filter((a) => graded.some((s) => s.grades.some((g) => g.attribute.id === a.id && g.band)));
+      const bad = (g: AttributeGrade) => g.meetsBottomLine === false || g.band === 'D' || g.band === 'E';
+      const flag = look.highlight === 'text' ? { color: TEXT_FLAGS.exceed, bold: true } : { fill: FILLS.limit };
+      const head: Cell[][] = [[{ text: 'Attribute' }, ...graded.map((s) => ({ text: s.site.code, align: 'center' as const }))]];
+      const body: Cell[][] = attrs.map((a) => [
+        { text: `${a.name}${a.bottomLine ? '' : ' †'}` },
+        ...graded.map((s) => {
+          const g = s.grades.find((x) => x.attribute.id === a.id);
+          if (!g) return { text: 'n/a', align: 'center' as const };
+          if (!g.band) return { text: g.reason === 'No results.' ? '–' : '?', align: 'center' as const };
+          return { text: `${g.band}${g.provisional ? '*' : ''}`, align: 'center' as const, ...(bad(g) ? flag : {}) };
+        }),
+      ]);
+      const notes = [
+        `Graded on results ${from ? `from ${formatDate(from)} ` : ''}to ${formatDate(end)} against the attribute bands of the ${NPSFM_SOURCE} (percentiles by the Hazen method; results below detection at their detection limit). Highlighted: below the national bottom line, or band D or E.`,
+        `National bottom lines: ${attrs.filter((a) => a.bottomLine).map((a) => `${a.name} ${a.bottomLineText}`).join('; ')}. † no national bottom line.`,
+        ...(graded.some((s) => s.grades.some((g) => g.provisional)) ? ['* Provisional: fewer results than the NPS-FM asks for, or another caveat given with the statistics.'] : []),
+        ...(graded.some((s) => s.grades.some((g) => g.attribute.id === 'ammonia' && g.band)) ? ['Ammonia: adjusted to pH 8 with each sample’s pH.'] : []),
+        ...(body.some((r) => r.some((c) => c.text === '?')) ? ['?: not graded until the site’s class is set (suspended sediment class or lake type).'] : []),
+      ];
+      nodes.push({ t: 'table', caption: tableCaption(capText(blk)), head, body, widths: [width * 0.34, ...graded.map(() => '*' as const)], fontSize: t.fontSize - 1, notes });
+      if (blk.detail) {
+        const dHead: Cell[][] = [[{ text: 'Site' }, { text: 'Attribute' }, { text: 'Statistic' }, { text: 'Value', align: 'right' }, { text: 'Band', align: 'center' }, { text: 'Results', align: 'right' }]];
+        const dBody: Cell[][] = graded.flatMap((s) =>
+          s.grades
+            .filter((g) => g.band)
+            .flatMap((g) =>
+              g.stats.map((st, i) => [
+                { text: i ? '' : s.site.code, bold: true },
+                { text: i ? '' : g.attribute.name },
+                { text: st.label },
+                { text: st.value === null ? '–' : st.key.startsWith('over') ? `${st.value.toFixed(1)}%` : `${fmtNum(Number(st.value.toPrecision(3)))} ${unitLabel(g.attribute.unit)}`, align: 'right' as const },
+                { text: st.band ?? '', align: 'center' as const },
+                { text: i ? '' : String(g.n), align: 'right' as const },
+              ]),
+            ),
+        );
+        nodes.push({ t: 'table', caption: tableCaption(tidyCaption(fill(fillCaption('NPS-FM attribute statistics', capBase)))), head: dHead, body: dBody, widths: [width * 0.08, width * 0.27, '*', width * 0.15, width * 0.08, width * 0.1], fontSize: t.fontSize - 1 });
+      }
     },
     upDownTable: (blk) => {
       const pids = (blk.parameterIds.length ? blk.parameterIds : keyParameters(b, 8)).filter((id) => !blk.excludeParameterIds?.includes(id));

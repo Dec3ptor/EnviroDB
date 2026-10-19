@@ -326,6 +326,23 @@ there as they work and show up for the others within seconds.
   line**, the *Overview* lists the likely and very likely trends, and *Copy for AI input* includes the trend
   and upstream–downstream results. Report sections: **Trends** (a table up to the report's end, with a note on
   the method) and **Upstream vs downstream** (over the report's period, or the last 3 or 5 years).
+- **NPS-FM attribute bands.** Each project's *NPS-FM* tab grades its sites against the National Objectives
+  Framework bands of the NPS-FM 2020 (as amended) over the last 12 months, 3 or 5 years or all results:
+  - Rivers: E. coli (all four statistics, the band the worst of them), nitrate and ammonia toxicity (ammonia
+    adjusted to pH 8 with each sample's pH), periphyton (92nd or 83rd percentile), suspended fine sediment
+    (visual clarity by the site's suspended sediment class), DRP, and MCI, QMCI and ASPM.
+  - Lakes: E. coli, ammonia, total nitrogen (by lake type), total phosphorus and phytoplankton.
+  - Swimming sites: also E. coli in the bathing season (95th percentile).
+
+  Each band shows its statistics (Hazen percentiles; results below detection at their detection limit), the
+  number of results, and whether it meets the national bottom line (ammonia 0.24/0.40 and nitrate 2.4/3.5 since
+  2020). Grades on fewer results than the NPS-FM asks for are marked provisional (*). Surface water sites are
+  graded as rivers; set lakes, classes and swimming sites under *How each site is graded*. Dissolved oxygen
+  (continuous), cyanobacteria, fish, deposited sediment, ecosystem metabolism and plants need data EnviroDB
+  doesn't hold, and are listed as not graded. The report section **NPS-FM attribute bands** gives the band grid
+  with notes (and the statistics if you like), and *Copy for AI input* includes the bands. New library
+  parameters: periphyton chlorophyll a, MCI, QMCI and ASPM. **The NPS-FM is under review – check the version in
+  force, and these bands against it, before relying on a grade.**
 - **Version numbers.** The version is at the foot of the menu – click it for what's new. Reports, Excel
   files and backups record the version that made them. When a new version is published EnviroDB offers to
   reload, and it tells you if someone in your workspace is already using a newer one.

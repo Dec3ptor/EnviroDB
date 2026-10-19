@@ -298,6 +298,8 @@ describe('copy for AI input', () => {
     // the slope's size, not its floating-point noise
     expect(t).not.toMatch(/\.\d*[1-9]\d{5,}/);
     expect(t).toContain('## DS1 compared with US1');
+    expect(t).toMatch(/## NPS-FM attribute bands/);
+    expect(t).toMatch(/\nDS1,Nitrate \(toxicity\),[A-D],(yes|no),Annual median /);
     expect(t).toMatch(/\nTotal Suspended Solids,mg\/L,\d+,[\d.]+,[\d.]+,[\d.-]+,[\d.]+,[\d.]+,(higher downstream|no clear difference)/);
   });
 
@@ -306,7 +308,7 @@ describe('copy for AI input', () => {
     const sections = { results: false, stats: true, compliance: false, rules: false, guidelines: false, schedule: false, trends: false };
     const t = withRequest(buildAiInput(b, { ...opts, sections }).text, '  Which site has the highest zinc?  ');
     expect(t).toContain('## Summary statistics');
-    for (const h of ['## Results', '## Compliance assessment', '## Consent conditions', '## Guideline values', '## Monitoring schedule', '## Trends', 'compared with']) expect(t, h).not.toContain(h);
+    for (const h of ['## Results', '## Compliance assessment', '## Consent conditions', '## Guideline values', '## Monitoring schedule', '## Trends', 'compared with', 'NPS-FM']) expect(t, h).not.toContain(h);
     expect(t.endsWith('## My request\nWhich site has the highest zinc?\n')).toBe(true);
     expect(csvCell('a,b')).toBe('"a,b"');
     expect(csvCell('say "hi"')).toBe('"say ""hi"""');

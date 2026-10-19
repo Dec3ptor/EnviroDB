@@ -1,7 +1,7 @@
 // Unit normalisation and conversion. Hill Laboratories reports water results in g/m³ (= mg/L);
 // guideline values are commonly in µg/L, so conversion is needed for every comparison.
 
-type Dim = 'conc' | 'soil' | 'ec' | 'count' | 'turb' | 'ph' | 'temp' | 'pct' | 'flow' | 'length' | 'mv' | 'ppt' | 'chl' | 'colour';
+type Dim = 'conc' | 'soil' | 'ec' | 'count' | 'turb' | 'ph' | 'temp' | 'pct' | 'flow' | 'length' | 'mv' | 'ppt' | 'chl' | 'colour' | 'areal';
 
 interface UnitDef {
   dim: Dim;
@@ -54,6 +54,9 @@ const DEFS: Record<string, UnitDef> = {
   'm3/hr': { dim: 'flow', factor: 1e3 / 3600, label: 'm³/hr' },
   'ml/day': { dim: 'flow', factor: 1e6 / 86400, label: 'ML/day' },
 
+  'mg/m2': { dim: 'areal', factor: 1, label: 'mg/m²' },
+  'ug/cm2': { dim: 'areal', factor: 10, label: 'µg/cm²' },
+  'g/m2': { dim: 'areal', factor: 1000, label: 'g/m²' },
   m: { dim: 'length', factor: 1, label: 'm' },
   cm: { dim: 'length', factor: 0.01, label: 'cm' },
   mm: { dim: 'length', factor: 0.001, label: 'mm' },
@@ -115,6 +118,7 @@ export function normUnit(raw: string | undefined | null): NormUnit {
   s = s
     .replace(/[µμ]/g, 'u')
     .replace(/³/g, '3')
+    .replace(/²/g, '2')
     .replace(/[()[\]]/g, '')
     .replace(/\s+/g, '')
     .toLowerCase();

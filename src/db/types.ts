@@ -80,6 +80,20 @@ export interface Site {
   description?: string;
   active: boolean;
   order: number;
+  /**
+   * How the site is graded against the NPS-FM's attribute bands: a river or lake (none: not graded; unset: rivers
+   * for surface water sites), and the classes some bands depend on.
+   */
+  npsfm?: {
+    water?: 'river' | 'lake' | 'none';
+    /** Suspended sediment class (1–4), for visual clarity. */
+    sedimentClass?: 1 | 2 | 3 | 4;
+    /** Periphyton class: productive rivers use the 83rd percentile. */
+    periphyton?: 'default' | 'productive';
+    lakeType?: 'stratified' | 'polymictic' | 'brackish';
+    /** A site used for swimming (the primary contact E. coli attribute). */
+    primaryContact?: boolean;
+  };
 }
 
 export interface Parameter {
@@ -432,7 +446,8 @@ export type ReportBlockType =
   | 'reportingTable'
   | 'qaSummary'
   | 'trendTable'
-  | 'upDownTable';
+  | 'upDownTable'
+  | 'npsfmTable';
 
 export interface ReportBlockBase {
   id: string;
@@ -570,6 +585,15 @@ export interface TrendTableBlock extends ReportBlockBase {
   /** Years back from the report's end (0 = all results). */
   years: number;
   seasons?: 'auto' | 'none' | 'months' | 'quarters';
+}
+/** Each site's NPS-FM attribute bands over the years to the report's end, with the national bottom lines. */
+export interface NpsfmTableBlock extends ReportBlockBase {
+  type: 'npsfmTable';
+  siteIds: ID[]; // [] = the report's sites
+  /** Years back from the report's end (default 5; 0 = all results). */
+  years?: number;
+  /** A second table with the statistics behind each band. */
+  detail?: boolean;
 }
 /** Downstream against upstream: results paired by date, compared (Wilcoxon signed-rank test). */
 export interface UpDownTableBlock extends ReportBlockBase {
@@ -760,6 +784,7 @@ export interface ReportingTableBlock extends ReportBlockBase {
 }
 
 export type ReportBlock =
+  | NpsfmTableBlock
   | QaSummaryBlock
   | TrendTableBlock
   | UpDownTableBlock

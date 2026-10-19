@@ -164,6 +164,14 @@ const pfas: P[] = [
   { id: 'pfhxs', name: 'PFHxS', group: 'PFAS', unit: 'µg/L', aliases: ['pfhxs', 'perfluorohexane sulfonate', 'perfluorohexanesulfonic acid', 'perfluorohexane sulphonate'] },
 ];
 
+// Stream ecology – scored for the NPS-FM attributes.
+const ecology: P[] = [
+  { id: 'peri-chla', name: 'Periphyton Chlorophyll a', short: 'Peri chl a', group: 'Ecology', unit: 'mg/m²', aliases: ['periphyton chlorophyll a', 'periphyton chlorophyll-a', 'periphyton chl a', 'benthic chlorophyll a', 'periphyton biomass (chl a)', 'chlorophyll a (periphyton)'] },
+  { id: 'mci', name: 'Macroinvertebrate Community Index', short: 'MCI', group: 'Ecology', unit: '', aliases: ['mci', 'macroinvertebrate community index', 'mci score', 'hard-bottom mci', 'sb-mci', 'soft-bottom mci'], decimals: 0 },
+  { id: 'qmci', name: 'Quantitative MCI', short: 'QMCI', group: 'Ecology', unit: '', aliases: ['qmci', 'quantitative macroinvertebrate community index', 'quantitative mci', 'qmci score', 'sb-qmci'], decimals: 2 },
+  { id: 'aspm', name: 'Average Score Per Metric', short: 'ASPM', group: 'Ecology', unit: '', aliases: ['aspm', 'average score per metric', 'aspm score'], decimals: 2 },
+];
+
 const chromium6: P = {
   id: 'cr6',
   name: 'Hexavalent Chromium',
@@ -186,10 +194,11 @@ export const BUILT_IN_PARAMETERS: Parameter[] = [
   ...metals.filter((p) => p.group === 'Metals (total)'),
   ...hydrocarbons,
   ...pfas,
+  ...ecology,
 ].map((p, i) => ({ ...p, builtIn: true, order: i }));
 
 /** Parameter groups in the order they are listed everywhere: field measurements first, then the laboratory groups. */
-export const PARAMETER_GROUPS = ['Field', 'Physical', 'General chemistry', 'Nutrients', 'Microbiology', 'Metals (dissolved)', 'Metals (total)', 'Hydrocarbons', 'Pesticides', 'Other organics', 'PFAS', 'Other'];
+export const PARAMETER_GROUPS = ['Field', 'Physical', 'General chemistry', 'Nutrients', 'Microbiology', 'Metals (dissolved)', 'Metals (total)', 'Hydrocarbons', 'Pesticides', 'Other organics', 'PFAS', 'Ecology', 'Other'];
 
 const PESTICIDE = /\b(DD[DET]|BHC|HCH|lindane|aldrin|dieldrin|endrin|endosulfan|heptachlor|chlordane|methoxychlor|hexachlorobenzene|mirex|toxaphene|atrazine|simazine|glyphosate|2,4-D|MCPA|triclopyr|picloram|chlorpyrifos|diazinon|pesticide|herbicide)\b/i;
 const PAH = /naphthalene|anthracene|phenanthrene|pyrene|fluoranthene|fluorene|chrysene|acenaphth|perylene|benzo\s*[([]|indeno|\bPAH|TEQ|aromatic hydrocarbon/i;

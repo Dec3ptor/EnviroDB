@@ -11,6 +11,18 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.5.0',
+    date: '2026-10-19',
+    title: 'NPS-FM attribute bands',
+    items: [
+      'An NPS-FM tab on each project: each river and lake site graded against the National Objectives Framework bands – E. coli, nitrate and ammonia toxicity (ammonia adjusted to pH 8), periphyton, visual clarity by sediment class, DRP, MCI/QMCI/ASPM, and lake nitrogen, phosphorus and phytoplankton.',
+      'Click a band for the statistics behind it; bands below the national bottom line are flagged, and grades on too few results are marked provisional.',
+      'Set how each site is graded: river or lake, suspended sediment class, periphyton class, lake type, swimming site.',
+      'A new report section, NPS-FM attribute bands, and the bands in Copy for AI input. New parameters: periphyton chlorophyll a, MCI, QMCI, ASPM.',
+      'The NPS-FM is under review: check the version in force, and the bands against it, before relying on a grade.',
+    ],
+  },
+  {
     version: '1.4.0',
     date: '2026-10-19',
     title: 'Trends and statistics',

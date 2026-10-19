@@ -2,12 +2,13 @@ import { InboxPanel } from '../../components/InboxPanel';
 import { lazy, Suspense, useState } from 'react';
 import { Badge, Button, Center, Group, Loader, Menu, Stack, Tabs, Text, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap, IconListCheck, IconTrendingUp } from '@tabler/icons-react';
+import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap, IconListCheck, IconTrendingUp, IconFlag } from '@tabler/icons-react';
 import { ProjectDataProvider, useProject } from '../../hooks/useProjectData';
 import { OverviewTab } from './Overview';
 import { DataTab } from './Data';
 import { QaTab } from './QA';
 import { TrendsTab } from './Trends';
+import { NpsfmTab } from './Npsfm';
 import { useProjectQa } from '../../hooks/useQa';
 import { ChartsTab } from './Charts';
 import { ComplianceTab } from './Compliance';
@@ -30,6 +31,7 @@ const TABS = [
   { value: 'trends', label: 'Trends', icon: IconTrendingUp },
   { value: 'map', label: 'Map', icon: IconMap },
   { value: 'compliance', label: 'Compliance', icon: IconShieldCheck },
+  { value: 'npsfm', label: 'NPS-FM', icon: IconFlag },
   { value: 'schedule', label: 'Schedule', icon: IconCalendarEvent },
   { value: 'reports', label: 'Reports', icon: IconFileReport },
   { value: 'setup', label: 'Setup', icon: IconSettings },
@@ -137,6 +139,7 @@ export function ProjectLayout() {
         <Route path="data" element={<DataTab />} />
         <Route path="qa" element={<QaTab />} />
         <Route path="trends" element={<TrendsTab />} />
+        <Route path="npsfm" element={<NpsfmTab />} />
         <Route path="charts" element={<ChartsTab />} />
         <Route
           path="map"
