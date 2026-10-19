@@ -357,6 +357,23 @@ there as they work and show up for the others within seconds.
     overall grade is the worst of the conditions.
   - The report section **Compliance register** gives the overall grade and the table (with or without what
     EnviroDB found); the Compliance tab's Word download includes it.
+- **Issue reports, locked.** On the Reports tab, *Issue…* downloads the files to send (Word, PDF or both)
+  and locks the report as issued – *Rev 0*, then *Rev 1* and so on. The revision is on the title page and
+  in the file name (`[revision]` in a header or footer, `{{revision}}` in text), and the report's date is the
+  day it was issued.
+  - **What it was built from is kept** – the results, limits, guideline values, layout, commentary, figures,
+    QA/QC decisions and compliance grades – so the issued report can be downloaded again exactly as issued,
+    years later, whatever has changed since. A *fingerprint* (SHA-256) of each file sent is kept too:
+    *Check a file* tells you whether a PDF or Word file is one issued, unchanged.
+  - **It's kept small.** The data is compressed and split by site and year; each part is kept once and
+    shared by every revision and every later report that uses it (images too). A revision usually adds a few
+    KB; the demo project's three years of results take about 30 KB in all.
+  - **What has changed since** is shown with the issued report: results changed, added or left out (lab
+    re-issues, late results, swapped bottles), limits, guideline values, layout and commentary – with the
+    results in the report's period flagged, when a revision may be needed.
+  - **Revise** unlocks it (with the reason), and *Issue Rev 1* locks the revision; earlier revisions stay as
+    issued, and *Issued* lists them – with what changed between them – and the project's other issued
+    reports. Issued reports are shared with the team and kept in project backups.
 - **Version numbers.** The version is at the foot of the menu – click it for what's new. Reports, Excel
   files and backups record the version that made them. When a new version is published EnviroDB offers to
   reload, and it tells you if someone in your workspace is already using a newer one.
@@ -464,7 +481,8 @@ notice and waits; changes already made are kept and saved as soon as the folder 
 ```
 envirodb-workspace.json          which workspace this is
 clients/<person>/client.json     who that is and when they were last connected
-clients/<person>/*.json          the changes that person made (projects, sites, results by year …)
+clients/<person>/*.json          the changes that person made (projects, sites, results by year,
+                                 issued reports' compressed archive by year …)
 backups/EnviroDB backup <date>.json   a copy of everything, made each day (the last ten are kept)
 Inbox/                           lab files waiting to be imported (yours to add to and tidy)
 ```

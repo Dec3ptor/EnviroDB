@@ -61,7 +61,8 @@ export const PAGE_FILL_INS: FillIn[] = [
   { name: 'client', help: 'The client', example: 'Demo Aggregates Ltd' },
   { name: 'company', help: 'Your company (Settings)', example: 'Example Ltd' },
   { name: 'author', help: 'Your name (Settings)', example: 'Sam Smith' },
-  { name: 'date', help: "Today's date", example: '18 Oct 2026' },
+  { name: 'date', help: "Today's date (the day it was issued, once issued)", example: '18 Oct 2026' },
+  { name: 'revision', help: 'The revision once issued (Draft before)', example: 'Rev 0' },
 ];
 
 /** What the footer's right side says when it hasn't been changed: the page number, except on a letterhead (it has its own). */

@@ -463,6 +463,69 @@ export interface ImportBatch {
   notes?: string;
 }
 
+// ---------------------------------------------------------------- issued reports
+
+/** Where what an issued report was built from is kept: its parts in the archive, by fingerprint. */
+export interface IssueSnapshot {
+  v: number;
+  /** Everything but the results: the project, sites, rules, layout, commentary … */
+  head: string;
+  /** The samples and results, a part for each site and year. */
+  data: Array<{ key: string; site: ID; year: string }>;
+  images: string[];
+  /** What it takes in the archive (bytes) and before compression – most of it shared with other issues. */
+  bytes: number;
+  raw: number;
+  /** What this issue added to the archive (the rest was already kept). */
+  added: number;
+}
+
+/**
+ * A report as issued – to the council or the client – and locked: which revision, who issued it, when, to whom and
+ * why, a fingerprint (SHA-256) of each file, and what it was built from, so it can be rebuilt as issued and what
+ * has changed since can be shown.
+ */
+export interface IssuedReport {
+  id: ID;
+  projectId: ID;
+  templateId: ID;
+  /** The template's name when issued. */
+  report: string;
+  period: { start: string; end: string; label: string };
+  /** The sites, when not all of them. */
+  siteIds?: ID[];
+  obligationId?: ID;
+  /** "Rev 0", "Rev 1" … */
+  revision: string;
+  /** e.g. "Final", "Draft for client review". */
+  purpose?: string;
+  to?: string;
+  /** Why this revision was issued. */
+  reason?: string;
+  by?: string;
+  at: string;
+  appVersion: string;
+  files: Array<{ name: string; kind: 'pdf' | 'docx'; sha256: string; bytes: number }>;
+  snapshot: IssueSnapshot;
+  /** A revision under way: the report is unlocked to change it. */
+  revising?: { reason?: string; by?: string; at: string };
+  updatedAt: string;
+}
+
+/** A part of what issued reports were built from, compressed and kept once, by a fingerprint of what's in it. */
+export interface ArchivePart {
+  /** `${projectId}:${fingerprint}` */
+  id: string;
+  projectId: ID;
+  kind: 'head' | 'data' | 'image';
+  /** gzip as base64 – an image is kept as its data URL. */
+  z: string;
+  /** Its size before compression (characters). */
+  n: number;
+  /** The year it was kept, for the shared folder's files. */
+  y: string;
+}
+
 // ---------------------------------------------------------------- reports
 
 export type ReportBlockType =

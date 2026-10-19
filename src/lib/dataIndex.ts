@@ -54,7 +54,15 @@ export function buildIndex(samples: Sample[], results: Result[], sites: Site[], 
     if (!min || r.date < min) min = r.date;
     if (!max || r.date > max) max = r.date;
   }
-  byParam.forEach((m) => m.forEach((list) => list.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))));
+  // A fixed order whatever order the results came in (the database gives them by their random ids): parameters and
+  // sites as listed, and results on the same day by sample. So the same data always gives the same report.
+  const paramPos = new Map(params.map((p, i) => [p.id, i]));
+  const sitePos = new Map(sites.map((s, i) => [s.id, i]));
+  const byPos = (pos: Map<string, number>) => ([a]: [string, unknown], [b]: [string, unknown]) => (pos.get(a) ?? Infinity) - (pos.get(b) ?? Infinity) || (a < b ? -1 : a > b ? 1 : 0);
+  const ordered = new Map(
+    [...byParam.entries()].sort(byPos(paramPos)).map(([pid, m]): [string, Map<string, Result[]>] => [pid, new Map([...m.entries()].sort(byPos(sitePos)))]),
+  );
+  ordered.forEach((m) => m.forEach((list) => list.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.sampleId < b.sampleId ? -1 : a.sampleId > b.sampleId ? 1 : 0))));
 
   const hardness = new Map<string, number>();
   bySample.forEach((list, sampleId) => {
@@ -77,7 +85,7 @@ export function buildIndex(samples: Sample[], results: Result[], sites: Site[], 
   });
 
   return {
-    byParam,
+    byParam: ordered,
     bySample,
     allBySample,
     withheld,
@@ -86,7 +94,7 @@ export function buildIndex(samples: Sample[], results: Result[], sites: Site[], 
     paramById: new Map(params.map((p) => [p.id, p])),
     hardness,
     dates: { min, max },
-    paramIdsWithData: Array.from(byParam.keys()),
+    paramIdsWithData: Array.from(ordered.keys()),
   };
 }
 

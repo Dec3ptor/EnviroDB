@@ -11,6 +11,18 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.7.0',
+    date: '2026-10-19',
+    title: 'Issued reports, locked',
+    items: [
+      'Issue a report from the Reports tab: the files are downloaded to send and the report is locked as issued – Rev 0, Rev 1 … on the title page and in the file name.',
+      'What it was built from is kept – results, limits, layout, commentary, figures – so it can be downloaded again exactly as issued, and a fingerprint of each file: “Check a file” says whether a file is one issued, unchanged.',
+      'Kept small: compressed, split by site and year, and each part kept once – shared by every revision and later report. A revision usually adds a few KB.',
+      'What has changed since it was issued – lab re-issues, late results, results left out, limits, layout – is shown with the report, and results in its period are flagged.',
+      'Revise a report with a reason; earlier revisions stay as issued, with what changed between them. Fill-ins [revision] and {{revision}}.',
+    ],
+  },
+  {
     version: '1.6.0',
     date: '2026-10-19',
     title: 'Compliance register',

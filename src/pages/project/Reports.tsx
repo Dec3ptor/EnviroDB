@@ -3,7 +3,7 @@ import { Alert, Anchor, Badge, Button, Card, Collapse, Grid, Group, Loader, Moda
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
-import { IconCheck, IconChevronDown, IconChevronRight, IconDeviceFloppy, IconFileTypeDocx, IconFileTypePdf, IconLayoutList, IconSettings, IconSparkles, IconTemplate } from '@tabler/icons-react';
+import { IconCheck, IconChevronDown, IconChevronRight, IconDeviceFloppy, IconFileTypeDocx, IconFileTypePdf, IconLayoutList, IconLock, IconSettings, IconSparkles, IconTemplate } from '@tabler/icons-react';
 import { db, saveReportWork } from '../../db/db';
 import { hasViewState, revivePeriod, seedViewState, useViewState } from '../../hooks/useViewState';
 import { useProject } from '../../hooks/useProjectData';
@@ -32,6 +32,9 @@ import { ReportProjectContext, projectParamIds } from '../../components/report/p
 import { PageTextEditor } from '../../components/report/PageText';
 import { JumpToPreview, usePreviewPane } from '../../components/report/JumpToPreview';
 import { ReportSites } from '../../components/report/ReportSites';
+import { IssuedPanel, IssueModal, useIssuedContent, useLatestIssues, type ReportNow } from '../../components/report/Issued';
+import { issuedBuildOptions } from '../../db/issues';
+import type { IssuedReport } from '../../db/types';
 
 /** No images added yet (one object, so the preview isn't rebuilt for nothing). */
 const NO_FIGURES: Record<string, FigureImage[]> = {};
@@ -217,6 +220,32 @@ export function ReportsTab() {
   const reportFigures = figWork.loading ? NO_FIGURES : figWork.value;
   const saveFigures = (blockId: string, images: FigureImage[]) => figWork.setPart(blockId, images.length ? images : undefined);
 
+  // Issued: this report's revisions (the latest locks it, unless it is being revised) and the project's others
+  const issues = useLiveQuery(() => db.issues.where('projectId').equals(project.id).toArray(), [project.id]);
+  const allIssued = useLatestIssues(issues);
+  const revisions = useMemo(
+    () => (stored && issues ? issues.filter((i) => i.templateId === stored.id && i.period.start === period.start && i.period.end === period.end).sort((a, b) => (a.at < b.at ? -1 : 1)) : []),
+    [issues, stored, period.start, period.end],
+  );
+  const latestIssue = revisions[revisions.length - 1];
+  const locked = !!latestIssue && !latestIssue.revising;
+  const issued = useIssuedContent(locked ? latestIssue : undefined);
+  const [showCurrent, setShowCurrent] = useState(false);
+  useEffect(() => setShowCurrent(false), [latestIssue?.id]);
+  const asIssued = locked && !showCurrent;
+  const [issuing, setIssuing] = useState(false);
+  const reportNow = useMemo<ReportNow | null>(
+    () => (template ? { bundle: data, template, period, settings, promptTexts: prompts, figures: reportFigures, siteIds: chosenSites ?? undefined } : null),
+    [data, template, period, settings, prompts, reportFigures, chosenSites],
+  );
+  // open an issued report of the project: its template and period
+  const openIssued = (i: IssuedReport) => {
+    const preset = oblPresets.find((p) => p.start === i.period.start && p.end === i.period.end && (!i.obligationId || p.obligationId === i.obligationId));
+    setTemplateId(i.templateId);
+    seenTemplate.current = i.templateId;
+    setPeriod(preset ?? { key: 'custom', start: i.period.start, end: i.period.end, label: i.period.label });
+  };
+
   // Build the report for the preview (debounced; graphs at a lower resolution than the export)
   const [doc, setDoc] = useState<ReportDoc | null>(null);
   // the project's sites and parameters, for the calculation pickers
@@ -226,16 +255,23 @@ export function ReportsTab() {
   const [building, setBuilding] = useState(false);
   useEffect(() => {
     if (!template) return;
+    // an issued report shows as issued (once what it was built from is unpacked)
+    if (asIssued && !issued.content && !issued.error) {
+      setBuilding(true);
+      return;
+    }
     setBuilding(true);
     const h = setTimeout(() => {
       try {
-        setDoc(buildReport({ bundle: data, template, period, settings, promptTexts: prompts, figures: reportFigures, preview: true, siteIds: chosenSites ?? undefined, renderChart: (opt, w, hh) => renderChartPng(opt, cmToPx(w), cmToPx(hh), 1.5) }));
+        const renderChart = (opt: Parameters<typeof renderChartPng>[0], w: number, hh: number) => renderChartPng(opt, cmToPx(w), cmToPx(hh), 1.5);
+        if (asIssued && issued.content) setDoc(buildReport({ ...issuedBuildOptions(issued.content, latestIssue!), preview: true, renderChart }));
+        else setDoc(buildReport({ bundle: data, template, period, settings, promptTexts: prompts, figures: reportFigures, preview: true, siteIds: chosenSites ?? undefined, renderChart }));
       } finally {
         setBuilding(false);
       }
     }, 600);
     return () => clearTimeout(h);
-  }, [data, template, period, settings, prompts, chosenSites, reportFigures]);
+  }, [data, template, period, settings, prompts, chosenSites, reportFigures, asIssued, issued.content, issued.error]);
 
   const [busy, setBusy] = useState<'pdf' | 'docx' | null>(null);
   const exportDoc = async (kind: 'pdf' | 'docx') => {
@@ -363,7 +399,9 @@ export function ReportsTab() {
                     )}
                   />
                   <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} extra={[...oblPresets, ...rounds]} width="100%" />
-                  <ReportSites sites={data.sites} chosen={chosenSites} onChange={chooseSites} rememberedFor={obligation ? `“${obligation.name}”` : 'this template'} />
+                  <fieldset disabled={locked} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, opacity: locked ? 0.6 : 1 }} title={locked ? 'Locked as issued' : undefined}>
+                    <ReportSites sites={data.sites} chosen={chosenSites} onChange={chooseSites} rememberedFor={obligation ? `“${obligation.name}”` : 'this template'} />
+                  </fieldset>
                   {template.letterhead && !settings.letterhead && (
                     <Alert color="blue" variant="light" p="xs">
                       <Text size="xs">
@@ -375,15 +413,20 @@ export function ReportsTab() {
                       </Text>
                     </Alert>
                   )}
-                  {editedBanner}
-                  <Stack gap={6}>
-                    <Button fullWidth leftSection={<IconFileTypeDocx size={18} />} loading={busy === 'docx'} onClick={() => exportDoc('docx')}>
-                      Download Word (.docx)
-                    </Button>
-                    <Button fullWidth variant="light" leftSection={<IconFileTypePdf size={18} />} loading={busy === 'pdf'} onClick={() => exportDoc('pdf')}>
-                      Download PDF
-                    </Button>
-                  </Stack>
+                  {!locked && editedBanner}
+                  {!locked && (
+                    <Stack gap={6}>
+                      <Button fullWidth leftSection={<IconFileTypeDocx size={18} />} loading={busy === 'docx'} onClick={() => exportDoc('docx')}>
+                        Download Word (.docx)
+                      </Button>
+                      <Button fullWidth variant="light" leftSection={<IconFileTypePdf size={18} />} loading={busy === 'pdf'} onClick={() => exportDoc('pdf')}>
+                        Download PDF
+                      </Button>
+                    </Stack>
+                  )}
+                  {reportNow && issues && (
+                    <IssuedPanel revisions={revisions} all={allIssued} issued={issued} now={reportNow} showCurrent={showCurrent} onShowCurrent={setShowCurrent} onIssue={() => setIssuing(true)} onOpen={openIssued} />
+                  )}
                   {obligation && (
                     <Group justify="space-between">
                       {submitted ? (
@@ -411,6 +454,11 @@ export function ReportsTab() {
               </Tabs.Panel>
 
               <Tabs.Panel value="layout">
+                {locked ? (
+                  <Alert color="teal" variant="light" p="sm" icon={<IconLock size={16} />} title={`${latestIssue.revision} is issued`}>
+                    <Text size="xs">Its layout is locked as issued. Revise it (on the Report tab) to change it – the change is then issued as a new revision.</Text>
+                  </Alert>
+                ) : (
                 <Stack gap="sm">
                   {orientationControl}
                   {editedBanner}
@@ -446,17 +494,20 @@ export function ReportsTab() {
                     </Group>
                   </Anchor>
                 </Stack>
+                )}
               </Tabs.Panel>
             </Tabs>
           </Card>
-          {letterBlock && <LetterCard project={project} block={letterBlock} onBlock={(lb) => changeTemplate({ ...template, blocks: template.blocks.map((x) => (x.id === lb.id ? lb : x)) })} />}
+          {letterBlock && !locked && <LetterCard project={project} block={letterBlock} onBlock={(lb) => changeTemplate({ ...template, blocks: template.blocks.map((x) => (x.id === lb.id ? lb : x)) })} />}
           {commentaryBoxes.length > 0 && (
             <Card padding="md">
               <Title order={5} mb={4}>
                 Commentary for this report
               </Title>
               <Text size="xs" c="dimmed" mb="sm">
-                Saved automatically with this project and period. Use **bold**, *italic*, “- ” for bullets and “&gt; ” for a quotation.
+                {locked
+                  ? `As it is now – ${latestIssue.revision} keeps the commentary as issued. Revise the report to change it.`
+                  : 'Saved automatically with this project and period. Use **bold**, *italic*, “- ” for bullets and “> ” for a quotation.'}
               </Text>
               <Stack gap="sm">
                 {commentaryBoxes.map((c) => (
@@ -469,9 +520,10 @@ export function ReportsTab() {
                       minRows={c.auto ? 2 : 4}
                       maxRows={14}
                       value={prompts[c.key] ?? c.text}
+                      readOnly={locked}
                       onChange={(e) => savePrompt(c.key, e.currentTarget.value)}
                     />
-                    {!c.auto && (
+                    {!c.auto && !locked && (
                       <Group gap={4}>
                         <Tooltip label="Sentences about the period from the results – samples, compliance, guideline exceedances and how it compares with the period before – to edit" multiline maw={300}>
                           <Button
@@ -500,7 +552,7 @@ export function ReportsTab() {
                         />
                       </Group>
                     )}
-                    {c.auto && prompts[c.key] !== undefined && prompts[c.key] !== c.text && (
+                    {c.auto && !locked && prompts[c.key] !== undefined && prompts[c.key] !== c.text && (
                       <Anchor component="button" type="button" size="xs" onClick={() => savePrompt(c.key, undefined)}>
                         Back to the summary drafted from the results
                       </Anchor>
@@ -510,7 +562,7 @@ export function ReportsTab() {
               </Stack>
             </Card>
           )}
-          {figureBlocks.map((fb) => (
+          {!locked && figureBlocks.map((fb) => (
             <Card padding="md" key={fb.id}>
               <Title order={5} mb={4}>
                 Figures for this report{figureBlocks.length > 1 ? ` – ${headingOf(fb.id) ?? 'Figures'}` : ''}
@@ -542,6 +594,9 @@ export function ReportsTab() {
         </Card>
       </Grid.Col>
       <JumpToPreview preview={previewCard} back={settingsCard} />
+      {reportNow && (
+        <IssueModal opened={issuing} onClose={() => setIssuing(false)} now={reportNow} previous={latestIssue?.revising ? latestIssue : undefined} project={project} obligation={obligation} submitted={!!submitted} />
+      )}
       <SaveAsModal opened={saveAs} onClose={() => setSaveAs(false)} initialName={`${stored.name} (edited)`} onSave={saveAsNew} />
     </Grid>
     </ReportProjectContext.Provider>

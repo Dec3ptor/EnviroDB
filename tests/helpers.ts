@@ -9,7 +9,7 @@ import { isQcSite } from '../src/lib/qc';
 export async function loadBundle(projectId: string): Promise<ProjectBundle> {
   const project = (await db.projects.get(projectId))!;
   const sites = (await db.sites.where('projectId').equals(projectId).toArray()).sort((a, b) => a.order - b.order);
-  const samples = (await db.samples.where('projectId').equals(projectId).toArray()).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const samples = (await db.samples.where('projectId').equals(projectId).toArray()).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const results = await db.results.where('projectId').equals(projectId).toArray();
   const params = (await db.parameters.toArray()).sort(compareParams);
   const sets = await db.guidelineSets.toArray();

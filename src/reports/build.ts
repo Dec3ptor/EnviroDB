@@ -40,6 +40,10 @@ export interface BuildOptions {
   figures?: Record<string, FigureImage[]>;
   /** A preview on screen: sections still waiting for something (images, who a letter is to) say so. */
   preview?: boolean;
+  /** The report's date (default today): an issued report keeps the day it was issued. */
+  today?: string;
+  /** Issued: the revision, on the title page and in the file's name ([revision] in headers and footers). */
+  issue?: { revision: string };
 }
 
 const PAGE_MM: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420] };
@@ -177,6 +181,7 @@ function leaveOut<T extends { id: string }>(params: T[], blk: { excludeParameter
 
 export function buildReport(opts: BuildOptions): ReportDoc {
   const { template: t, period, settings } = opts;
+  const today = opts.today ?? todayStr();
   const subset = !!opts.siteIds?.length && opts.siteIds.length < opts.bundle.sites.length;
   const b = subset ? limitToSites(opts.bundle, opts.siteIds!) : opts.bundle;
   const { start, end } = period;
@@ -227,7 +232,8 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     'period.end': formatDateLong(shownEnd),
     'period.label': reportPeriodLabel(shownStart, shownEnd),
     'period.month': monthLabel(shownStart, shownEnd),
-    today: formatDateLong(todayStr()),
+    today: formatDateLong(today),
+    revision: opts.issue?.revision ?? 'Draft',
     author: settings.author,
     company: settings.company,
     'count.samples': String(samplesInPeriod.length),
@@ -340,7 +346,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   const siteFill = (s: Site | undefined): Record<string, string> => (s ? { site: s.name ? `${s.code} – ${s.name}` : s.code, sitecode: s.code, sitename: s.name ?? '', sitetype: s.type ?? '' } : { site: '', sitecode: '', sitename: '', sitetype: '' });
   const capText = (blk: ReportBlock, values: Record<string, string> = {}) => tidyCaption(fill(fillCaption(captionOf(blk), { ...capBase, ...values })));
   // the header's and footer's: [page] and [pages] are left for each page ({page}, {pages})
-  const pageValues: Record<string, string> = { ...capBase, page: '{page}', pages: '{pages}', report: t.name, client: project.client ?? '', company: settings.company ?? '', author: settings.author ?? '', date: formatDate(todayStr()) };
+  const pageValues: Record<string, string> = { ...capBase, page: '{page}', pages: '{pages}', report: t.name, client: project.client ?? '', company: settings.company ?? '', author: settings.author ?? '', date: formatDate(today), revision: opts.issue?.revision ?? 'Draft' };
   const pageText = (s: string | undefined) => (s ? tidyCaption(fill(fillCaption(s, pageValues))) : '');
   const tableCaption = (s: string) => numbered('Table', 'table', s);
   /** The results a table's calculation is worked out from: those in the table, or the sites' over a span to the report's end. */
@@ -495,7 +501,8 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           ['Sites covered', subset ? b.sites.map((s) => s.code).join(', ') : ''],
           ['Prepared by', fill(blk.preparedBy)],
           ['Reviewed by', fill(blk.reviewedBy)],
-          ['Date', formatDateLong(todayStr())],
+          ['Revision', opts.issue?.revision ?? ''],
+          ['Date', formatDateLong(today)],
         ] as Array<[string, string]>
       ).filter(([, v]) => v.trim());
       const logo = t.logo ? { dataUrl: t.logo, ...logoSizeMm(t.logo, t.logoHeightMm ?? DEFAULT_LOGO_MM, Math.min(80, width * 0.5)) } : undefined;
@@ -1042,7 +1049,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     },
     complianceRegister: (blk) => {
       const reg = opts.bundle.register;
-      const rows = reg ? registerRows(reg.conditions, reg.assessments, opts.bundle, start, end) : [];
+      const rows = reg ? registerRows(reg.conditions, reg.assessments, opts.bundle, start, end, today) : [];
       if (!rows.length) {
         if (opts.preview) nodes.push({ t: 'note', text: 'No conditions in the compliance register yet – add them on the Compliance tab (Register).' });
         return;
@@ -1537,7 +1544,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     pageTextWithLetterhead: !!t.pageTextWithLetterhead,
     title: `${project.name} – ${t.name}`,
     author: settings.author || settings.company,
-    fileName: `${project.name} - ${t.name} - ${wholeMonth(shownStart, shownEnd) ? monthLabel(shownStart, shownEnd) : `${formatDate(shownStart, { format: 'D MMM YYYY' })} to ${formatDate(shownEnd, { format: 'D MMM YYYY' })}`}`.replace(/[\\/:*?"<>|]+/g, '-'),
+    fileName: `${project.name} - ${t.name} - ${wholeMonth(shownStart, shownEnd) ? monthLabel(shownStart, shownEnd) : `${formatDate(shownStart, { format: 'D MMM YYYY' })} to ${formatDate(shownEnd, { format: 'D MMM YYYY' })}`}${opts.issue ? ` - ${opts.issue.revision}` : ''}`.replace(/[\\/:*?"<>|]+/g, '-'),
   };
 }
 
