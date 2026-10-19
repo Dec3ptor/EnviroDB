@@ -10,6 +10,9 @@ import {
   HeadingLevel,
   ImageRun,
   InternalHyperlink,
+  LevelFormat,
+  SimpleField,
+  type IRunOptions,
   PageBreak,
   PageNumber,
   PageOrientation,
@@ -28,7 +31,7 @@ import {
   type ISectionOptions,
 } from 'docx';
 import type { LetterheadItem } from '../db/types';
-import type { Cell, DocNode, PageLine, ReportDoc, Run } from './model';
+import type { Cell, DocNode, PageLine, RefTarget, ReportDoc, Run } from './model';
 import { dataUrlToBytes } from '../charts/render';
 import { CHART_GAP_MM, SIGN_GAP_MM, pageSizeMm, type Orientation } from './build';
 import { fitCellSize, fontWidthFactor } from './measure';
@@ -54,21 +57,69 @@ interface Ctx {
 /** A Word bookmark name for an anchor (hidden from Word's bookmark list, like its own cross-reference bookmarks). */
 const bookmark = (anchor: string) => `_Ref_${anchor}`;
 
-/** Text runs; a reference ("Table 3") links to its table or figure. */
+/** Word's own heading numbering: 1, 1.1, 1.1.1 – the number, then a tab to the heading's text. */
+const HEADING_NUMBERS = 'heading-numbers';
+function headingNumbering(indent: number) {
+  const hang = twips(10);
+  return {
+    config: [
+      {
+        reference: HEADING_NUMBERS,
+        levels: ['%1', '%1.%2', '%1.%2.%3'].map((text, level) => ({ level, format: LevelFormat.DECIMAL, text, alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: indent + hang, hanging: hang } } } })),
+      },
+    ],
+  };
+}
+
+/** The document being written: what each reference shows, and each numbered caption's label and number. */
+let TARGETS: Record<string, RefTarget> = {};
+
+/** A Word field – {SEQ Table}, {REF _Ref_ref3 \h} – with its result as Word would show it, so nothing needs updating on opening. */
+function field(instr: string, result: string, style: IRunOptions): SimpleField {
+  const f = new SimpleField(` ${instr} `);
+  (f as unknown as { root: unknown[] }).root.push(new TextRun({ ...style, text: result }));
+  return f;
+}
+
+/** A caption label as a SEQ field's name: "Table", "Figure", "Site_photo". */
+const seqName = (label: string) => label.trim().replace(/\s+/g, '_').replace(/[^\w]/g, '') || 'Figure';
+
+/**
+ * Text runs; a reference ("Table 3") is Word's own cross-reference – a REF field to the caption's bookmark, a link
+ * (Ctrl+click) that updates with the numbering – and anything after the number ("(b)") follows as text.
+ */
 function runs(rs: Run[], size: number, italics?: boolean): ParagraphChild[] {
-  return rs.map((r) => {
-    const run = new TextRun({ text: r.text, bold: r.bold, italics: r.italic || italics, size });
-    return r.link ? new InternalHyperlink({ anchor: bookmark(r.link), children: [run] }) : run;
+  return rs.flatMap((r): ParagraphChild[] => {
+    const style: IRunOptions = { bold: r.bold, italics: r.italic || italics, size };
+    if (!r.link) return [new TextRun({ ...style, text: r.text })];
+    const t = TARGETS[r.link];
+    if (t && r.text.startsWith(t.text)) {
+      const rest = r.text.slice(t.text.length);
+      return [field(`REF ${bookmark(r.link)} \\h`, t.text, style), ...(rest ? [new TextRun({ ...style, text: rest })] : [])];
+    }
+    return [new InternalHyperlink({ anchor: bookmark(r.link), children: [new TextRun({ ...style, text: r.text })] })];
   });
 }
 
 let bookmarkNo = 0;
-/** A caption's or heading's text, with a bookmark for links to it. */
-function marked(anchor: string | undefined, run: TextRun): ParagraphChild {
-  if (!anchor) return run;
+function bookmarked(anchor: string, children: ParagraphChild[]): ParagraphChild {
   // the library numbers every bookmark 1, and Word matches a bookmark's start and end by number: each gets its own
   const n = ++bookmarkNo;
-  return Object.assign(new Bookmark({ id: bookmark(anchor), children: [run] }), { start: new BookmarkStart(bookmark(anchor), n), end: new BookmarkEnd(n) });
+  return Object.assign(new Bookmark({ id: bookmark(anchor), children }), { start: new BookmarkStart(bookmark(anchor), n), end: new BookmarkEnd(n) });
+}
+
+/**
+ * A caption's or heading's text, with a bookmark for references to it. A numbered caption is Word's own: "Table "
+ * and a SEQ field for the number, bookmarked as Word's cross-references are (the label and number), then its text.
+ */
+function marked(anchor: string | undefined, text: string, style: IRunOptions = {}): ParagraphChild[] {
+  if (!anchor) return [new TextRun({ ...style, text })];
+  const t = TARGETS[anchor];
+  if (t?.label && t.num && text.startsWith(t.text) && t.text === `${t.label} ${t.num}`) {
+    const rest = text.slice(t.text.length);
+    return [bookmarked(anchor, [new TextRun({ ...style, text: `${t.label} ` }), field(`SEQ ${seqName(t.label)} \\* ARABIC`, String(t.num), style)]), ...(rest ? [new TextRun({ ...style, text: rest })] : [])];
+  }
+  return [bookmarked(anchor, [new TextRun({ ...style, text })])];
 }
 
 function headerLook(doc: ReportDoc): { fill: string; color: string } {
@@ -152,8 +203,9 @@ function nodeToDocx(n: DocNode, x: Ctx, contentWidthMm: number): Array<Paragraph
         new Paragraph({
           heading: n.level === 1 ? HeadingLevel.HEADING_1 : n.level === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3,
           keepNext: true,
-          indent: ind,
-          children: [marked(n.anchor, new TextRun({ text: `${n.number ? `${n.number}  ` : ''}${n.text}` }))],
+          // a numbered heading is numbered by Word (1, 1.1 …), so headings added in Word follow on; its indent is the numbering's
+          ...(n.number ? { numbering: { reference: HEADING_NUMBERS, level: n.level - 1 } } : { indent: ind }),
+          children: marked(n.anchor, n.text),
         }),
       ];
     case 'p':
@@ -174,7 +226,7 @@ function nodeToDocx(n: DocNode, x: Ctx, contentWidthMm: number): Array<Paragraph
       const wCm = Math.min(n.widthCm, contentWidthMm / 10);
       const hCm = n.heightCm * (wCm / n.widthCm);
       if (n.dataUrl) out.push(new Paragraph({ keepNext: true, spacing: { before: 120, after: 40 }, indent: ind, children: [new ImageRun({ type: 'png', data: dataUrlToBytes(n.dataUrl), transformation: { width: Math.round(wCm * PX_PER_CM), height: Math.round(hCm * PX_PER_CM) } })] }));
-      if (n.caption) out.push(new Paragraph({ style: 'Caption', indent: ind, children: [marked(n.anchor, new TextRun({ text: n.caption }))] }));
+      if (n.caption) out.push(new Paragraph({ style: 'Caption', indent: ind, children: marked(n.anchor, n.caption) }));
       return out;
     }
     case 'figures': {
@@ -187,7 +239,7 @@ function nodeToDocx(n: DocNode, x: Ctx, contentWidthMm: number): Array<Paragraph
         const hCm = it.heightCm * (wCm / it.widthCm);
         const children: Paragraph[] = [];
         if (it.dataUrl) children.push(new Paragraph({ spacing: { before: 120, after: 40 }, indent: { left: 0 }, children: [new ImageRun({ type: 'png', data: dataUrlToBytes(it.dataUrl), transformation: { width: Math.round(wCm * PX_PER_CM), height: Math.round(hCm * PX_PER_CM) } })] }));
-        if (it.caption) children.push(new Paragraph({ style: 'Caption', indent: { left: 0 }, children: [marked(it.anchor, new TextRun({ text: it.caption }))] }));
+        if (it.caption) children.push(new Paragraph({ style: 'Caption', indent: { left: 0 }, children: marked(it.anchor, it.caption) }));
         return new TableCell({ width: { size: Math.round(cellMm(i) * TWIP_PER_MM), type: WidthType.DXA }, margins: { left: 0, right: i < cols - 1 ? Math.round(CHART_GAP_MM * TWIP_PER_MM) : 0 }, children: children.length ? children : [new Paragraph({})] });
       });
       return [
@@ -218,7 +270,7 @@ function nodeToDocx(n: DocNode, x: Ctx, contentWidthMm: number): Array<Paragraph
               const children: Paragraph[] = [];
               if (it) {
                 children.push(new Paragraph({ alignment: AlignmentType.CENTER, keepNext: true, spacing: { before: 80, after: 40 }, indent: { left: 0 }, children: [image(it.dataUrl, it.widthMm * k, it.heightMm * k, n.border)] }));
-                if (it.caption) children.push(new Paragraph({ style: 'Caption', alignment: n.perRow > 1 ? AlignmentType.CENTER : AlignmentType.LEFT, indent: { left: 0 }, children: [marked(it.anchor, new TextRun({ text: it.caption }))] }));
+                if (it.caption) children.push(new Paragraph({ style: 'Caption', alignment: n.perRow > 1 ? AlignmentType.CENTER : AlignmentType.LEFT, indent: { left: 0 }, children: marked(it.anchor, it.caption) }));
               }
               return new TableCell({ width: { size: twips(cellMm(c)), type: WidthType.DXA }, margins: { left: 0, right: c < n.perRow - 1 ? twips(n.gapMm) : 0 }, children: children.length ? children : [new Paragraph({})] });
             }),
@@ -235,7 +287,7 @@ function nodeToDocx(n: DocNode, x: Ctx, contentWidthMm: number): Array<Paragraph
           rows,
         }),
       ];
-      out.push(n.caption ? new Paragraph({ style: 'Caption', indent: ind, children: [marked(n.anchor, new TextRun({ text: n.caption }))] }) : new Paragraph({ children: [], spacing: { after: 60 } }));
+      out.push(n.caption ? new Paragraph({ style: 'Caption', indent: ind, children: marked(n.anchor, n.caption) }) : new Paragraph({ children: [], spacing: { after: 60 } }));
       return out;
     }
     case 'signatures': {
@@ -281,7 +333,7 @@ function nodeToDocx(n: DocNode, x: Ctx, contentWidthMm: number): Array<Paragraph
     case 'table': {
       const size = Math.round((n.fontSize ?? t.fontSize - 1) * 2);
       const out: Array<Paragraph | Table> = [];
-      if (n.caption) out.push(new Paragraph({ style: 'Caption', keepNext: true, indent: ind, children: [marked(n.anchor, new TextRun({ text: n.caption, bold: !letter }))] }));
+      if (n.caption) out.push(new Paragraph({ style: 'Caption', keepNext: true, indent: ind, children: marked(n.anchor, n.caption, { bold: !letter }) }));
       // flexible columns (notes, comments) keep room for their text: the fixed ones give way if need be, as in the PDF
       const flexCount = n.widths.filter((w) => typeof w !== 'number').length;
       const FLEX_MIN = 20;
@@ -469,13 +521,14 @@ function section(doc: ReportDoc, children: Array<Paragraph | Table>, orientation
 export async function docxBlob(doc: ReportDoc): Promise<Blob> {
   const t = doc.template;
   const [w, h] = pageSizeMm(t);
+  TARGETS = doc.refTargets ?? {};
   const x: Ctx = { doc, letter: doc.look.style === 'letter', indent: twips(doc.page.indent), head: headerLook(doc), rule: doc.look.style === 'letter' ? '404040' : 'B9B9B9', text: doc.look.textColor };
   const sides = doc.letterhead ? doc.page.left + doc.page.right + doc.page.indent : 2 * t.marginMm;
   const sections = splitSections(doc).map((s, i) => {
     const contentWidthMm = (s.orientation === 'landscape' ? h : w) - sides;
     return section(doc, s.nodes.flatMap((n) => nodeToDocx(n, x, contentWidthMm)), s.orientation, i === 0);
   });
-  const d = new Document({ creator: 'EnviroDB', title: doc.title, description: doc.title, styles: styles(doc), sections });
+  const d = new Document({ creator: 'EnviroDB', title: doc.title, description: doc.title, styles: styles(doc), numbering: headingNumbering(twips(doc.page.indent)), sections });
   const blob = await Packer.toBlob(d);
   if (!doc.letterhead?.docx || doc.letterhead.useWordFile === false) return blob;
   // on the company's own letterhead: its header and footers from the Word file, exactly as they are – with the

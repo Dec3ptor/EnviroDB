@@ -87,9 +87,18 @@ export interface PageLine {
   right: string;
 }
 
+/** What a reference to a caption or heading shows ("Table 3", or the heading) – and for a numbered caption, its label and number (Word numbers it with a SEQ field). */
+export interface RefTarget {
+  text: string;
+  label?: string;
+  num?: number;
+}
+
 export interface ReportDoc {
   template: ReportTemplate;
   nodes: DocNode[];
+  /** Each anchor's target, for Word's own captions and cross-references. */
+  refTargets?: Record<string, RefTarget>;
   header: PageLine;
   footer: PageLine;
   /** The header and footer on the first page too. */

@@ -160,6 +160,12 @@ there as they work and show up for the others within seconds.
   number goes in where you're typing ("see Table 3"), naming the table if it hasn't a name yet. In the
   PDF and Word files each reference is a link – click it to go to the table or figure – and a
   reference to a section under a heading gives the heading.
+- **Word files you can carry on in Word.** The Word download is built the way Word builds a report:
+  captions are Word's own (Insert Caption – "Table" and a caption number field), references in the
+  text are Word cross-references (Ctrl+click to follow them), and numbered headings use Word's heading
+  numbering. Add, move or delete a table, figure or heading in Word, select all and press F9 (or
+  print), and the numbers and references update themselves; Insert → Cross-reference lists the report's
+  tables and figures to refer to.
 - **Write your own captions and notes.** Every table and graph has a *Caption* box (on the Reports tab,
   *Edit layout*, open the section) holding the wording it uses now, e.g. "Monitoring results – [site
   code] ([site name])". Change any of it; the words in square brackets are filled in for each table:

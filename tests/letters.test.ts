@@ -516,7 +516,11 @@ describe('labels: numbered captions or headings, and references that link to the
     const ids = Array.from(xml.matchAll(/<w:bookmarkStart [^>]*w:id="(\d+)"/g)).map((m) => m[1]);
     expect(ids.length).toBeGreaterThan(2);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(xml).toMatch(new RegExp(`<w:hyperlink [^>]*w:anchor="_Ref_${sitesT.anchor}">(?:(?!</w:hyperlink>).)*>Table 1</w:t>`));
+    // Word's own: the caption's number a SEQ field, bookmarked with its label as Word's cross-references are …
+    expect(xml).toMatch(new RegExp(`<w:bookmarkStart w:name="_Ref_${sitesT.anchor}" w:id="(\\d+)"/><w:r>(?:(?!</w:r>).)*<w:t xml:space="preserve">Table </w:t></w:r><w:fldSimple w:instr=" SEQ Table \\\\\\* ARABIC "><w:r>(?:(?!</w:r>).)*<w:t xml:space="preserve">1</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="\\1"/>`));
+    // … and the text's reference a REF field to it, a link that updates with the numbering
+    expect(xml).toMatch(new RegExp(`<w:fldSimple w:instr=" REF _Ref_${sitesT.anchor} \\\\h "><w:r>(?:(?!</w:r>).)*<w:t xml:space="preserve">Table 1</w:t></w:r></w:fldSimple>`));
+    expect(xml).not.toContain('<w:hyperlink');
     // a heading is a link target too
     const hdoc = await build('heading');
     const h = hdoc.nodes.find((n): n is Heading => n.t === 'h' && n.text === 'Summary statistics')!;

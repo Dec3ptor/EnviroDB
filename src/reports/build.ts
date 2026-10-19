@@ -13,7 +13,7 @@ import { fmtNum } from '../lib/values';
 import { imageSize, logoSizeMm } from '../lib/image';
 import { buildChartSpec, chartOption } from '../charts/timeSeries';
 import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
-import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type ReportDoc, type ReportLook, type Run } from './model';
+import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type RefTarget, type ReportDoc, type ReportLook, type Run } from './model';
 import { CELL_PAD_MM, fontWidthFactor, longestWordMm as longestWord, textWidthMm as textWidth } from './measure';
 import { calcHead, calcNotes, calcValue, fillCalcs, tableCalcValue } from './calc';
 import { resultsFor } from '../lib/dataIndex';
@@ -259,6 +259,8 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   const anchorOf = (caption: string) => captionAnchors.get(caption)?.shift();
   let anchorSeq = 0;
   const newAnchor = () => `ref${++anchorSeq}`;
+  // what a reference to each anchor shows, and a numbered caption's label and number (for Word's SEQ fields)
+  const targets: Record<string, RefTarget> = {};
   let current: ReportBlock | null = null;
   const capSep = letter ? '. ' : ': ';
   const numbered = (label: string, kind: 'table' | 'fig', s: string) => {
@@ -267,13 +269,16 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     if (current?.captionStyle === 'heading') {
       if (current.ref && !refs.has(`${kind}:${current.ref}`)) refs.set(`${kind}:${current.ref}`, { text: s, anchor });
       mark(s, anchor);
+      targets[anchor] = { text: s };
       return s;
     }
     if (!numbering) {
       mark(s, anchor);
       return s;
     }
-    const n = `${label} ${nextNumber(label)}`;
+    const num = nextNumber(label);
+    const n = `${label} ${num}`;
+    targets[anchor] = { text: n, label, num };
     if (current?.ref && !refs.has(`${kind}:${current.ref}`)) refs.set(`${kind}:${current.ref}`, { text: n, anchor });
     const caption = s ? `${n}${capSep}${s}` : n;
     mark(caption, anchor);
@@ -1010,6 +1015,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const label = capText(blk, { ...siteFill(site), date: sample ? formatDate(sample.date, { format: 'D MMM YYYY' }) : '' });
         if (asHeading) {
           const anchor = newAnchor();
+          targets[anchor] = { text: label };
           if (blk.ref && !refs.has(`table:${blk.ref}`)) refs.set(`table:${blk.ref}`, { text: label, anchor });
           nodes.push({ t: 'h', level: 3, text: label, anchor });
         }
@@ -1158,8 +1164,10 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const asHeading = blk.captionStyle === 'heading';
       const numberedAs = asHeading ? 'none' : blk.numbering;
       const group = numberedAs === 'group';
-      const groupNo = group && numbering ? `${label} ${nextNumber(label)}` : '';
+      const groupNum = group && numbering ? nextNumber(label) : 0;
+      const groupNo = groupNum ? `${label} ${groupNum}` : '';
       const groupAnchor = newAnchor();
+      if (groupNo) targets[groupAnchor] = { text: groupNo, label, num: groupNum };
       const items = images.map((im, i) => {
         const px = imageSize(im.src);
         const aspect = px ? px.height / px.width : 0.75;
@@ -1174,8 +1182,10 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           caption = text ? `${sub} ${text}` : sub;
           if (im.ref) refs.set(`fig:${im.ref}`, { text: groupNo ? `${groupNo}${sub}` : sub, anchor: groupAnchor });
         } else if (numberedAs === 'each' && numbering) {
-          const n = `${label} ${nextNumber(label)}`;
+          const num = nextNumber(label);
+          const n = `${label} ${num}`;
           const anchor = newAnchor();
+          targets[anchor] = { text: n, label, num };
           caption = text ? `${n}${capSep}${text}` : n;
           mark(caption, anchor);
           if (im.ref) refs.set(`fig:${im.ref}`, { text: n, anchor });
@@ -1188,6 +1198,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       // under a heading of its own: the section's caption is the heading, above the pictures
       if (asHeading && groupText) {
         nodes.push({ t: 'h', level: 3, text: groupText, anchor: groupAnchor });
+        targets[groupAnchor] = { text: groupText };
         if (blk.ref && !refs.has(`fig:${blk.ref}`)) refs.set(`fig:${blk.ref}`, { text: groupText, anchor: groupAnchor });
       }
       nodes.push({ t: 'gallery', perRow, colWidthMm, gapMm, border: !!blk.border, items, caption: group ? [groupNo, groupText].filter(Boolean).join(groupNo && groupText ? capSep : '') || undefined : undefined, anchor: group ? groupAnchor : undefined });
@@ -1258,6 +1269,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     letterhead: shownLetterhead,
     commentary,
     autoNotes,
+    refTargets: targets,
     header: { left: pageText(t.headerText), center: pageText(t.headerCenter), right: pageText(t.headerRight) },
     footer: { left: pageText(t.footerText), center: pageText(t.footerCenter), right: pageText(t.footerRight ?? usualFooterRight(!!letterhead)) },
     // not on the first page when the title has a page of its own, nor on a letterhead's
