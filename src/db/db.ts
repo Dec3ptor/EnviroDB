@@ -23,7 +23,7 @@ import type {
   Sample,
   Settings,
   Site, InboxFile } from './types';
-import { BUILT_IN_PARAMETERS, splitPhysicalAndField } from '../data/parameters';
+import { BUILT_IN_PARAMETERS, splitPhysicalAndField, RETIRED_ALIASES } from '../data/parameters';
 import { BUILT_IN_GUIDELINES } from '../data/guidelines';
 import { BUILT_IN_TEMPLATES, QUICK_CHECK_TEMPLATE, QUICK_CHECK_TEMPLATE_ID } from '../data/templates';
 import { captureMiddleware, markUncaptured } from '../sync/capture';
@@ -150,10 +150,12 @@ export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<voi
       if (deleted.has(p.id)) continue;
       if (!cur) toPut.push(p);
       else {
-        const aliases = Array.from(new Set([...cur.aliases, ...p.aliases]));
+        // names it no longer goes by: retired ones, and ones someone matched to another parameter
+        const dropped = new Set([...(RETIRED_ALIASES[p.id] ?? []), ...(cur.removedAliases ?? [])].map((a) => a.toLowerCase()));
+        const aliases = Array.from(new Set([...cur.aliases.filter((a) => !RETIRED_ALIASES[p.id]?.includes(a.toLowerCase())), ...p.aliases.filter((a) => !dropped.has(a.toLowerCase()))]));
         // the user's names, units and groups are kept; the old combined group is split, and the built-in order followed
         const group = cur.group === LEGACY_FIELD_GROUP ? p.group : cur.group;
-        if (aliases.length !== cur.aliases.length || cur.hardnessExponent !== p.hardnessExponent || !cur.builtIn || group !== cur.group || cur.order !== p.order) {
+        if (aliases.join('\u0001') !== cur.aliases.join('\u0001') || cur.hardnessExponent !== p.hardnessExponent || !cur.builtIn || group !== cur.group || cur.order !== p.order) {
           toPut.push({ ...cur, aliases, hardnessExponent: p.hardnessExponent, builtIn: true, group, order: p.order });
         }
       }

@@ -109,6 +109,12 @@ const METALS: Array<[string, string, number?]> = [
 
 const ALT_NAMES: Record<string, string[]> = { Aluminium: ['aluminum'], Sulphur: ['sulfur'] };
 
+/**
+ * Names built-in parameters went by before and no longer do: "acid soluble zinc" was taken as total zinc, but the
+ * acid-soluble fraction is a different measurement (now a parameter of its own). Taken off existing libraries.
+ */
+export const RETIRED_ALIASES: Record<string, string[]> = {};
+
 function metalParams(): P[] {
   const out: P[] = [];
   for (const [sym, name, exp] of METALS) {
@@ -116,10 +122,15 @@ function metalParams(): P[] {
     const names = [name.toLowerCase(), ...(ALT_NAMES[name] ?? [])];
     const dAliases: string[] = [];
     const tAliases: string[] = [];
+    const aAliases: string[] = [];
     for (const n of [...names, s]) {
-      dAliases.push(`dissolved ${n}`, `${n} dissolved`, `${n} (dissolved)`, `${n} - dissolved`, `${n}, dissolved`, `diss ${n}`, `${n} (diss)`, `${n} diss`, `${n} (filtered)`, `filtered ${n}`, `${n}-d`, `${n} (d)`, `${n}_d`);
-      tAliases.push(`total ${n}`, `${n} total`, `${n} (total)`, `${n} - total`, `${n}, total`, `total recoverable ${n}`, `${n} (total recoverable)`, `${n} total recoverable`, `tot ${n}`, `${n} (tot)`, `${n} (unfiltered)`, `${n}-t`, `${n} (t)`, `${n}_t`, `acid soluble ${n}`, `${n} (acid soluble)`);
+      // dissolved: filtered (0.45 µm) – which some labs call "soluble"
+      dAliases.push(`dissolved ${n}`, `${n} dissolved`, `${n} (dissolved)`, `${n} - dissolved`, `${n}, dissolved`, `diss ${n}`, `${n} (diss)`, `${n} diss`, `${n} (filtered)`, `filtered ${n}`, `${n}-d`, `${n} (d)`, `${n}_d`, `soluble ${n}`, `${n} soluble`, `${n} (soluble)`, `${n} - soluble`, `${n}, soluble`);
+      tAliases.push(`total ${n}`, `${n} total`, `${n} (total)`, `${n} - total`, `${n}, total`, `total recoverable ${n}`, `${n} (total recoverable)`, `${n} total recoverable`, `tot ${n}`, `${n} (tot)`, `${n} (unfiltered)`, `${n}-t`, `${n} (t)`, `${n}_t`);
+      // acid soluble: unfiltered, acidified but not digested – between dissolved and total recoverable
+      aAliases.push(`acid soluble ${n}`, `${n} acid soluble`, `${n} (acid soluble)`, `${n} - acid soluble`, `${n}, acid soluble`, `acid-soluble ${n}`, `${n} (acid-soluble)`, `acid sol ${n}`, `${n} (acid sol)`, `acid extractable ${n}`, `${n} (acid extractable)`);
     }
+    for (const a of aAliases) if (/^acid soluble |\(acid soluble\)$/.test(a)) (RETIRED_ALIASES[`${s}-t`] ??= []).push(a);
     out.push({
       id: `${s}-d`,
       name: `Dissolved ${name}`,
@@ -136,6 +147,15 @@ function metalParams(): P[] {
       group: 'Metals (total)',
       unit: 'mg/L',
       aliases: tAliases,
+      hardnessExponent: exp,
+    });
+    out.push({
+      id: `${s}-as`,
+      name: `Acid Soluble ${name}`,
+      short: `${sym} (AS)`,
+      group: 'Metals (acid soluble)',
+      unit: 'mg/L',
+      aliases: aAliases,
       hardnessExponent: exp,
     });
   }
@@ -181,7 +201,7 @@ const chromium6: P = {
   aliases: ['hexavalent chromium', 'chromium - hexavalent', 'chromium hexavalent', 'chromium (vi)', 'chromium vi', 'cr(vi)', 'cr vi', 'cr6+', 'cr6', 'cr (vi)', 'hexavalent chromium (cr6+)'],
 };
 
-// dissolved metals together, then total metals (the generator gives each metal's two fractions in turn)
+// dissolved metals together, then total, then acid soluble (the generator gives each metal's fractions in turn)
 const metals = metalParams();
 export const BUILT_IN_PARAMETERS: Parameter[] = [
   ...field,
@@ -192,13 +212,14 @@ export const BUILT_IN_PARAMETERS: Parameter[] = [
   ...metals.filter((p) => p.group === 'Metals (dissolved)'),
   chromium6,
   ...metals.filter((p) => p.group === 'Metals (total)'),
+  ...metals.filter((p) => p.group === 'Metals (acid soluble)'),
   ...hydrocarbons,
   ...pfas,
   ...ecology,
 ].map((p, i) => ({ ...p, builtIn: true, order: i }));
 
 /** Parameter groups in the order they are listed everywhere: field measurements first, then the laboratory groups. */
-export const PARAMETER_GROUPS = ['Field', 'Physical', 'General chemistry', 'Nutrients', 'Microbiology', 'Metals (dissolved)', 'Metals (total)', 'Hydrocarbons', 'Pesticides', 'Other organics', 'PFAS', 'Ecology', 'Other'];
+export const PARAMETER_GROUPS = ['Field', 'Physical', 'General chemistry', 'Nutrients', 'Microbiology', 'Metals (dissolved)', 'Metals (total)', 'Metals (acid soluble)', 'Hydrocarbons', 'Pesticides', 'Other organics', 'PFAS', 'Ecology', 'Other'];
 
 const PESTICIDE = /\b(DD[DET]|BHC|HCH|lindane|aldrin|dieldrin|endrin|endosulfan|heptachlor|chlordane|methoxychlor|hexachlorobenzene|mirex|toxaphene|atrazine|simazine|glyphosate|2,4-D|MCPA|triclopyr|picloram|chlorpyrifos|diazinon|pesticide|herbicide)\b/i;
 const PAH = /naphthalene|anthracene|phenanthrene|pyrene|fluoranthene|fluorene|chrysene|acenaphth|perylene|benzo\s*[([]|indeno|\bPAH|TEQ|aromatic hydrocarbon/i;

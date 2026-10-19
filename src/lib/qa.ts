@@ -413,7 +413,12 @@ export function runQa(input: QaInput): QaResult {
 
     // parts bigger than the whole
     const pw: Array<[string, string]> = [...PART_WHOLE];
-    for (const pid of v.keys()) if (pid.endsWith('-d') && v.has(`${pid.slice(0, -2)}-t`)) pw.push([pid, `${pid.slice(0, -2)}-t`]);
+    // a metal's fractions: dissolved ≤ acid soluble ≤ total
+    for (const pid of v.keys()) {
+      const m = /^(.+)-(d|as)$/.exec(pid);
+      if (!m) continue;
+      for (const whole of m[2] === 'd' ? [`${m[1]}-as`, `${m[1]}-t`] : [`${m[1]}-t`]) if (v.has(whole)) pw.push([pid, whole]);
+    }
     for (const [partId, wholeId] of pw) {
       const part = v.get(partId), whole = v.get(wholeId);
       if (!part || !whole || part.nd) continue;

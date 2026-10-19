@@ -289,6 +289,7 @@ export function ImportWizard(_props: { projectId: string }) {
   const [dateOverrides, setDateOverrides] = useState<Record<string, string | undefined>>({});
   const [include, setInclude] = useState<Record<string, boolean>>({});
   const [dupes, setDupes] = useState<'replace' | 'skip' | 'keep'>('replace');
+  const [clearEarlier, setClearEarlier] = useState(false);
   const [remember, setRemember] = useState(true);
   const [summary, setSummary] = useState<CommitSummary | null>(null);
   const [newParamFor, setNewParamFor] = useState<{ key: string; name: string; unit?: string; group?: string } | null>(null);
@@ -404,6 +405,30 @@ export function ImportWizard(_props: { projectId: string }) {
     return n;
   }, [included, data.samples, data.index, siteMap, dateOverrides, paramMapping]);
 
+  // what "clear out earlier results" would remove: results earlier files put on the samples this file adds to,
+  // for analytes this file doesn't have (field readings and results typed in stay)
+  const clearCount = useMemo(() => {
+    const fieldBatches = new Set(data.imports.filter((b) => b.kind === 'field').map((b) => b.id));
+    const bySiteDay = new Map<string, string>();
+    data.samples.forEach((s) => bySiteDay.set(`${s.siteId}|${s.date.slice(0, 10)}`, s.id));
+    const incoming = new Map<string, Set<string>>();
+    for (const s of included) {
+      const sid = sampleSite(s);
+      const d = sampleDate(s);
+      const existing = sid && d ? bySiteDay.get(`${sid}|${d.slice(0, 10)}`) : undefined;
+      if (!existing) continue;
+      const set = incoming.get(existing) ?? new Set<string>();
+      for (const r of s.results) {
+        const pid = paramMapping[analyteMapKey(r)];
+        if (pid) set.add(pid);
+      }
+      incoming.set(existing, set);
+    }
+    let n = 0;
+    for (const [sampleId, pids] of incoming) for (const r of data.index.allBySample.get(sampleId) ?? []) if (r.importId && !fieldBatches.has(r.importId) && !pids.has(r.parameterId)) n++;
+    return n;
+  }, [included, data.samples, data.imports, data.index, siteMap, dateOverrides, paramMapping]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const createSiteFor = async (text: string) => {
     const code = suggestCode(text);
     const existing = sites.find((s) => s.code.toLowerCase() === code.toLowerCase());
@@ -436,7 +461,7 @@ export function ImportWizard(_props: { projectId: string }) {
         params: paramMapping,
         units: unitMap,
       };
-      const res = await commitImport(project.id, parsed, mapping, { duplicates: dupes, rememberAliases: remember, fileName: state!.fileName, labName: parsed.labName });
+      const res = await commitImport(project.id, parsed, mapping, { duplicates: clearEarlier ? 'replace' : dupes, clearEarlier, rememberAliases: remember, fileName: state!.fileName, labName: parsed.labName });
       if (fromInbox.current.length) {
         await markInboxImported(fromInbox.current, project.id, res.id);
         fromInbox.current = [];
@@ -978,7 +1003,8 @@ export function ImportWizard(_props: { projectId: string }) {
                   If a result already exists for the same site, day and parameter
                 </Text>
                 <SegmentedControl
-                  value={dupes}
+                  value={clearEarlier ? 'replace' : dupes}
+                  disabled={clearEarlier}
                   onChange={(v) => setDupes(v as typeof dupes)}
                   data={[
                     { value: 'replace', label: 'Replace it (e.g. amended lab report)' },
@@ -987,6 +1013,14 @@ export function ImportWizard(_props: { projectId: string }) {
                   ]}
                 />
               </div>
+              {dupCount + clearCount > 0 && (
+                <Checkbox
+                  checked={clearEarlier}
+                  onChange={(e) => setClearEarlier(e.currentTarget.checked)}
+                  label="Clear out earlier results for these samples first"
+                  description={`For when an earlier import went wrong – e.g. an analyte matched to the wrong parameter. Results earlier files put on these sites and days are removed and this file’s take their place${clearCount ? ` (${clearCount} result${clearCount === 1 ? '' : 's'} for analytes not in this file would go)` : ''}. Field readings from a phone and results typed in stay.`}
+                />
+              )}
               <Checkbox label="Remember site and analyte names from this file for next time" checked={remember} onChange={(e) => setRemember(e.currentTarget.checked)} />
             </Stack>
           </Card>
@@ -1011,7 +1045,7 @@ export function ImportWizard(_props: { projectId: string }) {
               <div>
                 <Title order={4}>Imported {summary.results} results from {summary.samples} samples</Title>
                 <Text size="sm" c="dimmed">
-                  {summary.newSamples} new sample{summary.newSamples === 1 ? '' : 's'} · {summary.replaced} replaced · {summary.skipped} skipped · You can undo this from the Data tab.
+                  {summary.newSamples} new sample{summary.newSamples === 1 ? '' : 's'} · {summary.replaced} replaced · {summary.skipped} skipped{summary.cleared ? ` · ${summary.cleared} earlier result${summary.cleared === 1 ? '' : 's'} cleared` : ''} · You can undo this from the Data tab.
                 </Text>
               </div>
             </Group>

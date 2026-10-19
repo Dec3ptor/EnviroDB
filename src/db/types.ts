@@ -168,6 +168,8 @@ export interface Parameter {
   decimals?: number;
   builtIn?: boolean;
   order?: number;
+  /** Built-in names this parameter no longer goes by: matched to another parameter by someone (lower case). */
+  removedAliases?: string[];
 }
 
 export interface Sample {
@@ -520,6 +522,8 @@ export interface ImportBatch {
   results: number;
   skipped: number;
   replaced: number;
+  /** Earlier results cleared off these samples first (the import's "clear out" option). */
+  cleared?: number;
   notes?: string;
 }
 

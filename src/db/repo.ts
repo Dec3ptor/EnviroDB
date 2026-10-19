@@ -1,5 +1,7 @@
 import { roundEdits, type RoundPatch } from '../lib/rounds';
 import type { Table } from 'dexie';
+import { normName } from '../lib/matching';
+import { BUILT_IN_PARAMETERS } from '../data/parameters';
 import { db, getSettings, saveSettings } from './db';
 import { same } from '../sync/model';
 import { BUILT_IN_TEMPLATES } from '../data/templates';
@@ -149,13 +151,29 @@ export async function createParameter(name: string, unit: string, group = 'Other
   return p;
 }
 
+/**
+ * A name a lab uses for this parameter, remembered for next time. A name goes with the parameter it was last matched
+ * to: it comes off any other (and a built-in name taken off isn't put back when EnviroDB updates its own names).
+ */
 export async function addParameterAlias(paramId: string, alias: string): Promise<void> {
   const a = alias.trim();
   if (!a) return;
-  const p = await db.parameters.get(paramId);
-  if (!p) return;
-  if ([p.name, ...p.aliases].some((x) => x.toLowerCase() === a.toLowerCase())) return;
-  await db.parameters.update(paramId, { aliases: [...p.aliases, a] });
+  const sameName = (x: string) => normName(x) === normName(a);
+  await db.transaction('rw', db.parameters, async () => {
+    const all = await db.parameters.toArray();
+    const p = all.find((x) => x.id === paramId);
+    if (!p) return;
+    for (const other of all) {
+      if (other.id === paramId || !other.aliases.some(sameName)) continue;
+      // a built-in name taken off is remembered, so EnviroDB's own update doesn't put it back
+      const builtInNames = other.builtIn ? (BUILT_IN_PARAMETERS.find((x) => x.id === other.id)?.aliases ?? []).filter(sameName).map((x) => x.toLowerCase()) : [];
+      const removed = builtInNames.length ? Array.from(new Set([...(other.removedAliases ?? []), ...builtInNames])) : other.removedAliases;
+      await db.parameters.update(other.id, { aliases: other.aliases.filter((x) => !sameName(x)), removedAliases: removed });
+    }
+    const removed = (p.removedAliases ?? []).filter((x) => !sameName(x));
+    const has = [p.name, ...p.aliases].some(sameName);
+    if (!has || removed.length !== (p.removedAliases ?? []).length) await db.parameters.update(paramId, { aliases: has ? p.aliases : [...p.aliases, a], removedAliases: removed.length ? removed : undefined });
+  });
 }
 
 /** What deleting a parameter – from the library, or from one project – takes with it. */

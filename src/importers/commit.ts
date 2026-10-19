@@ -15,6 +15,12 @@ export interface ImportMapping {
 
 export interface CommitOptions {
   duplicates: 'replace' | 'skip' | 'keep';
+  /**
+   * Clear out what earlier lab files put on these samples first (for when an earlier import went wrong – an analyte
+   * matched to the wrong parameter): their results go, and this file's take their place. Field readings from a phone
+   * and results typed in stay.
+   */
+  clearEarlier?: boolean;
   rememberAliases: boolean;
   fileName: string;
   labName?: string;
@@ -144,6 +150,20 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
     }
     const toDelete: string[] = [];
     const finalResults: Result[] = [...extraResults];
+    if (opts.clearEarlier) {
+      const kinds = new Map((await db.imports.where('projectId').equals(projectId).toArray()).map((b) => [b.id, b.kind]));
+      const fromFile = (r: Result) => !!r.importId && kinds.get(r.importId) !== 'field';
+      const cleared = existing.filter((r) => fromFile(r) && !resultsToPut.has(`${r.sampleId}|${r.parameterId}`));
+      for (const r of cleared) toDelete.push(r.id);
+      // what's left of those samples' earlier results to compare with: field readings and results typed in
+      for (const [k, list] of existingByKey) {
+        const keep = list.filter((r) => !fromFile(r) || resultsToPut.has(k));
+        if (keep.length) existingByKey.set(k, keep);
+        else existingByKey.delete(k);
+      }
+      if (cleared.length) batch.notes = `Cleared ${cleared.length} earlier result${cleared.length === 1 ? '' : 's'} on these samples first (from earlier files).`;
+      batch.cleared = cleared.length;
+    }
     resultsToPut.forEach((res, k) => {
       const ex = existingByKey.get(k);
       if (ex?.length) {

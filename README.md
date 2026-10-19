@@ -42,7 +42,7 @@ there as they work and show up for the others within seconds.
   value (TSS > 100, zinc not detected…), show only samples with exceedances, search lab jobs
   and notes, and export exactly what you see to Excel, CSV or Word. Analytes are always listed in
   the same order – field measurements, laboratory physical, general chemistry, nutrients,
-  microbiology, dissolved metals, total metals, then hydrocarbons and the rest – and a switch shows
+  microbiology, dissolved metals, total metals, acid-soluble metals, then hydrocarbons and the rest – and a switch shows
   just those in the consent (with limits, triggers or other conditions, or required by a sampling
   schedule), only those with limits, or only those with triggers.
 - **Compare with guidelines.** Built-in values are ANZG (2018) / ANZECC (2000) freshwater
@@ -609,6 +609,16 @@ you to paste into your company's AI tool. EnviroDB never contacts an AI service.
    Use *Edit layout* to reorder sections or put some on landscape pages.
 
 ### Import formats
+
+**Metal fractions.** *Dissolved* is the filtered fraction – labs also call it *soluble* or *filtered*, and
+EnviroDB files those as dissolved. *Total* is total recoverable (unfiltered, digested). *Acid soluble*
+(unfiltered, acidified but not digested) sits between them and has parameters of its own. The analytes step
+shows which parameter each of the lab's names goes to; change one and the name goes with your choice next time.
+
+**Importing again after a mistake.** If an earlier file went in wrong – an analyte matched to the wrong
+parameter, say – import it again with the right matches and tick *Clear out earlier results for these samples
+first* on the last step: what earlier files put on those sites and days goes, and this file's results take its
+place. Field readings from a phone and results typed in stay. (Or undo the earlier import from the Data tab.)
 
 | Layout | Example | Notes |
 | --- | --- | --- |

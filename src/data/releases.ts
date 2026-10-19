@@ -11,6 +11,18 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.14.0',
+    date: '2026-10-20',
+    title: 'Acid-soluble metals, and importing again over a mistake',
+    items: [
+      'Acid-soluble metals (unfiltered, acidified but not digested) are parameters of their own – Acid Soluble Zinc and so on – rather than filed as total. Lab sections headed “acid soluble” are read as such.',
+      'Dissolved also goes by “soluble” and “filtered” (the filtered fraction): the analytes step shows “Soluble Zinc → Dissolved Zinc”.',
+      'A name you match to another parameter on import now moves to it, so the old match doesn’t come back next time.',
+      'New on the import’s last step: Clear out earlier results for these samples first – for when an earlier file went in wrong. What earlier files put on those sites and days goes; field readings and results typed in stay.',
+      'QA/QC: dissolved over acid soluble, and acid soluble over total, are flagged like dissolved over total.',
+    ],
+  },
+  {
     version: '1.13.0',
     date: '2026-10-19',
     title: 'Share report templates',

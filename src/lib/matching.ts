@@ -1,5 +1,8 @@
 import type { Parameter, Site } from '../db/types';
-import { ELEMENT_NAMES } from '../data/parameters';
+import { BUILT_IN_PARAMETERS, ELEMENT_NAMES } from '../data/parameters';
+
+/** The aliases each built-in parameter comes with (anything else on it was added by someone). */
+const BUILT_IN_ALIASES = new Map(BUILT_IN_PARAMETERS.map((p) => [p.id, p.aliases]));
 import { splitHeaderUnit } from './units';
 
 // ------------------------------------------------------------ analyte names
@@ -42,10 +45,22 @@ function dropBasis(toks: string[]): string[] {
   return out;
 }
 
+/** "acid soluble", "acid sol", "acid-extractable": one fraction of its own (not "acid" + "soluble"). */
+function joinAcidSoluble(toks: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < toks.length; i++) {
+    if (toks[i] === 'acid' && ['soluble', 'sol', 'extractable'].includes(toks[i + 1])) {
+      out.push('acidsoluble');
+      i++;
+    } else out.push(toks[i]);
+  }
+  return out;
+}
+
 /** Canonical key: synonyms applied, element symbols expanded, duplicates removed, tokens sorted. */
 export function analyteKey(name: string): string {
   const { name: bare } = splitHeaderUnit(name);
-  const toks = dropBasis(tokens(bare))
+  const toks = joinAcidSoluble(dropBasis(tokens(bare)))
     .map((t) => (t === 'as' ? t : t in SYNONYMS ? SYNONYMS[t] : t))
     .map((t) => ELEMENT_NAMES[t] ?? t)
     .filter(Boolean);
@@ -74,15 +89,27 @@ export function buildParamIndex(params: Parameter[]): ParamIndex {
     if (!list.includes(id)) list.push(id);
     map.set(k, list);
   };
-  // User-added aliases (non built-in) take precedence, so process built-ins first then overwrite.
+  // Names someone chose (their own parameters, and names added to built-in ones when matching a lab's file) take
+  // precedence over the built-in names: built-ins first, then the rest overwrite.
+  const own = (p: Parameter) => {
+    const builtIn = p.builtIn ? new Set((BUILT_IN_ALIASES.get(p.id) ?? []).map(normName)) : null;
+    return builtIn ? p.aliases.filter((a) => !builtIn.has(normName(a))) : p.aliases;
+  };
   const ordered = [...params].sort((a, b) => Number(!!b.builtIn) - Number(!!a.builtIn));
   for (const p of ordered) {
-    for (const n of [p.name, p.short ?? '', p.id, ...p.aliases]) {
+    const mine = new Set(own(p));
+    for (const n of [p.name, p.short ?? '', p.id, ...p.aliases.filter((a) => !mine.has(a))]) {
       if (!n) continue;
       exact.set(normName(n), p.id);
       add(analyteKey(n), p.id, keyed);
     }
   }
+  for (const p of ordered)
+    for (const n of own(p)) {
+      if (!n) continue;
+      exact.set(normName(n), p.id);
+      add(analyteKey(n), p.id, keyed);
+    }
   return { exact, keyed, params };
 }
 
@@ -123,7 +150,8 @@ export function matchParameter(name: string, index: ParamIndex, group?: string):
   // Group context: lab sections like "Heavy metals, dissolved, trace" disambiguate "Zinc".
   if (group) {
     const g = normName(group);
-    const fraction = /dissolved|filtered|soluble/.test(g) ? 'dissolved' : /total|recoverable|acid/.test(g) ? 'total' : '';
+    // "acid soluble" before "soluble": a different fraction
+    const fraction = /acid ?(soluble|sol|extractable)\b/.test(g) ? 'acid soluble' : /dissolved|filtered|soluble/.test(g) ? 'dissolved' : /total|recoverable|acid/.test(g) ? 'total' : '';
     if (fraction) {
       const k = analyteKey(`${fraction} ${bare}`);
       const hit = index.keyed.get(k);
