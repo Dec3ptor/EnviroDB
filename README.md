@@ -401,6 +401,13 @@ there as they work and show up for the others within seconds.
      each site's readings in the day's sample (the lab's results for that day join the same sample), what was seen
      in the sample's notes, the photos in the shared folder (*Field photos*), and marks the round sampled on the
      monitoring calendar. Sent again, it replaces what it added.
+  5. Or, with no file at all: on the computer, *Receive from a phone* (project ⋯ menu) shows a code and turns on
+     the webcam; on the phone, *Send the results → Send to the computer*, scan the code, then hold the phone up to
+     the webcam. Where the phone and computer can reach each other over Wi-Fi, everything goes straight across in
+     a second or two, photos at full size. Where the network keeps devices apart (as office networks often do),
+     the phone flashes the results as a stream of QR codes the webcam reads instead: the readings in a second or
+     two, then the photos (made smaller, about 60 KB each – a few seconds a photo). The phone remembers a network
+     where Wi-Fi didn't work and goes to the flashing code sooner. Then the same review and *Add* as a file.
 - **Client data packs.** A project's *Data pack* tab makes one HTML file with its data for the client –
   set up the way you want them to see it, and previewed as they will (on a computer or a phone):
   - **Sections** in the order you choose, each switched on or off and named as you like: a summary, the sites
@@ -559,6 +566,11 @@ EnviroDB has no server and never uploads anything. The only things that cross th
 - **Field mode** on a phone loads EnviroDB from GitHub Pages like the rest of it (and keeps a copy of the app's
   files for use with no signal); a field sheet travels in the link's "#" part, which browsers never send. What's
   recorded stays on the phone until you send the results file yourself. *Directions* opens the phone's maps.
+- **Sending from the phone to the computer** (*Receive from a phone*) uses no server and no internet: the Wi-Fi
+  link is direct between the two devices on the local network (no STUN or TURN servers, so it can't go anywhere
+  else), and the flashing code goes by camera. The computer's code holds a fresh key each time; the results are
+  sealed with it (AES-GCM), so only that computer can open them and any change on the way stops them opening. The
+  webcam is used only while the window is open, to read the codes; nothing it sees is kept.
 - **The data pack's aerial photo**, made from the same LINZ map pictures when the pack is set up (the
   same as looking at the Map tab). The pack itself contacts nothing: its own security policy allows no
   connections at all, so the client can open it offline and nothing in it is sent anywhere.

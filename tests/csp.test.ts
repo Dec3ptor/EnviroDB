@@ -41,6 +41,20 @@ describe('Content Security Policy', () => {
     }
   });
 
+  it('the phone-to-computer link is direct only: no outside servers, and in one place', () => {
+    const at = (f: string) => f.replace(/\\/g, '/');
+    for (const { f, text } of source) {
+      // the Wi-Fi link: only in its own file, with no servers to pass through or find addresses with
+      if (!at(f).endsWith('src/field/link/rtc.ts')) expect(text, f).not.toMatch(/new RTCPeerConnection|webkitRTCPeerConnection|createDataChannel/);
+      expect(text, f).not.toMatch(/\b(stun|turns?):/i);
+      // the camera: only to read QR codes
+      if (!at(f).endsWith('src/field/link/scan.ts')) expect(text, f).not.toMatch(/getUserMedia|getDisplayMedia/);
+    }
+    const rtc = readFileSync('src/field/link/rtc.ts', 'utf8');
+    expect(rtc).toMatch(/const NO_SERVERS: RTCConfiguration = \{ iceServers: \[\] \};/);
+    expect(rtc.match(/new RTCPeerConnection\(([^)]*)\)/g)).toEqual(['new RTCPeerConnection(NO_SERVERS)', 'new RTCPeerConnection(NO_SERVERS)']);
+  });
+
   it('field mode’s offline copy only keeps the app’s own files', () => {
     const sw = readFileSync('public/sw.js', 'utf8');
     // it answers only reads of the app's own address, and never names another

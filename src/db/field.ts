@@ -170,9 +170,10 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
     const dir = `Field photos/${safe(project?.code || project?.name || 'Project')}/${row.date.slice(0, 10)}`;
     const paths: string[] = [];
     for (let i = 0; i < list.length; i++) {
-      const path = `${dir}/${safe(row.site.code)} ${i + 1}.jpg`;
+      const type = /^data:(image\/(?:jpeg|png|webp));/.exec(list[i].dataUrl)?.[1] ?? 'image/jpeg';
+      const path = `${dir}/${safe(row.site.code)} ${i + 1}.${type === 'image/jpeg' ? 'jpg' : type.slice(6)}`;
       try {
-        await folder.writeBlob(path, new Blob([fromBase64(list[i].dataUrl.split(',')[1] ?? '') as BlobPart], { type: 'image/jpeg' }));
+        await folder.writeBlob(path, new Blob([fromBase64(list[i].dataUrl.split(',')[1] ?? '') as BlobPart], { type }));
         paths.push(path);
         photos++;
       } catch (e) {

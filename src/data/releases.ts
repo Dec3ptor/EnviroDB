@@ -11,6 +11,17 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.12.0',
+    date: '2026-10-19',
+    title: 'Send field results straight to the computer',
+    items: [
+      'On the computer: project ⋯ → Receive from a phone shows a code and turns on the webcam. On the phone: Send the results → Send to the computer, scan the code, then hold the phone up to the webcam. No file to save or upload.',
+      'Where the phone and computer can reach each other over Wi-Fi, everything goes straight across in a second or two, photos at full size.',
+      'Where the network keeps them apart (office networks often do), the phone flashes the results as a stream of QR codes the webcam reads: the readings in a second or two, then the photos made smaller (a few seconds each). It remembers a network where Wi-Fi didn’t work and goes to the flashing code sooner.',
+      'Sealed with a key that’s only ever on the computer’s screen: only that computer can open the results, and any change on the way stops them opening. No server or internet is used.',
+    ],
+  },
+  {
     version: '1.11.1',
     date: '2026-10-19',
     title: 'Clearer trend likelihoods',

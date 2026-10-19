@@ -7,10 +7,11 @@ import { ActionIcon, Alert, Anchor, AppShell, Badge, Button, Card, Center, Chip,
 import { notifications } from '@mantine/notifications';
 import { HashRouter, Route, Routes, useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { IconArrowLeft, IconCamera, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconFileImport, IconMapPin, IconSend, IconTrash, IconWifiOff } from '@tabler/icons-react';
+import { IconArrowLeft, IconCamera, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconDeviceDesktop, IconFileImport, IconMapPin, IconSend, IconTrash, IconWifiOff } from '@tabler/icons-react';
 import { addSheet, deleteSheet, fieldDb, getPref, resultsFileName, resultsOf, saveVisit, setPref } from './db';
 import { APPEARANCE, checkSheet, decodeSheet, FLOW, NOT_SAMPLED, readingWarning, WEATHER, type FieldSheet, type FieldVisit } from './model';
 import { keepOffline, type OfflineState } from './offline';
+import { LinkPage } from './LinkPage';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const nowLocal = () => {
@@ -441,6 +442,7 @@ function SitePage() {
 
 function SendPage() {
   const { sheetId = '' } = useParams();
+  const navigate = useNavigate();
   const stored = useLiveQuery(async () => (await fieldDb.sheets.get(sheetId)) ?? null, [sheetId]);
   const visits = useLiveQuery(() => fieldDb.visits.where('sheetId').equals(sheetId).toArray(), [sheetId]);
   const [by, setBy] = useState<string | null>(null);
@@ -505,8 +507,21 @@ function SendPage() {
           </Text>
         </Alert>
       )}
-      <Button size="lg" leftSection={<IconSend size={20} />} onClick={() => void send()}>
-        Send the results file
+      <Button
+        size="lg"
+        leftSection={<IconDeviceDesktop size={20} />}
+        onClick={() => {
+          void setPref('name', by);
+          navigate(`/field/s/${encodeURIComponent(sheet.id)}/link`);
+        }}
+      >
+        Send to the computer
+      </Button>
+      <Text size="xs" c="dimmed">
+        At the computer: scan the code it shows, then hold this phone up to its camera. No signal or file needed – over Wi-Fi when the two can connect, otherwise as a flashing code.
+      </Text>
+      <Button size="md" variant="default" leftSection={<IconSend size={18} />} onClick={() => void send()}>
+        Send as a file instead
       </Button>
       <Text size="xs" c="dimmed">
         Choose OneDrive and the team’s <b>Inbox</b> folder (EnviroDB on the computer picks it up there), or email it to yourself and drop it on the Import page. Needs a signal; the records stay on this phone until you remove the
@@ -517,6 +532,29 @@ function SendPage() {
           Last sent {showDate(stored.sentAt.slice(0, 10))} {stored.sentAt.slice(11, 16)}.
         </Text>
       )}
+    </Stack>
+  );
+}
+
+function LinkRoute() {
+  const { sheetId = '' } = useParams();
+  const navigate = useNavigate();
+  const stored = useLiveQuery(async () => (await fieldDb.sheets.get(sheetId)) ?? null, [sheetId]);
+  const [ready, setReady] = useState<ReturnType<typeof resultsOf> | null>(null);
+  useEffect(() => {
+    // the results as they are now (later changes on this page don't alter what's being sent)
+    if (!stored || ready) return;
+    void (async () => {
+      const visits = await fieldDb.visits.where('sheetId').equals(sheetId).toArray();
+      setReady(resultsOf(stored.sheet, visits.map((x) => x.visit), (await getPref('name')) ?? ''));
+    })();
+  }, [stored, ready, sheetId]);
+  if (stored === null) return <Navigate to="/field" />;
+  const back = `/field/s/${encodeURIComponent(sheetId)}/send`;
+  return (
+    <Stack gap="sm">
+      <Header title="Send to the computer" back={back} />
+      {ready ? <LinkPage results={ready} onSent={() => void fieldDb.sheets.update(sheetId, { sentAt: new Date().toISOString() })} onCancel={() => navigate(back)} /> : <Loader />}
     </Stack>
   );
 }
@@ -538,6 +576,7 @@ export default function FieldApp() {
             <Route path="/field/open" element={<OpenLink />} />
             <Route path="/field/s/:sheetId" element={<SheetPage />} />
             <Route path="/field/s/:sheetId/send" element={<SendPage />} />
+            <Route path="/field/s/:sheetId/link" element={<LinkRoute />} />
             <Route path="/field/s/:sheetId/:siteId" element={<SitePage />} />
             <Route path="*" element={<Navigate to="/field" />} />
           </Routes>

@@ -172,7 +172,7 @@ export function checkResults(x: unknown): FieldResults {
   const p = isObj(sh.project) ? sh.project : {};
   const visits = (Array.isArray(x.visits) ? x.visits : []).filter(isObj).slice(0, 500).map((v): FieldVisit => {
     const g = isObj(v.gps) && num(v.gps.lat) !== undefined && num(v.gps.lng) !== undefined ? { lat: num(v.gps.lat)!, lng: num(v.gps.lng)!, acc: num(v.gps.acc) } : undefined;
-    const photos = (Array.isArray(v.photos) ? v.photos : []).filter(isObj).filter((ph) => typeof ph.dataUrl === 'string' && /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(ph.dataUrl)).slice(0, 20).map((ph) => ({ name: str(ph.name, 120) ?? 'photo.jpg', dataUrl: ph.dataUrl as string }));
+    const photos = (Array.isArray(v.photos) ? v.photos : []).filter(isObj).filter((ph) => typeof ph.dataUrl === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(ph.dataUrl)).slice(0, 20).map((ph) => ({ name: str(ph.name, 120) ?? 'photo.jpg', dataUrl: ph.dataUrl as string }));
     return {
       siteId: str(v.siteId, 80) ?? '',
       time: str(v.time, 20),

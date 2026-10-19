@@ -2,7 +2,7 @@ import { InboxPanel } from '../../components/InboxPanel';
 import { lazy, Suspense, useState } from 'react';
 import { Badge, Button, Center, Group, Loader, Menu, Stack, Tabs, Text, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap, IconListCheck, IconTrendingUp, IconFlag, IconPackageExport, IconDeviceMobile } from '@tabler/icons-react';
+import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap, IconListCheck, IconTrendingUp, IconFlag, IconPackageExport, IconDeviceMobile, IconDeviceMobileDown } from '@tabler/icons-react';
 import { ProjectDataProvider, useProject } from '../../hooks/useProjectData';
 import { OverviewTab } from './Overview';
 import { DataTab } from './Data';
@@ -19,7 +19,9 @@ import { ImportWizard } from '../Import';
 import { ConsentSetupPage } from './ConsentSetup';
 import { downloadProjectPackage } from '../../db/backup';
 import { AiInputModal } from '../../components/AiInputModal';
-import { FieldSheetModal } from '../../components/FieldSheet';
+import { FieldResultsModal, FieldSheetModal } from '../../components/FieldSheet';
+import { ReceiveFromPhone } from '../../components/ReceiveFromPhone';
+import type { FieldResults } from '../../field/model';
 
 // the map (and Leaflet) loads only when the tab is opened
 const MapTab = lazy(() => import('./MapTab').then((m) => ({ default: m.MapTab })));
@@ -48,6 +50,8 @@ function Header() {
   const current = loc.pathname.slice(base.length + 1).split('/')[0] || 'overview';
   const [aiOpen, setAiOpen] = useState(false);
   const [fieldOpen, setFieldOpen] = useState(false);
+  const [receiveOpen, setReceiveOpen] = useState(false);
+  const [received, setReceived] = useState<{ results: FieldResults; name: string } | null>(null);
   const qa = useProjectQa('12m');
   const meta = [project.client, project.consents && `Consent ${project.consents}`, project.regulator, `${sites.length} sites`, `${samples.length} samples`].filter(Boolean).join(' · ');
   return (
@@ -96,6 +100,9 @@ function Header() {
               <Menu.Item leftSection={<IconDeviceMobile size={16} />} onClick={() => setFieldOpen(true)}>
                 Field sheet for a phone
               </Menu.Item>
+              <Menu.Item leftSection={<IconDeviceMobileDown size={16} />} onClick={() => setReceiveOpen(true)}>
+                Receive from a phone
+              </Menu.Item>
               <Menu.Item leftSection={<IconDownload size={16} />} onClick={() => downloadProjectPackage(project.id)}>
                 Download project file (to share)
               </Menu.Item>
@@ -129,6 +136,8 @@ function Header() {
       </Tabs>
       <AiInputModal opened={aiOpen} onClose={() => setAiOpen(false)} />
       <FieldSheetModal opened={fieldOpen} onClose={() => setFieldOpen(false)} />
+      {receiveOpen && <ReceiveFromPhone opened={receiveOpen} onClose={() => setReceiveOpen(false)} onReceived={(results, name) => setReceived({ results, name })} />}
+      {received && <FieldResultsModal results={received.results} fileName={received.name} onClose={() => setReceived(null)} />}
     </Stack>
   );
 }
