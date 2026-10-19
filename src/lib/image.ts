@@ -121,7 +121,10 @@ export async function trimmedImageFile(file: Blob): Promise<string | null> {
   }
 }
 
-/** An image on the web as a trimmed signature; null when the site doesn't allow it to be read (most don't). */
+/**
+ * An image on the web as a trimmed signature; null when it can't be read – the page's security policy lets it contact
+ * no other site, so a logo linked from a pasted email signature is left out.
+ */
 export async function fetchedImage(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, { mode: 'cors', credentials: 'omit' });

@@ -362,6 +362,28 @@ don't, as that's each person's own – restoring one leaves yours as it is. The 
 name and letterhead; your name, signature, date format and other preferences are your own and stay in
 your browser.
 
+### What crosses the internet
+
+EnviroDB has no server and never uploads anything. The only things that cross the internet are:
+
+- **The app itself**, downloaded from GitHub Pages when you open it. GitHub sends files; it never
+  receives your data. Pages inside the app come after a "#" in the address, which browsers never send
+  to the server.
+- **The Map tab's map pictures and place search.** The map draws on LINZ aerial photos (with CARTO
+  place names), OpenStreetMap or OpenTopoMap, and *Find a place* asks OpenStreetMap. These services see
+  which area is being looked at and your internet address. They don't see site names, results or
+  anything else from your projects. Coordinates typed into *Find a place* are handled in the app.
+
+The page holds itself to this. Its **Content Security Policy** (in `src/security/csp.ts`, added to the
+page by the build) tells the browser to load code only from EnviroDB's own address, and to contact
+nothing but that address and the map services. Anything else is refused by the browser itself –
+uploads, beacons, tracking images, outside scripts, `eval` – so a later change or a bad library can't
+quietly send data out. One result: a logo linked from the web in a pasted email signature isn't fetched
+(a signature image pasted or uploaded as a picture works as before).
+
+AI help is copy and paste: *Copy for AI input* and the consent set-up put text on your clipboard for
+you to paste into your company's AI tool. EnviroDB never contacts an AI service.
+
 ## Getting started
 
 1. Open the site in Edge or Chrome and connect to your team's workspace folder (see above). Choose
