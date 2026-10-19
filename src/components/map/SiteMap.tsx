@@ -5,8 +5,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// LINZ Basemaps key, as in PivotMap: visible to every visitor, as is normal for browser map keys.
-const LINZ_BASEMAPS_KEY = 'd01hep5551e30kxb7w85hck49tp';
+import { LINZ_BASEMAPS_KEY } from './linz';
 const NEW_ZEALAND: L.LatLngBoundsExpression = [
   [-47.4, 166.3],
   [-34.3, 178.6],

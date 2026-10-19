@@ -374,6 +374,19 @@ there as they work and show up for the others within seconds.
   - **Revise** unlocks it (with the reason), and *Issue Rev 1* locks the revision; earlier revisions stay as
     issued, and *Issued* lists them – with what changed between them – and the project's other issued
     reports. Issued reports are shared with the team and kept in project backups.
+- **Client data packs.** A project's *Data pack* tab makes one HTML file with its data for the client –
+  set up the way you want them to see it, and previewed as they will (on a computer or a phone):
+  - **Sections** in the order you choose, each switched on or off and named as you like: a summary, the sites
+    on a map (with a LINZ aerial photo taken when the pack is made), graphs (one at a time from a list, or every
+    analyte one after another), each site's latest results, consent compliance, every result in a table to
+    sort and page through, and text sections of your own.
+  - **The look**: title, introduction, colour, logo, light or dark (or as their device), and a note at the foot.
+  - **What's in it and what they can do**: the sites, analytes and dates; consent limits and triggers (on the
+    graphs, highlighted in the tables) and guideline values; whether they can pick sites, analytes and dates;
+    whether they can download the results (CSV). Values on a graph show on hover or tap; a site on the map opens
+    its graphs.
+  - It opens in any browser, **offline, and sends nothing anywhere** – its security policy lets it run only its
+    own script and connect to nothing. Each pack is numbered (v1, v2 …) with the date and the EnviroDB version.
 - **Version numbers.** The version is at the foot of the menu – click it for what's new. Reports, Excel
   files and backups record the version that made them. When a new version is published EnviroDB offers to
   reload, and it tells you if someone in your workspace is already using a newer one.
@@ -516,6 +529,9 @@ EnviroDB has no server and never uploads anything. The only things that cross th
   place names), OpenStreetMap or OpenTopoMap, and *Find a place* asks OpenStreetMap. These services see
   which area is being looked at and your internet address. They don't see site names, results or
   anything else from your projects. Coordinates typed into *Find a place* are handled in the app.
+- **The data pack's aerial photo**, made from the same LINZ map pictures when the pack is set up (the
+  same as looking at the Map tab). The pack itself contacts nothing: its own security policy allows no
+  connections at all, so the client can open it offline and nothing in it is sent anywhere.
 
 The page holds itself to this. Its **Content Security Policy** (in `src/security/csp.ts`, added to the
 page by the build) tells the browser to load code only from EnviroDB's own address, and to contact

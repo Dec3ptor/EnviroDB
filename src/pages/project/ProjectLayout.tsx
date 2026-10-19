@@ -2,7 +2,7 @@ import { InboxPanel } from '../../components/InboxPanel';
 import { lazy, Suspense, useState } from 'react';
 import { Badge, Button, Center, Group, Loader, Menu, Stack, Tabs, Text, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap, IconListCheck, IconTrendingUp, IconFlag } from '@tabler/icons-react';
+import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap, IconListCheck, IconTrendingUp, IconFlag, IconPackageExport } from '@tabler/icons-react';
 import { ProjectDataProvider, useProject } from '../../hooks/useProjectData';
 import { OverviewTab } from './Overview';
 import { DataTab } from './Data';
@@ -22,6 +22,7 @@ import { AiInputModal } from '../../components/AiInputModal';
 
 // the map (and Leaflet) loads only when the tab is opened
 const MapTab = lazy(() => import('./MapTab').then((m) => ({ default: m.MapTab })));
+const PackTab = lazy(() => import('./Pack').then((m) => ({ default: m.PackTab })));
 
 const TABS = [
   { value: 'overview', label: 'Overview', icon: IconLayoutDashboard },
@@ -34,6 +35,7 @@ const TABS = [
   { value: 'npsfm', label: 'NPS-FM', icon: IconFlag },
   { value: 'schedule', label: 'Schedule', icon: IconCalendarEvent },
   { value: 'reports', label: 'Reports', icon: IconFileReport },
+  { value: 'pack', label: 'Data pack', icon: IconPackageExport },
   { value: 'setup', label: 'Setup', icon: IconSettings },
 ];
 
@@ -158,6 +160,20 @@ export function ProjectLayout() {
         <Route path="compliance" element={<ComplianceTab />} />
         <Route path="schedule" element={<ScheduleTab />} />
         <Route path="reports" element={<ReportsTab />} />
+        <Route
+          path="pack"
+          element={
+            <Suspense
+              fallback={
+                <Center h={300}>
+                  <Loader />
+                </Center>
+              }
+            >
+              <PackTab />
+            </Suspense>
+          }
+        />
         <Route path="setup" element={<SetupTab />} />
         <Route
           path="import"

@@ -11,6 +11,18 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.8.0',
+    date: '2026-10-19',
+    title: 'Client data pack',
+    items: [
+      'A Data pack tab on each project: one HTML file with the project’s data for the client – a summary, the sites on a map (with an aerial photo), interactive graphs, the latest results, consent compliance and every result.',
+      'Set how it looks – title, introduction, colour, logo, light or dark – and what the client sees and can do: the sites, analytes and dates in it, the sections and their order, limits and guideline values, choosing sites and dates, downloading the data.',
+      'See it as the client will, on a computer or a phone, as you set it up.',
+      'It opens in any browser, offline, and sends nothing anywhere: its security policy lets it run only its own script and connect to nothing.',
+      'Each pack is numbered (v1, v2 …), with the date and the EnviroDB version that made it.',
+    ],
+  },
+  {
     version: '1.7.0',
     date: '2026-10-19',
     title: 'Issued reports, locked',

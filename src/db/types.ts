@@ -43,8 +43,66 @@ export interface Project {
   labFolder?: string;
   /** Notes for the monitoring calendar (kept here by its first version; a calendar row made for the project starts with them). */
   calendarNotes?: string;
+  /** How the client data pack is set up, and the last one made. */
+  pack?: PackSettings;
   createdAt: string;
   updatedAt: string;
+}
+
+// ---------------------------------------------------------------- client data pack
+
+export type PackSectionType = 'summary' | 'map' | 'graphs' | 'latest' | 'compliance' | 'data' | 'text';
+
+export interface PackSection {
+  id: string;
+  type: PackSectionType;
+  /** Its heading in the pack. */
+  title: string;
+  on: boolean;
+  /** A text section's text (**bold**, *italic*, "- " bullets). */
+  text?: string;
+  /** Graphs: one at a time, chosen from a list – or all of them, one after another. */
+  mode?: 'picker' | 'all';
+}
+
+/**
+ * A client data pack: one HTML file with the project's data – map, graphs, tables – that opens in any browser,
+ * offline. How it looks and what the client can see and do, set per project.
+ */
+export interface PackSettings {
+  title?: string;
+  subtitle?: string;
+  /** Text at the top (**bold**, *italic*, "- " bullets). */
+  intro?: string;
+  footer?: string;
+  accent?: string;
+  /** PNG or JPEG data URL. */
+  logo?: string;
+  theme?: 'light' | 'dark' | 'auto';
+  /** The data in it: all, the last few years or between two dates. */
+  period?: 'all' | 'years' | 'custom';
+  years?: number;
+  start?: string;
+  end?: string;
+  /** None: every monitoring site. */
+  siteIds?: ID[];
+  /** None: the analytes the consent sets limits for (or every one with results when it sets none). */
+  parameterIds?: ID[];
+  sections?: PackSection[];
+  /** Consent limits and triggers on the graphs, highlighted in tables, and the compliance section. */
+  limits?: boolean;
+  /** Guideline values on the graphs and highlighted. */
+  guidelineSetIds?: ID[];
+  /** The client can pick sites, analytes and dates. */
+  controls?: boolean;
+  /** The client can download the data (CSV). */
+  download?: boolean;
+  /** An aerial photo behind the site map (taken when the pack is made). */
+  aerial?: boolean;
+  /** The last pack made: its version (1, 2 …), when and by whom. */
+  version?: number;
+  madeAt?: string;
+  madeBy?: string;
 }
 
 export const SITE_TYPES = [
