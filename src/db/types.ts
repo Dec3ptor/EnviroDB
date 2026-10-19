@@ -1110,6 +1110,8 @@ export interface Settings {
   qaRpdLimitNearDl?: number;
   /** QA/QC: how unusual a result is before it's flagged, in robust standard deviations (default 3.5). */
   qaOutlierZ?: number;
+  /** The app's colour (hex) – this person's own; unset = deep teal. */
+  appColour?: string;
 }
 
 /** Something in a letterhead's header or footer: a line of text ({page} = page number) or a picture. */

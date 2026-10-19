@@ -263,7 +263,7 @@ export function DashboardPage() {
         }
       />
       {editing && (
-        <Alert variant="light" color="teal" py={8}>
+        <Alert variant="light" py={8}>
           <Group justify="space-between" gap="sm" wrap="wrap">
             <Text size="sm" style={{ flex: '1 1 420px' }}>
               {narrow

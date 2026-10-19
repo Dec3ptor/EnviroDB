@@ -329,7 +329,7 @@ function SitesBadge({ block }: { block: ReportBlock }) {
   const out = sites.filter((s) => block.excludeSiteIds?.includes(s.id)).map((s) => s.code);
   if (codes.length)
     return (
-      <Badge size="xs" variant="light" color="teal" style={{ flexShrink: 0, textTransform: 'none' }} title={`Only ${codes.join(', ')}`}>
+      <Badge size="xs" variant="light" style={{ flexShrink: 0, textTransform: 'none' }} title={`Only ${codes.join(', ')}`}>
         {codes.length > 3 ? `${codes.length} sites` : codes.join(', ')}
       </Badge>
     );

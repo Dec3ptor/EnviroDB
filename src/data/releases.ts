@@ -11,6 +11,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.11.0',
+    date: '2026-10-19',
+    title: 'Choose the app’s colour',
+    items: [
+      'Settings → App colour: pick the colour of EnviroDB’s buttons, links and highlights (a swatch, the picker or a hex code). It’s yours – colleagues choose their own – and Back to teal undoes it.',
+      'Ticks, “saved” badges and other signs that something is done stay green whatever the colour. Reports and data packs keep the colours set in their template and pack.',
+      'A light colour gets black writing on its buttons, and a darker shade of it for links and the chosen tab, so they stay readable.',
+    ],
+  },
+  {
     version: '1.10.0',
     date: '2026-10-19',
     title: 'Field mode for phones',

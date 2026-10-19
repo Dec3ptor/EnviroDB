@@ -54,8 +54,8 @@ export function Shell() {
           <Group gap="xs" wrap="nowrap">
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
             <Link to="/" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Box style={{ background: 'var(--mantine-color-teal-8)', borderRadius: 8, width: 30, height: 30, display: 'grid', placeItems: 'center' }}>
-                <IconDroplet size={18} color="white" />
+              <Box style={{ background: 'var(--mantine-primary-color-8)', borderRadius: 8, width: 30, height: 30, display: 'grid', placeItems: 'center' }}>
+                <IconDroplet size={18} color="var(--mantine-primary-color-contrast)" />
               </Box>
               <Text fw={700} size="lg">
                 EnviroDB
@@ -82,7 +82,7 @@ export function Shell() {
               to={n.to}
               label={n.label}
               leftSection={<n.icon size={18} stroke={1.6} />}
-              rightSection={'badge' in n && n.badge ? <Badge size="sm" variant="filled" color="teal" title={`${n.badge} new lab file${n.badge === 1 ? '' : 's'} in the inbox`}>{n.badge}</Badge> : undefined}
+              rightSection={'badge' in n && n.badge ? <Badge size="sm" variant="filled" title={`${n.badge} new lab file${n.badge === 1 ? '' : 's'} in the inbox`}>{n.badge}</Badge> : undefined}
               active={n.active}
               variant="light"
               style={{ borderRadius: 8 }}

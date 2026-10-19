@@ -229,8 +229,8 @@ function PeriodDialog({ value, yearStartMonth, extra, onClose, onPick }: { value
                     p={compact(g.title) ? 6 : 8}
                     style={{
                       borderRadius: 'var(--mantine-radius-sm)',
-                      border: `1px solid ${now ? 'var(--mantine-color-teal-6)' : 'var(--mantine-color-default-border)'}`,
-                      background: now ? 'var(--mantine-color-teal-light)' : undefined,
+                      border: `1px solid ${now ? 'var(--mantine-primary-color-6)' : 'var(--mantine-color-default-border)'}`,
+                      background: now ? 'var(--mantine-primary-color-light)' : undefined,
                       textAlign: compact(g.title) ? 'center' : undefined,
                     }}
                   >

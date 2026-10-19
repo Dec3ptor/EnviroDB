@@ -496,7 +496,7 @@ export function ImportWizard(_props: { projectId: string }) {
                 <IconX size={48} stroke={1.5} />
               </Dropzone.Reject>
               <Dropzone.Idle>
-                <IconFileSpreadsheet size={48} stroke={1.5} color="var(--mantine-color-teal-7)" />
+                <IconFileSpreadsheet size={48} stroke={1.5} color="var(--mantine-primary-color-7)" />
               </Dropzone.Idle>
               <div>
                 <Text size="lg" fw={600}>
@@ -576,7 +576,7 @@ export function ImportWizard(_props: { projectId: string }) {
                 <Group justify="space-between" mb="sm" wrap="wrap">
                   <Group gap="sm">
                     <Text fw={600}>{grid.pdf ? `PDF report “${plan.sheet}”` : `Sheet “${plan.sheet}”`}</Text>
-                    <Badge variant="light" color={count ? 'teal' : 'gray'}>
+                    <Badge variant="light" color={count ? undefined : 'gray'}>
                       {count} samples
                     </Badge>
                   </Group>

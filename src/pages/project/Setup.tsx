@@ -219,7 +219,7 @@ export function SetupTab() {
     <Stack gap="lg">
       {/* a new project's quickest start; once there are rules it is under Compliance › Add rule */}
       {!rules.length && (
-        <Card style={{ borderColor: 'var(--mantine-color-teal-4)' }}>
+        <Card style={{ borderColor: 'var(--mantine-primary-color-4)' }}>
           <Group justify="space-between" align="center" wrap="wrap" gap="sm">
             <div style={{ flex: '1 1 320px' }}>
               <Title order={4}>Set up from consent documents</Title>

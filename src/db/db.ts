@@ -174,7 +174,7 @@ export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<voi
 }
 
 /** Settings that are each person's own, kept in this browser. The others (company, letterhead) are the team's. */
-export const PERSONAL_SETTINGS: ReadonlyArray<keyof Settings> = ['author', 'signatureImage', 'signatureDetails', 'dateFormat', 'guidelineUnit', 'defaultTemplateId', 'lastBackupAt'];
+export const PERSONAL_SETTINGS: ReadonlyArray<keyof Settings> = ['author', 'signatureImage', 'signatureDetails', 'dateFormat', 'guidelineUnit', 'defaultTemplateId', 'lastBackupAt', 'appColour'];
 const isPersonal = (k: string) => (PERSONAL_SETTINGS as readonly string[]).includes(k);
 /** Meta record of this person's own settings (the team's are under "settings"). */
 export const MY_SETTINGS = 'mySettings';

@@ -300,8 +300,8 @@ body {
 }
 .cal-sheet .cal-h1 th { height: 26px; }
 .cal-sheet .cal-h2 th { top: 26px; height: 24px; font-weight: 600; }
-.cal-sheet thead th.cal-now { color: var(--mantine-color-teal-7); box-shadow: inset 0 -3px 0 var(--mantine-color-teal-6); }
-[data-mantine-color-scheme='dark'] .cal-sheet thead th.cal-now { color: var(--mantine-color-teal-3); }
+.cal-sheet thead th.cal-now { color: var(--mantine-primary-color-7); box-shadow: inset 0 -3px 0 var(--mantine-primary-color-6); }
+[data-mantine-color-scheme='dark'] .cal-sheet thead th.cal-now { color: var(--mantine-primary-color-3); }
 .cal-sheet td {
   position: relative;
   height: 34px;
@@ -341,8 +341,8 @@ body {
   word-break: break-word;
 }
 .cal-job .cal-text { font-weight: 600; padding-right: 10px; }
-.cal-sheet td.cal-linked.cal-job { box-shadow: inset 3px 0 0 var(--mantine-color-teal-5); }
-.cal-open { position: absolute; top: 3px; right: 3px; opacity: 0; color: var(--mantine-color-teal-7); line-height: 0; }
+.cal-sheet td.cal-linked.cal-job { box-shadow: inset 3px 0 0 var(--mantine-primary-color-5); }
+.cal-open { position: absolute; top: 3px; right: 3px; opacity: 0; color: var(--mantine-primary-color-7); line-height: 0; }
 .cal-job:hover .cal-open { opacity: 1; }
 .cal-t-jobCode .cal-text,
 .cal-t-purchaseOrder .cal-text { font-size: 12px; }
@@ -373,7 +373,7 @@ body {
 .cal-win.s { left: 4px; border-left: 2px solid var(--cal-win); border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
 .cal-win.e { right: 4px; border-right: 2px solid var(--cal-win); border-top-right-radius: 10px; border-bottom-right-radius: 10px; }
 .cal-sheet td.cal-win-joined { border-right-color: transparent; }
-.cal-dot { position: absolute; right: 3px; bottom: 3px; z-index: 2; width: 6px; height: 6px; border-radius: 50%; background: var(--mantine-color-teal-6); pointer-events: none; }
+.cal-dot { position: absolute; right: 3px; bottom: 3px; z-index: 2; width: 6px; height: 6px; border-radius: 50%; background: var(--mantine-primary-color-6); pointer-events: none; }
 .cal-dot.cal-dot-inline { position: static; display: inline-block; vertical-align: 1px; }
 .cal-flag,
 .cal-flag-key { width: 0; height: 0; border-top: 7px solid var(--mantine-color-orange-6); border-left: 7px solid transparent; }
@@ -470,15 +470,15 @@ body {
   cursor: grab;
   touch-action: none;
 }
-.sec-chip:hover { border-color: var(--mantine-color-teal-5); background: var(--mantine-color-teal-light); }
+.sec-chip:hover { border-color: var(--mantine-primary-color-5); background: var(--mantine-primary-color-light); }
 .sec-chip svg { color: var(--mantine-color-dimmed); flex-shrink: 0; }
 .sec-chip[data-dragging] { opacity: 0.4; }
-.sec-chip-drag { cursor: grabbing; box-shadow: var(--mantine-shadow-md); border-color: var(--mantine-color-teal-6); padding-left: 8px; }
-.sec-drop-before { box-shadow: 0 -3px 0 var(--mantine-color-teal-6); border-radius: 4px; }
-.sec-drop-after { box-shadow: 0 3px 0 var(--mantine-color-teal-6); border-radius: 4px; }
+.sec-chip-drag { cursor: grabbing; box-shadow: var(--mantine-shadow-md); border-color: var(--mantine-primary-color-6); padding-left: 8px; }
+.sec-drop-before { box-shadow: 0 -3px 0 var(--mantine-primary-color-6); border-radius: 4px; }
+.sec-drop-after { box-shadow: 0 3px 0 var(--mantine-primary-color-6); border-radius: 4px; }
 .sec-end { min-height: 6px; border-radius: 6px; font-size: 12px; color: var(--mantine-color-dimmed); text-align: center; }
 .sec-end.on { min-height: 30px; padding: 6px; border: 1px dashed var(--mantine-color-default-border); }
-.sec-end.over { border-color: var(--mantine-color-teal-6); background: var(--mantine-color-teal-light); color: var(--mantine-color-teal-8); }
+.sec-end.over { border-color: var(--mantine-primary-color-6); background: var(--mantine-primary-color-light); color: var(--mantine-primary-color-8); }
 
 /* ---------------------------------------------------------------- dashboard widgets */
 .dash-widget {
@@ -519,15 +519,15 @@ body {
   cursor: grabbing;
 }
 .dash-editing {
-  box-shadow: 0 0 0 2px var(--mantine-color-teal-3);
+  box-shadow: 0 0 0 2px var(--mantine-primary-color-3);
 }
 .react-grid-item.react-grid-placeholder {
-  background: var(--mantine-color-teal-4);
+  background: var(--mantine-primary-color-4);
   border-radius: var(--mantine-radius-md);
   opacity: 0.25;
 }
 .react-grid-item > .react-resizable-handle::after {
-  border-color: var(--mantine-color-teal-6);
+  border-color: var(--mantine-primary-color-6);
 }
 
 /* ------------------------------------------------------------ site map */
@@ -617,7 +617,7 @@ body {
   background: var(--mantine-color-default-hover);
 }
 .edb-site-row.sel {
-  background: var(--mantine-color-teal-light);
+  background: var(--mantine-primary-color-light);
 }
 
 /* a fill-in to click under a caption box: [site name] */
@@ -626,15 +626,15 @@ body {
   line-height: 1.4;
   padding: 0 6px;
   border-radius: 4px;
-  color: var(--mantine-color-teal-8);
-  background: var(--mantine-color-teal-0);
+  color: var(--mantine-primary-color-8);
+  background: var(--mantine-primary-color-0);
 }
 .edb-fillin:hover {
-  background: var(--mantine-color-teal-1);
+  background: var(--mantine-primary-color-1);
 }
 [data-mantine-color-scheme='dark'] .edb-fillin {
-  color: var(--mantine-color-teal-2);
-  background: rgba(56, 178, 172, 0.15);
+  color: var(--mantine-primary-color-2);
+  background: var(--mantine-primary-color-light);
 }
 
 /* Compliance tab: limits & triggers at a glance – each value coloured by how the site did */
@@ -677,7 +677,7 @@ body {
 }
 .edb-limit:hover {
   filter: brightness(0.96);
-  outline: 2px solid var(--mantine-color-teal-4);
+  outline: 2px solid var(--mantine-primary-color-4);
 }
 .edb-limit-exceeded {
   background: var(--mantine-color-red-1);

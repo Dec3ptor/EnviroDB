@@ -58,7 +58,7 @@ export function TemplateFromDocModal({ onClose, onMade }: { onClose: () => void;
             </Text>
             <Dropzone onDrop={(files) => files[0] && void load(files[0])} accept={ACCEPT} loading={busy} multiple={false} maxSize={50 * 1024 * 1024}>
               <Group justify="center" gap="md" mih={110} style={{ pointerEvents: 'none' }}>
-                <IconFileText size={40} stroke={1.4} color="var(--mantine-color-teal-6)" />
+                <IconFileText size={40} stroke={1.4} color="var(--mantine-primary-color-6)" />
                 <div>
                   <Text fw={600}>Drop the document here</Text>
                   <Text size="sm" c="dimmed">

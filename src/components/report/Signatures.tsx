@@ -106,8 +106,8 @@ export function SignatureInput({ image, name, onImage, onPeople }: { image?: str
         pos="relative"
         style={{
           height: 76,
-          border: `1px ${focused ? 'solid' : 'dashed'} var(--mantine-color-${focused ? 'teal-6' : 'gray-5'})`,
-          boxShadow: focused ? '0 0 0 2px var(--mantine-color-teal-1)' : undefined,
+          border: `1px ${focused ? 'solid' : 'dashed'} ${focused ? 'var(--mantine-primary-color-6)' : 'var(--mantine-color-gray-5)'}`,
+          boxShadow: focused ? '0 0 0 2px var(--mantine-primary-color-1)' : undefined,
           borderRadius: 6,
           background: '#fff',
           display: 'flex',
@@ -122,7 +122,7 @@ export function SignatureInput({ image, name, onImage, onPeople }: { image?: str
         ) : image ? (
           <img src={image} alt={`Signature${name ? ` of ${name}` : ''}`} style={{ maxWidth: '100%', maxHeight: '100%' }} />
         ) : (
-          <Text size="xs" c={focused ? 'teal.8' : 'dimmed'} ta="center" lh={1.35}>
+          <Text size="xs" c={focused ? 'var(--mantine-primary-color-light-color)' : 'dimmed'} ta="center" lh={1.35}>
             {focused ? 'Now paste (Ctrl+V)' : 'Click here and paste (Ctrl+V) a signature image, or a whole signature copied from an email or Word'}
           </Text>
         )}
@@ -137,7 +137,7 @@ export function SignatureInput({ image, name, onImage, onPeople }: { image?: str
         />
       </Box>
       {image && (
-        <Text size="xs" c={focused ? 'teal.8' : 'dimmed'} mt={-2}>
+        <Text size="xs" c={focused ? 'var(--mantine-primary-color-light-color)' : 'dimmed'} mt={-2}>
           {focused ? 'Now paste (Ctrl+V) to replace it.' : 'Click the signature and paste (Ctrl+V) to replace it.'} Without a signature, a line is left to sign by hand.
         </Text>
       )}

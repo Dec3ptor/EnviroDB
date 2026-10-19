@@ -454,8 +454,8 @@ there as they work and show up for the others within seconds.
   can be deleted from the library, or removed from one project in its Setup tab (▸ *Display units or
   remove*); you're shown first what goes with it – its results in each project, its consent rules,
   the sampling schedules and guideline sets that name it.
-- **Settings & backup** – your name, company, signature and letterhead, the workspace (who's connected)
-  and backups. The **Saved** badge top right shows when your changes are in the folder and who else is
+- **Settings & backup** – your name, company, signature and letterhead, the app's colour (yours – pick
+  any colour for buttons, links and highlights), the workspace (who's connected) and backups. The **Saved** badge top right shows when your changes are in the folder and who else is
   connected.
 
 **Unsaved changes stand out.** A row or card you've changed but not saved turns yellow and its save

@@ -105,7 +105,7 @@ function Coverage() {
                   return (
                     <td key={m}>
                       <Tooltip label={`${s.code} · ${formatMonthYear(`${m}-01`)}: ${n} sample${n === 1 ? '' : 's'}`}>
-                        <span className="coverage-cell" style={{ background: n === 0 ? 'var(--mantine-color-gray-2)' : n === 1 ? 'var(--mantine-color-teal-5)' : 'var(--mantine-color-teal-8)' }} />
+                        <span className="coverage-cell" style={{ background: n === 0 ? 'var(--mantine-color-gray-2)' : n === 1 ? 'var(--mantine-primary-color-5)' : 'var(--mantine-primary-color-8)' }} />
                       </Tooltip>
                     </td>
                   );

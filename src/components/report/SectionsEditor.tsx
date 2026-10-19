@@ -55,7 +55,7 @@ function Row({ block, index, blocks, orient, base, open, readOnly, carrying, dep
         py={isBreak || isSection ? 6 : 7}
         withBorder
         style={{
-          borderColor: open ? 'var(--mantine-color-teal-5)' : undefined,
+          borderColor: open ? 'var(--mantine-primary-color-5)' : undefined,
           borderStyle: isBreak ? 'dashed' : undefined,
           background: isBreak ? 'transparent' : isSection ? 'var(--mantine-color-default-hover)' : undefined,
           boxShadow: isDragging ? 'var(--mantine-shadow-md)' : undefined,
@@ -70,7 +70,7 @@ function Row({ block, index, blocks, orient, base, open, readOnly, carrying, dep
           <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={onToggle}>
             <Group gap={6} wrap="nowrap">
               {isBreak && <IconPageBreak size={15} color="var(--mantine-color-dimmed)" />}
-              <Text size="sm" fw={isSection ? 700 : 600} c={isSection ? 'teal.8' : undefined} truncate>
+              <Text size="sm" fw={isSection ? 700 : 600} c={isSection ? 'var(--mantine-primary-color-light-color)' : undefined} truncate>
                 {block.type === 'heading' ? block.text : BLOCK_LABELS[block.type].label}
               </Text>
               {block.type === 'heading' && block.level > 1 && (
@@ -79,7 +79,7 @@ function Row({ block, index, blocks, orient, base, open, readOnly, carrying, dep
                 </Text>
               )}
               {!!carrying && (
-                <Badge size="xs" variant="filled" color="teal" style={{ flexShrink: 0 }}>
+                <Badge size="xs" variant="filled" style={{ flexShrink: 0 }}>
                   + {carrying} more
                 </Badge>
               )}

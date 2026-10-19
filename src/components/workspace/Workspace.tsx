@@ -36,8 +36,8 @@ function Screen({ children }: { children: ReactNode }) {
     <Center mih="100vh" p="md" bg="light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8))">
       <Card w="100%" maw={600} padding="xl" withBorder shadow="sm">
         <Group gap={8} mb="lg">
-          <Box style={{ background: 'var(--mantine-color-teal-8)', borderRadius: 8, width: 30, height: 30, display: 'grid', placeItems: 'center' }}>
-            <IconDroplet size={18} color="white" />
+          <Box style={{ background: 'var(--mantine-primary-color-8)', borderRadius: 8, width: 30, height: 30, display: 'grid', placeItems: 'center' }}>
+            <IconDroplet size={18} color="var(--mantine-primary-color-contrast)" />
           </Box>
           <Text fw={700} size="lg">
             EnviroDB

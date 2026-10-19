@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { APP_BUILD, APP_VERSION } from '../lib/version';
 import { QA_DEFAULTS } from '../lib/qa';
 import { DEFAULT_LAB_DAYS, DEFAULT_SEND_DAYS } from '../lib/rounds';
-import { Anchor, Badge, Button, Card, FileButton, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { Anchor, Badge, Button, Card, ColorInput, FileButton, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -16,6 +16,7 @@ import { PageHeader } from '../components/common';
 import type { Settings } from '../db/types';
 import { SignatureInput, myDetails } from '../components/report/Signatures';
 import { LetterheadCard } from '../components/report/Letterhead';
+import { APP_COLOURS, DEFAULT_APP_COLOUR, isHexColour } from '../lib/palette';
 
 function fmtBytes(n?: number) {
   if (!n) return '—';
@@ -106,6 +107,8 @@ export function SettingsPage() {
           <Textarea label="Lines under your name" description="One per line, e.g. job title, qualifications, company" autosize minRows={2} maxRows={6} value={sigLines} onChange={(e) => setSigLines(e.currentTarget.value)} onBlur={() => sigLines !== myDetails(settings) && saveSettings({ signatureDetails: sigLines })} />
         </SimpleGrid>
       </Card>
+
+      <AppColourCard colour={settings.appColour} />
 
       <Card>
         <Title order={4} mb={4}>
@@ -279,5 +282,34 @@ export function SettingsPage() {
       </Modal>
 
     </Stack>
+  );
+}
+
+/** The app's colour: this person's own, like light or dark. */
+function AppColourCard({ colour }: { colour?: string }) {
+  const saved = colour || DEFAULT_APP_COLOUR;
+  const [value, setValue] = useState(saved);
+  useEffect(() => setValue(saved), [saved]);
+  const save = (v: string) => {
+    const hex = v.trim().toLowerCase();
+    if (isHexColour(hex) && hex !== saved) void saveSettings({ appColour: hex === DEFAULT_APP_COLOUR ? undefined : hex });
+  };
+  return (
+    <Card>
+      <Title order={4} mb={4}>
+        App colour
+      </Title>
+      <Text size="sm" c="dimmed" mb="sm">
+        The colour of buttons, links and highlights. It’s yours – colleagues choose their own. Reports and data packs keep their own colours (set in the template and the pack).
+      </Text>
+      <Group align="flex-end" gap="sm">
+        <ColorInput label="Colour" w={220} format="hex" swatches={APP_COLOURS} swatchesPerRow={8} value={value} onChange={setValue} onChangeEnd={save} onBlur={() => !isHexColour(value) && setValue(saved)} />
+        {saved !== DEFAULT_APP_COLOUR && (
+          <Button variant="default" onClick={() => void saveSettings({ appColour: undefined })}>
+            Back to teal
+          </Button>
+        )}
+      </Group>
+    </Card>
   );
 }

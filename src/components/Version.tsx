@@ -39,7 +39,7 @@ export function WhatsNew({ opened, onClose, since }: { opened: boolean; onClose:
         {(shown.length ? shown : RELEASES.slice(0, 1)).map((r) => (
           <div key={r.version}>
             <Group gap="xs" mb={4}>
-              <Badge variant="light" color="teal">
+              <Badge variant="light">
                 {r.version}
               </Badge>
               <Title order={5}>{r.title}</Title>
@@ -83,7 +83,6 @@ export function VersionFooter() {
     if (seen && compareVersions(APP_VERSION, seen) > 0) {
       notifications.show({
         id: 'app-updated',
-        color: 'teal',
         autoClose: 15000,
         title: `EnviroDB is now version ${APP_VERSION}`,
         message: (

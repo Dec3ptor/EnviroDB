@@ -67,7 +67,7 @@ export function ImportCalendarModal({ onClose }: { onClose: () => void }) {
             </Text>
             <Dropzone onDrop={(files) => files[0] && void load(files[0])} accept={ACCEPT} loading={busy} multiple={false} maxSize={30 * 1024 * 1024}>
               <Group justify="center" gap="md" mih={110} style={{ pointerEvents: 'none' }}>
-                <IconFileSpreadsheet size={40} stroke={1.4} color="var(--mantine-color-teal-6)" />
+                <IconFileSpreadsheet size={40} stroke={1.4} color="var(--mantine-primary-color-6)" />
                 <div>
                   <Text fw={600}>Drop the spreadsheet here</Text>
                   <Text size="sm" c="dimmed">

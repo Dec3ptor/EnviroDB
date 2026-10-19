@@ -1,11 +1,12 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { MantineProvider, Center, Loader } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { ModalsProvider } from '@mantine/modals';
 import { DatesProvider } from '@mantine/dates';
 import { HashRouter, Route, Routes, Navigate } from 'react-router-dom';
-import { theme } from './theme';
-import { ensureBuiltIns, requestPersistence } from './db/db';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { makeTheme, theme, themeVariables } from './theme';
+import { ensureBuiltIns, getSettings, requestPersistence } from './db/db';
 import { startWorkspace } from './sync/workspace';
 import { WorkspaceGate } from './components/workspace/Workspace';
 import { Shell } from './components/Shell';
@@ -53,6 +54,10 @@ export function App() {
 function MainApp() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // the app's colour, as chosen in Settings
+  const colour = useLiveQuery(async () => (await getSettings()).appColour ?? '', [], '');
+  const appTheme = useMemo(() => makeTheme(colour), [colour]);
+  const appVariables = useMemo(() => themeVariables(colour), [colour]);
   useEffect(() => {
     (async () => {
       try {
@@ -67,7 +72,7 @@ function MainApp() {
   }, []);
 
   return (
-    <MantineProvider theme={theme} defaultColorScheme="light">
+    <MantineProvider theme={appTheme} cssVariablesResolver={appVariables} defaultColorScheme="light">
       <DatesProvider settings={{ firstDayOfWeek: 1, locale: 'en' }}>
         <ModalsProvider>
           <Notifications position="top-right" />

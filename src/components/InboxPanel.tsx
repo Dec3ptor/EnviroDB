@@ -69,7 +69,7 @@ export function InboxPanel({ projectId }: { projectId?: string }) {
         <Text fw={600} size="sm">
           Lab inbox
         </Text>
-        <Badge variant="light" color={files.length ? 'teal' : 'gray'}>
+        <Badge variant="light" color={files.length ? undefined : 'gray'}>
           {files.length} new
         </Badge>
         <div style={{ flex: 1 }} />

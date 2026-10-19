@@ -148,7 +148,7 @@ export function QuickCheckPage() {
         <Card>
           <Dropzone onDrop={(files) => files.length && void load(files)} accept={ACCEPT} loading={loading || !params} multiple maxSize={80 * 1024 * 1024}>
             <Group justify="center" gap="md" mih={140} style={{ pointerEvents: 'none' }}>
-              <IconTestPipe size={44} stroke={1.3} color="var(--mantine-color-teal-6)" />
+              <IconTestPipe size={44} stroke={1.3} color="var(--mantine-primary-color-6)" />
               <div>
                 <Text fw={600} size="lg">
                   Drop lab results here

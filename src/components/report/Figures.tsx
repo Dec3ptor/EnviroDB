@@ -123,15 +123,15 @@ export function FigureImages({ images, onChange, numbering, disabled, hint }: { 
           }}
           aria-label="Add images: drop them here, click to choose, or paste"
           style={{
-            border: `1.5px dashed var(--mantine-color-${over ? 'teal-6' : 'gray-4'})`,
+            border: `1.5px dashed ${over ? 'var(--mantine-primary-color-6)' : 'var(--mantine-color-gray-4)'}`,
             borderRadius: 8,
             padding: '14px 12px',
-            background: over ? 'var(--mantine-color-teal-0)' : 'var(--mantine-color-default-hover)',
+            background: over ? 'var(--mantine-primary-color-light)' : 'var(--mantine-color-default-hover)',
             textAlign: 'center',
           }}
         >
           <Group gap={8} justify="center" wrap="nowrap">
-            {busy ? <Loader size="xs" /> : <IconPhotoPlus size={20} color="var(--mantine-color-teal-7)" />}
+            {busy ? <Loader size="xs" /> : <IconPhotoPlus size={20} color="var(--mantine-primary-color-7)" />}
             <div>
               <Text size="sm" fw={500}>
                 {busy ? `Adding ${busy} image${busy === 1 ? '' : 's'}…` : 'Drop images here, click to choose, or paste'}
