@@ -34,9 +34,20 @@ describe('Content Security Policy', () => {
 
   it('no other way of sending data out is used in the code', () => {
     for (const { f, text } of source) {
-      expect(text, f).not.toMatch(/\bXMLHttpRequest\b|\bnew WebSocket\b|\bsendBeacon\b|\bnew EventSource\b|serviceWorker\.register/);
+      expect(text, f).not.toMatch(/\bXMLHttpRequest\b|\bnew WebSocket\b|\bsendBeacon\b|\bnew EventSource\b/);
       expect(text, f).not.toMatch(/dangerouslySetInnerHTML|\.innerHTML\s*=|\beval\(|new Function\(/);
+      // the one service worker is field mode's offline copy (below)
+      if (!f.replace(/\\/g, '/').endsWith('src/field/offline.ts')) expect(text, f).not.toMatch(/serviceWorker\.register/);
     }
+  });
+
+  it('field mode’s offline copy only keeps the app’s own files', () => {
+    const sw = readFileSync('public/sw.js', 'utf8');
+    // it answers only reads of the app's own address, and never names another
+    expect(sw).toMatch(/req\.method !== 'GET' \|\| !ours\(req\.url\)\) return;/);
+    expect(sw).toMatch(/new URL\(url, self\.location\.href\)\.origin === self\.location\.origin/);
+    expect(sw).not.toMatch(/https?:\/\/|importScripts|postMessage\(|indexedDB|\.put\(new Request/);
+    expect(readFileSync('src/field/offline.ts', 'utf8')).toMatch(/register\('\.\/sw\.js'/);
   });
 
   it('goes into the built page, straight after the character set', () => {

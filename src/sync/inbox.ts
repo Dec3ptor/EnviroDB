@@ -12,7 +12,7 @@ import { currentWorkspaceFolder, getWorkspaceState } from './workspace';
 
 /** The workspace's inbox folder. */
 export const INBOX_DIR = 'Inbox';
-const LAB_EXT = /\.(csv|tsv|txt|xlsx|xlsm|xls|pdf|zip)$/i;
+const LAB_EXT = /\.(csv|tsv|txt|xlsx|xlsm|xls|pdf|zip|json)$/i;
 /** Folders not worth looking in. */
 const SKIP_DIR = /^(\.|~|_old$|old$|superseded$|archive[sd]?$|photos?$|images?$|cad$|gis$|drawings?$|node_modules$)/i;
 const MAX_DEPTH = 6;
@@ -279,8 +279,8 @@ export async function findLabFiles(src: InboxSources): Promise<Pick<InboxState, 
       name: f.file.name,
       size: f.file.size,
       modified: f.file.lastModified,
-      projectId: f.projectId ?? guessProject(f.file.name, src.projects),
-      projectKnown: !!f.projectId,
+      projectId: f.projectId ?? (s.field?.projectId && src.projects.some((p) => p.id === s.field!.projectId) ? s.field.projectId : undefined) ?? guessProject(f.file.name, src.projects),
+      projectKnown: !!f.projectId || !!(s.field?.projectId && src.projects.some((p) => p.id === s.field!.projectId)),
       labName: s.labName,
       why: s.why,
       amended: importedPaths.has(`${f.where}|${f.path}`),

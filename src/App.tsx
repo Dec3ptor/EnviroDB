@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { MantineProvider, Center, Loader } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { ModalsProvider } from '@mantine/modals';
@@ -20,7 +20,37 @@ import { ParametersPage } from './pages/Parameters';
 import { CalendarPage } from './pages/Calendar';
 import { QuickCheckPage } from './pages/QuickCheck';
 
+// field mode, on a phone: its own small app, without the team's shared folder (loaded only when opened)
+const FieldApp = lazy(() => import('./field/FieldApp'));
+const isField = () => /^#\/field(\/|\?|$)/.test(window.location.hash);
+
 export function App() {
+  const [field] = useState(isField);
+  // going between field mode and the rest of EnviroDB starts the page again
+  useEffect(() => {
+    const onHash = () => isField() !== field && window.location.reload();
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, [field]);
+  if (field)
+    return (
+      <MantineProvider theme={theme} defaultColorScheme="light">
+        <Notifications position="top-center" />
+        <Suspense
+          fallback={
+            <Center h="100vh">
+              <Loader />
+            </Center>
+          }
+        >
+          <FieldApp />
+        </Suspense>
+      </MantineProvider>
+    );
+  return <MainApp />;
+}
+
+function MainApp() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {

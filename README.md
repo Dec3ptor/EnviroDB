@@ -386,6 +386,21 @@ there as they work and show up for the others within seconds.
   - **With each sample**: a sample's details say how much rain fell on the day and in the 3 days before.
   - EnviroDB doesn't fetch gauges' records itself: councils' data services don't let a web page read them, and
     EnviroDB contacts nothing but its own address and the map services. Download the CSV and add it.
+- **Field mode for phones.** The phone isn't connected to the team's shared folder, so field work goes by a
+  sheet out and a file back:
+  1. On the computer, *Field sheet for a phone* (in the project's ⋯ menu) makes the round's sheet: the sites (with
+     their locations, for directions), the readings to take (the project's field parameters to start with), last
+     time's readings to compare with, and weather, flow, appearance and photos to note.
+  2. Scan its **QR code** with the phone's camera – or send yourself the link, or save the sheet to the shared
+     folder and open it on the phone from OneDrive. *EnviroDB field* opens: it needs no shared folder, keeps
+     everything on the phone as you go, and once opened works with **no signal**.
+  3. At each site: the time (*Now*), the readings – a likely slip of the thumb, or a big change from last time, is
+     pointed out – weather, flow, appearance, notes, the location (GPS) and photos; or *Not sampled* and why.
+  4. *Send the results* makes a results file: save it to the team's **Inbox** folder in OneDrive (or email it to
+     yourself and drop it on the Import page). EnviroDB on the computer lists it in the lab inbox; adding it puts
+     each site's readings in the day's sample (the lab's results for that day join the same sample), what was seen
+     in the sample's notes, the photos in the shared folder (*Field photos*), and marks the round sampled on the
+     monitoring calendar. Sent again, it replaces what it added.
 - **Client data packs.** A project's *Data pack* tab makes one HTML file with its data for the client –
   set up the way you want them to see it, and previewed as they will (on a computer or a phone):
   - **Sections** in the order you choose, each switched on or off and named as you like: a summary, the sites
@@ -541,6 +556,9 @@ EnviroDB has no server and never uploads anything. The only things that cross th
   place names), OpenStreetMap or OpenTopoMap, and *Find a place* asks OpenStreetMap. These services see
   which area is being looked at and your internet address. They don't see site names, results or
   anything else from your projects. Coordinates typed into *Find a place* are handled in the app.
+- **Field mode** on a phone loads EnviroDB from GitHub Pages like the rest of it (and keeps a copy of the app's
+  files for use with no signal); a field sheet travels in the link's "#" part, which browsers never send. What's
+  recorded stays on the phone until you send the results file yourself. *Directions* opens the phone's maps.
 - **The data pack's aerial photo**, made from the same LINZ map pictures when the pack is set up (the
   same as looking at the Map tab). The pack itself contacts nothing: its own security policy allows no
   connections at all, so the client can open it offline and nothing in it is sent anywhere.

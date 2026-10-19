@@ -1,0 +1,550 @@
+// Field mode, on a phone: open the field sheet made on the computer (a QR code, a link or a file), record each site's
+// readings and what was seen – it all stays on the phone, with or without a signal – then send the results back as a
+// file (to the team's OneDrive Inbox folder, or by email), for EnviroDB on the computer to add.
+
+import { useEffect, useMemo, useState } from 'react';
+import { ActionIcon, Alert, Anchor, AppShell, Badge, Button, Card, Center, Chip, FileButton, Group, Loader, Modal, NumberInput, Progress, SegmentedControl, Select, Stack, Text, TextInput, Textarea, Title, UnstyledButton } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
+import { HashRouter, Route, Routes, useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { IconArrowLeft, IconCamera, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconFileImport, IconMapPin, IconSend, IconTrash, IconWifiOff } from '@tabler/icons-react';
+import { addSheet, deleteSheet, fieldDb, getPref, resultsFileName, resultsOf, saveVisit, setPref } from './db';
+import { APPEARANCE, checkSheet, decodeSheet, FLOW, NOT_SAMPLED, readingWarning, WEATHER, type FieldSheet, type FieldVisit } from './model';
+import { keepOffline, type OfflineState } from './offline';
+
+const pad = (n: number) => String(n).padStart(2, '0');
+const nowLocal = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const showDate = (d?: string) => (d ? `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}${d.length > 10 ? `, ${d.slice(11, 16)}` : ''}` : '');
+
+function useOffline(): OfflineState {
+  const [state, setState] = useState<OfflineState>('getting-ready');
+  useEffect(() => {
+    let live = true;
+    // once the page has loaded everything it needs
+    const go = () => void keepOffline().then((s) => live && setState(s));
+    if (document.readyState === 'complete') setTimeout(go, 800);
+    else window.addEventListener('load', () => setTimeout(go, 800), { once: true });
+    return () => {
+      live = false;
+    };
+  }, []);
+  return state;
+}
+
+function useOnline() {
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const on = () => setOnline(true), off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+  return online;
+}
+
+function Header({ title, back, right }: { title: string; back?: string; right?: React.ReactNode }) {
+  const online = useOnline();
+  return (
+    <Group justify="space-between" wrap="nowrap" gap="xs" mb="md">
+      <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+        {back && (
+          <ActionIcon component={Link} to={back} variant="subtle" size="lg" aria-label="Back">
+            <IconArrowLeft size={20} />
+          </ActionIcon>
+        )}
+        <Title order={4} style={{ overflowWrap: 'anywhere' }}>
+          {title}
+        </Title>
+      </Group>
+      <Group gap={6} wrap="nowrap">
+        {!online && (
+          <Badge color="gray" leftSection={<IconWifiOff size={12} />} variant="light">
+            Offline
+          </Badge>
+        )}
+        {right}
+      </Group>
+    </Group>
+  );
+}
+
+// ------------------------------------------------------------ the sheets on this phone
+
+function Home({ offline }: { offline: OfflineState }) {
+  const navigate = useNavigate();
+  const sheets = useLiveQuery(() => fieldDb.sheets.orderBy('addedAt').reverse().toArray(), []);
+  const visits = useLiveQuery(() => fieldDb.visits.toArray(), []);
+  const openFile = async (f: File | null) => {
+    if (!f) return;
+    try {
+      const sheet = checkSheet(JSON.parse(await f.text()));
+      await addSheet(sheet);
+      navigate(`/field/s/${encodeURIComponent(sheet.id)}`);
+    } catch (e) {
+      notifications.show({ color: 'red', message: (e as Error).message });
+    }
+  };
+  return (
+    <Stack gap="md">
+      <Header title="EnviroDB field" />
+      {offline === 'ready' ? (
+        <Text size="xs" c="dimmed">
+          <IconCloudOff size={13} style={{ verticalAlign: -2 }} /> Ready to work with no signal. Records stay on this phone until you send them.
+        </Text>
+      ) : offline === 'unsupported' || offline === 'failed' ? (
+        <Alert color="orange" variant="light" p="xs">
+          <Text size="xs">This browser can’t keep EnviroDB for use with no signal – open field sheets while you have one. Records still stay on this phone.</Text>
+        </Alert>
+      ) : null}
+      {sheets === undefined ? (
+        <Loader size="sm" />
+      ) : sheets.length ? (
+        sheets.map((s) => {
+          const mine = (visits ?? []).filter((v) => v.sheetId === s.id);
+          const done = mine.filter((v) => v.visit.done || v.visit.notSampled).length;
+          return (
+            <Card key={s.id} withBorder padding="md" component={Link} to={`/field/s/${encodeURIComponent(s.id)}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+              <Group justify="space-between" wrap="nowrap">
+                <div style={{ minWidth: 0 }}>
+                  <Text fw={600}>{s.sheet.project.name}</Text>
+                  <Text size="sm" c="dimmed">
+                    {s.sheet.round} · {showDate(s.sheet.date)}
+                  </Text>
+                  <Text size="xs" c={done === s.sheet.sites.length ? 'teal' : 'dimmed'} mt={4}>
+                    {done} of {s.sheet.sites.length} sites{s.sentAt ? ` · sent ${showDate(s.sentAt.slice(0, 10))}` : ''}
+                  </Text>
+                </div>
+                <IconChevronRight size={20} />
+              </Group>
+            </Card>
+          );
+        })
+      ) : (
+        <Card withBorder padding="lg">
+          <Text fw={600} mb={4}>
+            No field sheets on this phone yet
+          </Text>
+          <Text size="sm" c="dimmed">
+            On the computer, open the project in EnviroDB and choose <b>Field sheet</b> (in the project’s ⋯ menu). Scan its QR code with this phone’s camera – or open the sheet’s file from OneDrive below.
+          </Text>
+        </Card>
+      )}
+      <FileButton accept=".json,application/json" onChange={(f) => void openFile(f)}>
+        {(props) => (
+          <Button {...props} variant="default" size="md" leftSection={<IconFileImport size={18} />}>
+            Open a field sheet file
+          </Button>
+        )}
+      </FileButton>
+      <Anchor size="xs" c="dimmed" href="./" onClick={(e) => (e.preventDefault(), (location.hash = '#/'), location.reload())}>
+        Open the rest of EnviroDB (needs the team’s shared folder)
+      </Anchor>
+    </Stack>
+  );
+}
+
+/** A sheet from a link (a scanned QR code): kept on the phone, then opened. */
+function OpenLink() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const s = params.get('s');
+    if (!s) return navigate('/field', { replace: true });
+    decodeSheet(s).then(
+      async (sheet) => {
+        await addSheet(sheet);
+        navigate(`/field/s/${encodeURIComponent(sheet.id)}`, { replace: true });
+      },
+      (e: Error) => setError(e.message),
+    );
+  }, []);
+  return error ? (
+    <Stack>
+      <Header title="EnviroDB field" back="/field" />
+      <Alert color="red">This link isn’t a field sheet EnviroDB can read: {error}</Alert>
+    </Stack>
+  ) : (
+    <Center h={200}>
+      <Loader />
+    </Center>
+  );
+}
+
+// ------------------------------------------------------------ a sheet: its sites
+
+function SheetPage() {
+  const { sheetId = '' } = useParams();
+  const stored = useLiveQuery(async () => (await fieldDb.sheets.get(sheetId)) ?? null, [sheetId]);
+  const visits = useLiveQuery(() => fieldDb.visits.where('sheetId').equals(sheetId).toArray(), [sheetId]);
+  const navigate = useNavigate();
+  const [removing, setRemoving] = useState(false);
+  if (stored === undefined || visits === undefined) return <Loader />;
+  if (!stored) return <Navigate to="/field" />;
+  const sheet = stored.sheet;
+  const byId = new Map(visits.map((v) => [v.visit.siteId, v.visit]));
+  const done = sheet.sites.filter((s) => byId.get(s.id)?.done || byId.get(s.id)?.notSampled).length;
+  return (
+    <Stack gap="sm">
+      <Header title={sheet.project.name} back="/field" />
+      <Text size="sm" c="dimmed" mt={-12}>
+        {sheet.round} · {showDate(sheet.date)}
+      </Text>
+      <Progress value={(done / Math.max(1, sheet.sites.length)) * 100} color="teal" size="sm" />
+      <Text size="xs" c="dimmed">
+        {done} of {sheet.sites.length} sites done
+      </Text>
+      {sheet.sites.map((s) => {
+        const v = byId.get(s.id);
+        const status = v?.notSampled ? `Not sampled – ${v.notSampled}` : v?.done ? 'Done' : v && Object.keys(v.values).length ? 'Started' : 'To do';
+        return (
+          <UnstyledButton key={s.id} component={Link} to={`/field/s/${encodeURIComponent(sheet.id)}/${encodeURIComponent(s.id)}`} style={{ display: 'block' }}>
+            <Card withBorder padding="sm">
+              <Group justify="space-between" wrap="nowrap">
+                <div style={{ minWidth: 0 }}>
+                  <Text fw={700}>
+                    {s.code}
+                    {s.name ? (
+                      <Text span fw={400} c="dimmed">
+                        {' '}
+                        {s.name}
+                      </Text>
+                    ) : null}
+                  </Text>
+                  {v && Object.keys(v.values).length > 0 && (
+                    <Text size="xs" c="dimmed" lineClamp={1}>
+                      {sheet.measures.filter((m) => v.values[m.id] !== undefined).map((m) => `${m.name.replace(/\s*\(field\)/i, '')} ${v.values[m.id]}`).join(' · ')}
+                    </Text>
+                  )}
+                </div>
+                <Badge color={status === 'Done' ? 'teal' : status.startsWith('Not') ? 'gray' : status === 'Started' ? 'yellow' : 'blue'} variant={status === 'To do' ? 'outline' : 'light'} style={{ flexShrink: 0 }}>
+                  {status.startsWith('Not') ? 'Not sampled' : status}
+                </Badge>
+              </Group>
+            </Card>
+          </UnstyledButton>
+        );
+      })}
+      <Button size="md" mt="sm" leftSection={<IconSend size={18} />} onClick={() => navigate(`/field/s/${encodeURIComponent(sheet.id)}/send`)} disabled={!visits.length}>
+        Send the results
+      </Button>
+      <Button variant="subtle" color="red" size="xs" leftSection={<IconTrash size={14} />} onClick={() => setRemoving(true)}>
+        Remove this sheet from the phone
+      </Button>
+      <Modal opened={removing} onClose={() => setRemoving(false)} title="Remove this sheet?" centered>
+        <Text size="sm" mb="md">
+          {stored.sentAt ? 'Its results were sent.' : 'Its results haven’t been sent yet – they’ll be lost.'} The sheet and what was recorded are removed from this phone.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={() => setRemoving(false)}>
+            Keep it
+          </Button>
+          <Button color="red" onClick={() => void deleteSheet(sheet.id).then(() => navigate('/field'))}>
+            Remove
+          </Button>
+        </Group>
+      </Modal>
+    </Stack>
+  );
+}
+
+// ------------------------------------------------------------ a site: the readings
+
+function readPhoto(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k);
+      c.height = Math.round(img.naturalHeight * k);
+      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg', 0.78));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('That photo couldn’t be read.'));
+    };
+    img.src = url;
+  });
+}
+
+function SitePage() {
+  const { sheetId = '', siteId = '' } = useParams();
+  const stored = useLiveQuery(async () => (await fieldDb.sheets.get(sheetId)) ?? null, [sheetId]);
+  // null: nothing recorded here yet (undefined: still looking)
+  const saved = useLiveQuery(async () => (await fieldDb.visits.get(`${sheetId}|${siteId}`)) ?? null, [sheetId, siteId]);
+  const navigate = useNavigate();
+  const [v, setV] = useState<FieldVisit | null>(null);
+  const [locating, setLocating] = useState(false);
+  // the site's record (a new one when there's none yet); the next site starts from its own
+  useEffect(() => {
+    if (saved === undefined || (saved && saved.visit.siteId !== siteId) || v?.siteId === siteId) return;
+    setV(saved?.visit ?? { siteId, values: {} });
+  }, [saved, siteId]);
+  // every change is kept on the phone at once
+  const update = (patch: Partial<FieldVisit>) => {
+    setV((cur) => {
+      const next = { ...(cur ?? { siteId, values: {} }), ...patch };
+      if (!next.time && (Object.keys(next.values).length || next.notes)) next.time = nowLocal();
+      void saveVisit(sheetId, next);
+      return next;
+    });
+  };
+  if (stored === undefined || saved === undefined || !v || v.siteId !== siteId) return <Loader />;
+  if (!stored) return <Navigate to="/field" />;
+  const sheet = stored.sheet;
+  const site = sheet.sites.find((s) => s.id === siteId);
+  if (!site) return <Navigate to={`/field/s/${encodeURIComponent(sheetId)}`} />;
+  const idx = sheet.sites.indexOf(site);
+  const next = sheet.sites[idx + 1];
+  const back = `/field/s/${encodeURIComponent(sheetId)}`;
+  const finish = () => {
+    update({ done: true });
+    navigate(next ? `${back}/${encodeURIComponent(next.id)}` : back);
+  };
+  const locate = () => {
+    if (!navigator.geolocation) return notifications.show({ color: 'orange', message: 'This phone can’t give its location here.' });
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        setLocating(false);
+        update({ gps: { lat: Number(p.coords.latitude.toFixed(6)), lng: Number(p.coords.longitude.toFixed(6)), acc: Math.round(p.coords.accuracy) } });
+      },
+      () => {
+        setLocating(false);
+        notifications.show({ color: 'orange', message: 'The location couldn’t be found (is location allowed for the browser?).' });
+      },
+      { enableHighAccuracy: true, timeout: 20000 },
+    );
+  };
+  return (
+    <Stack gap="sm">
+      <Header title={`${site.code}${site.name ? ` – ${site.name}` : ''}`} back={back} right={<Text size="xs" c="dimmed">{idx + 1}/{sheet.sites.length}</Text>} />
+      {(site.note || (site.lat !== undefined && site.lng !== undefined)) && (
+        <Card withBorder padding="xs">
+          {site.note && <Text size="sm">{site.note}</Text>}
+          {site.lat !== undefined && site.lng !== undefined && (
+            <Anchor size="sm" href={`https://www.google.com/maps/search/?api=1&query=${site.lat},${site.lng}`} target="_blank" rel="noreferrer">
+              <IconMapPin size={14} style={{ verticalAlign: -2 }} /> Directions ({site.lat.toFixed(5)}, {site.lng.toFixed(5)})
+            </Anchor>
+          )}
+        </Card>
+      )}
+      <Chip checked={!!v.notSampled} onChange={(on) => update({ notSampled: on ? NOT_SAMPLED[0] : undefined, done: on ? true : v.done })} color="gray">
+        Not sampled
+      </Chip>
+      {v.notSampled ? (
+        <SegmentedControl fullWidth data={[...NOT_SAMPLED]} value={NOT_SAMPLED.includes(v.notSampled as (typeof NOT_SAMPLED)[number]) ? v.notSampled : 'Other'} onChange={(x) => update({ notSampled: x })} />
+      ) : (
+        <>
+          <Group gap="xs" align="flex-end" wrap="nowrap">
+            <TextInput type="datetime-local" label="Sampled at" value={v.time ?? ''} onChange={(e) => update({ time: e.currentTarget.value || undefined })} style={{ flex: 1 }} size="md" />
+            <Button variant="default" size="md" onClick={() => update({ time: nowLocal() })}>
+              Now
+            </Button>
+          </Group>
+          {sheet.measures.filter((m) => !site.measures || site.measures.includes(m.id)).map((m) => {
+            const val = v.values[m.id];
+            const last = site.last?.values[m.id];
+            const warn = val !== undefined ? readingWarning(m, val, last) : null;
+            return (
+              <NumberInput
+                key={m.id}
+                size="md"
+                label={`${m.name}${m.unit ? ` · ${m.unit}` : ''}`}
+                description={last !== undefined ? `Last time ${last}${site.last?.date ? ` (${showDate(site.last.date)})` : ''}` : undefined}
+                error={warn ?? undefined}
+                value={val ?? ''}
+                inputMode="decimal"
+                decimalScale={6}
+                hideControls
+                onChange={(x) => {
+                  const values = { ...v.values };
+                  if (x === '' || x === null || Number.isNaN(Number(x))) delete values[m.id];
+                  else values[m.id] = Number(x);
+                  update({ values });
+                }}
+              />
+            );
+          })}
+          {sheet.observe.weather && <Select size="md" label="Weather" data={[...WEATHER]} value={v.weather ?? null} onChange={(x) => update({ weather: x ?? undefined })} clearable />}
+          {sheet.observe.flow && <Select size="md" label="Flow" data={[...FLOW]} value={v.flow ?? null} onChange={(x) => update({ flow: x ?? undefined })} clearable />}
+          {sheet.observe.appearance && <Select size="md" label="Appearance" data={[...APPEARANCE]} value={v.appearance ?? null} onChange={(x) => update({ appearance: x ?? undefined })} clearable />}
+        </>
+      )}
+      <Textarea size="md" label="Notes" autosize minRows={2} value={v.notes ?? ''} onChange={(e) => update({ notes: e.currentTarget.value || undefined })} placeholder="Colour, odour, anything unusual" />
+      <Group gap="xs">
+        <Button variant="default" leftSection={<IconCurrentLocation size={16} />} loading={locating} onClick={locate}>
+          {v.gps ? 'Record the location again' : 'Record the location'}
+        </Button>
+        {v.gps && (
+          <Text size="xs" c="dimmed">
+            {v.gps.lat}, {v.gps.lng}
+            {v.gps.acc ? ` (±${v.gps.acc} m)` : ''}
+          </Text>
+        )}
+      </Group>
+      {sheet.observe.photos && (
+        <div>
+          <FileButton
+            accept="image/*"
+            capture="environment"
+            onChange={async (f) => {
+              if (!f) return;
+              try {
+                const dataUrl = await readPhoto(f);
+                update({ photos: [...(v.photos ?? []), { name: `${site.code} ${(v.photos?.length ?? 0) + 1}.jpg`, dataUrl }] });
+              } catch (e) {
+                notifications.show({ color: 'red', message: (e as Error).message });
+              }
+            }}
+          >
+            {(props) => (
+              <Button {...props} variant="default" leftSection={<IconCamera size={16} />}>
+                Take a photo
+              </Button>
+            )}
+          </FileButton>
+          {!!v.photos?.length && (
+            <Group gap={6} mt={6}>
+              {v.photos.map((p, i) => (
+                <div key={i} style={{ position: 'relative' }}>
+                  <img src={p.dataUrl} alt={p.name} style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6 }} />
+                  <ActionIcon size="xs" color="red" variant="filled" style={{ position: 'absolute', top: 2, right: 2 }} aria-label="Remove photo" onClick={() => update({ photos: v.photos!.filter((_, j) => j !== i) })}>
+                    <IconTrash size={10} />
+                  </ActionIcon>
+                </div>
+              ))}
+            </Group>
+          )}
+        </div>
+      )}
+      <Button size="lg" mt="sm" color="teal" leftSection={<IconCheck size={20} />} onClick={finish}>
+        {v.done ? 'Done' : 'Done here'}
+        {next ? ` – next: ${next.code}` : ''}
+      </Button>
+    </Stack>
+  );
+}
+
+// ------------------------------------------------------------ sending the results
+
+function SendPage() {
+  const { sheetId = '' } = useParams();
+  const stored = useLiveQuery(async () => (await fieldDb.sheets.get(sheetId)) ?? null, [sheetId]);
+  const visits = useLiveQuery(() => fieldDb.visits.where('sheetId').equals(sheetId).toArray(), [sheetId]);
+  const [by, setBy] = useState<string | null>(null);
+  useEffect(() => void getPref('name').then(setBy), []);
+  const results = useMemo(() => (stored && visits ? resultsOf(stored.sheet, visits.map((x) => x.visit), by ?? '') : null), [stored, visits, by]);
+  if (stored === null) return <Navigate to="/field" />;
+  if (!stored || !visits || by === null || !results) return <Loader />;
+  const sheet = stored.sheet;
+  const missing = sheet.sites.filter((s) => !results.visits.some((v) => v.siteId === s.id && (v.done || v.notSampled)));
+  const send = async () => {
+    await setPref('name', by);
+    const text = JSON.stringify(results);
+    const file = new File([text], resultsFileName(sheet), { type: 'application/json' });
+    const share = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+    try {
+      if (share.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: file.name });
+      else {
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+      }
+      await fieldDb.sheets.update(sheet.id, { sentAt: new Date().toISOString() });
+      notifications.show({ color: 'teal', message: 'Results ready – save them to the team’s Inbox folder in OneDrive (or email them to yourself).' });
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') notifications.show({ color: 'red', message: (e as Error).message });
+    }
+  };
+  return (
+    <Stack gap="sm">
+      <Header title="Send the results" back={`/field/s/${encodeURIComponent(sheet.id)}`} />
+      <TextInput size="md" label="Sampled by" placeholder="Your name" value={by} onChange={(e) => setBy(e.currentTarget.value)} />
+      <Card withBorder padding="sm">
+        {sheet.sites.map((s) => {
+          const v = results.visits.find((x) => x.siteId === s.id);
+          return (
+            <Text size="sm" key={s.id}>
+              <b>{s.code}</b>{' '}
+              {!v ? (
+                <Text span c="orange">
+                  nothing recorded
+                </Text>
+              ) : v.notSampled ? (
+                <Text span c="dimmed">
+                  not sampled – {v.notSampled}
+                </Text>
+              ) : (
+                `${Object.keys(v.values).length} readings${v.photos?.length ? `, ${v.photos.length} photos` : ''}${v.done ? '' : ' (not marked done)'}`
+              )}
+            </Text>
+          );
+        })}
+      </Card>
+      {missing.length > 0 && (
+        <Alert color="orange" variant="light" p="xs">
+          <Text size="sm">
+            {missing.map((s) => s.code).join(', ')} {missing.length === 1 ? 'isn’t' : 'aren’t'} done yet. You can send what you have now and again later – the later file replaces it.
+          </Text>
+        </Alert>
+      )}
+      <Button size="lg" leftSection={<IconSend size={20} />} onClick={() => void send()}>
+        Send the results file
+      </Button>
+      <Text size="xs" c="dimmed">
+        Choose OneDrive and the team’s <b>Inbox</b> folder (EnviroDB on the computer picks it up there), or email it to yourself and drop it on the Import page. Needs a signal; the records stay on this phone until you remove the
+        sheet.
+      </Text>
+      {stored.sentAt && (
+        <Text size="xs" c="teal">
+          Last sent {showDate(stored.sentAt.slice(0, 10))} {stored.sentAt.slice(11, 16)}.
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+function Navigate({ to }: { to: string }) {
+  const navigate = useNavigate();
+  useEffect(() => navigate(to, { replace: true }), [to]);
+  return null;
+}
+
+export default function FieldApp() {
+  const offline = useOffline();
+  return (
+    <HashRouter>
+      <AppShell padding="md">
+        <AppShell.Main style={{ maxWidth: 560, margin: '0 auto' }}>
+          <Routes>
+            <Route path="/field" element={<Home offline={offline} />} />
+            <Route path="/field/open" element={<OpenLink />} />
+            <Route path="/field/s/:sheetId" element={<SheetPage />} />
+            <Route path="/field/s/:sheetId/send" element={<SendPage />} />
+            <Route path="/field/s/:sheetId/:siteId" element={<SitePage />} />
+            <Route path="*" element={<Navigate to="/field" />} />
+          </Routes>
+        </AppShell.Main>
+      </AppShell>
+    </HashRouter>
+  );
+}
+
+export type { FieldSheet };

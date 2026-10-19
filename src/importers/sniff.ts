@@ -9,9 +9,11 @@ export interface Sniffed {
   labName?: string;
   /** Why it was (or wasn't) taken as lab results. */
   why: string;
+  /** Field results from a phone: the project the sheet was made for. */
+  field?: { projectId?: string };
 }
 
-const LAB_EXT = /\.(csv|tsv|txt|xlsx|xlsm|xls|pdf|zip)$/i;
+const LAB_EXT = /\.(csv|tsv|txt|xlsx|xlsm|xls|pdf|zip|json)$/i;
 const PEEK_MAX = 6 * 1024 * 1024;
 
 /** Lab names and the words of their files – the layouts first (a lab's file can mention another lab it sent work to). */
@@ -60,6 +62,15 @@ export async function sniffLabFile(file: File, path = file.name): Promise<Sniffe
   const name = file.name;
   if (!LAB_EXT.test(name)) return { lab: false, why: 'not a spreadsheet, CSV, PDF or zip' };
   if (/^~\$|^\./.test(name)) return { lab: false, why: 'a temporary file' };
+  if (/\.json$/i.test(name)) {
+    // a phone's field results (EnviroDB's own sheets and backups are left alone)
+    const head = file.size <= 40 * 1024 * 1024 ? await file.slice(0, 16 * 1024).text() : '';
+    if (/"app"\s*:\s*"EnviroDB"/.test(head) && /"kind"\s*:\s*"field-results"/.test(head)) {
+      const projectId = head.match(/"project"\s*:\s*\{\s*"id"\s*:\s*"([^"]{1,80})"/)?.[1];
+      return { lab: true, labName: 'Field results', why: 'field results from a phone', field: { projectId } };
+    }
+    return { lab: false, why: 'not field results' };
+  }
   const looked = await peek(file);
   if (looked?.ours) return { lab: false, why: 'made by EnviroDB' };
   if (looked) {

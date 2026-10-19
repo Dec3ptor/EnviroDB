@@ -514,7 +514,7 @@ export interface ImportBatch {
   id: ID;
   projectId: ID;
   fileName: string;
-  kind: 'lab' | 'wide' | 'long';
+  kind: 'lab' | 'wide' | 'long' | 'field';
   importedAt: string;
   samples: number;
   results: number;

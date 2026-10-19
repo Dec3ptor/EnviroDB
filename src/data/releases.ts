@@ -11,6 +11,17 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.10.0',
+    date: '2026-10-19',
+    title: 'Field mode for phones',
+    items: [
+      'Make a field sheet for a sampling round (project ⋯ menu → Field sheet for a phone): the sites, the readings to take, last time’s readings, and weather, flow, appearance and photos to note.',
+      'Scan its QR code with the phone (or open the link or the sheet’s file): EnviroDB field opens on the phone, without the team’s shared folder, and keeps working with no signal.',
+      'At each site: the time, the readings (with a warning for a likely slip, or a big change from last time), what was seen, notes, the location and photos – kept on the phone as you go.',
+      'Send the results as a file to the team’s Inbox folder in OneDrive (or by email): EnviroDB picks it up and adds each site’s readings to the day’s sample – the lab’s results for the day join it – with what was seen in its notes, photos in the shared folder, and the round marked sampled.',
+    ],
+  },
+  {
     version: '1.9.0',
     date: '2026-10-19',
     title: 'Rainfall and flow',

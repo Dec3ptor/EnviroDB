@@ -36,6 +36,8 @@ import { evaluateAll } from '../lib/analysis';
 import { fmtNum } from '../lib/values';
 import { guessGroup, PARAMETER_GROUPS } from '../data/parameters';
 import { NewProjectButton } from './Projects';
+import { checkResults, type FieldResults } from '../field/model';
+import { FieldResultsModal } from '../components/FieldSheet';
 
 const ACCEPT = {
   'application/pdf': ['.pdf'],
@@ -48,6 +50,7 @@ const ACCEPT = {
   'text/csv': ['.csv'],
   'text/plain': ['.txt', '.tsv'],
   'application/vnd.oasis.opendocument.spreadsheet': ['.ods'],
+  'application/json': ['.json'],
 };
 
 const EXAMPLES = [
@@ -324,8 +327,22 @@ export function ImportWizard(_props: { projectId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, queued]);
 
-  const load = async (files: Array<File | InputFile>, inbox = false) => {
+  // a phone's field results: reviewed and added on their own
+  const [field, setField] = useState<{ results: FieldResults; name: string; inbox: InboxCandidate[] } | null>(null);
+  const load = async (all: Array<File | InputFile>, inbox = false) => {
     if (!inbox) fromInbox.current = [];
+    const isJson = (f: File | InputFile) => /\.json$/i.test(f.name);
+    for (const f of all.filter(isJson)) {
+      try {
+        const text = f instanceof File ? await f.text() : new TextDecoder().decode(f.data);
+        const results = checkResults(JSON.parse(text));
+        setField({ results, name: f.name, inbox: fromInbox.current.filter((c) => c.name === f.name) });
+      } catch (e) {
+        notifications.show({ title: `${f.name} isn’t field results`, message: (e as Error).message, color: 'red' });
+      }
+    }
+    const files = all.filter((f) => !isJson(f));
+    if (!files.length) return;
     setLoading(true);
     try {
       const inputs = await Promise.all(files.map(async (f) => ({ name: f.name, data: f instanceof File ? await f.arrayBuffer() : f.data })));
@@ -460,6 +477,16 @@ export function ImportWizard(_props: { projectId: string }) {
 
       {step === 0 && (
         <Stack>
+          {field && (
+            <FieldResultsModal
+              results={field.results}
+              fileName={field.name}
+              onClose={() => setField(null)}
+              onAdded={(importId) => {
+                if (field.inbox.length) void markInboxImported(field.inbox, project.id, importId);
+              }}
+            />
+          )}
           <Dropzone onDrop={(files) => files.length && load(files)} accept={ACCEPT} loading={loading} multiple maxSize={80 * 1024 * 1024} onReject={() => notifications.show({ message: 'Please choose Excel, CSV or PDF lab reports, or a zip of them', color: 'red' })}>
             <Group justify="center" gap="xl" mih={180} style={{ pointerEvents: 'none' }}>
               <Dropzone.Accept>
@@ -476,7 +503,7 @@ export function ImportWizard(_props: { projectId: string }) {
                   Drop lab results or a monitoring spreadsheet here
                 </Text>
                 <Text size="sm" c="dimmed" mt={4}>
-                  Lab files from Hill Labs, ALS and Linnaeus – Excel, CSV or PDF reports, several at once or the zip they came in – master sheets, or long tables
+                  Lab files from Hill Labs, ALS and Linnaeus – Excel, CSV or PDF reports, several at once or the zip they came in – master sheets, long tables, or a phone’s field results
                 </Text>
                 <Text size="sm" c="dimmed">
                   Importing into <b>{project.name}</b>

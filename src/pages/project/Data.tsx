@@ -480,7 +480,7 @@ function ImportHistory() {
                     <Table.Td>{new Date(im.importedAt).toLocaleString('en-NZ')}</Table.Td>
                     <Table.Td>{im.fileName}</Table.Td>
                     <Table.Td>
-                      <Badge variant="light">{im.kind === 'lab' ? 'Lab results' : im.kind === 'wide' ? 'Spreadsheet' : 'Table'}</Badge>
+                      <Badge variant="light">{im.kind === 'lab' ? 'Lab results' : im.kind === 'wide' ? 'Spreadsheet' : im.kind === 'field' ? 'Field' : 'Table'}</Badge>
                     </Table.Td>
                     <Table.Td ta="right">{im.samples}</Table.Td>
                     <Table.Td ta="right">{im.results}</Table.Td>

@@ -22,6 +22,8 @@ export interface WorkspaceFolder {
   file(path: string): Promise<File | null>;
   /** Replaces the file (creating it and its directories when needed). */
   write(path: string, text: string): Promise<void>;
+  /** The same for a file that isn't text (a photo). */
+  writeBlob?(path: string, data: Blob): Promise<void>;
   remove(path: string): Promise<void>;
   /** Whether the folder can be read and written; `ask` shows the browser's prompt (needs a click). */
   permission(ask: boolean): Promise<PermissionState>;
@@ -116,6 +118,11 @@ export function handleFolder(root: DirectoryHandle): WorkspaceFolder {
       await w.write(text);
       await w.close();
     },
+    async writeBlob(path, data) {
+      const w = await (await fileHandle(path, true)).createWritable();
+      await w.write(data);
+      await w.close();
+    },
     async remove(path) {
       const { dirs, name } = split(path);
       try {
@@ -174,6 +181,10 @@ export function memoryFolder(name = 'Workspace'): WorkspaceFolder & { files: Map
     async write(path: string, text: string) {
       check();
       files.set(path, { text, lastModified: (clock = Math.max(clock + 1, Date.now())) });
+    },
+    async writeBlob(path: string, data: Blob) {
+      check();
+      files.set(path, { text: `[${data.type || 'binary'}, ${data.size} bytes]`, lastModified: (clock = Math.max(clock + 1, Date.now())) });
     },
     async remove(path: string) {
       check();
