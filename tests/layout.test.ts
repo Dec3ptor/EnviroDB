@@ -271,7 +271,7 @@ describe('signatures', () => {
     ],
   };
   const template: ReportTemplate = { ...annual, id: 'sig', blocks: [...annual.blocks.filter((b) => b.type !== 'signatures'), block] };
-  const me = { ...DEFAULT_SETTINGS, author: 'Ben Foote', company: 'WSP', signatureImage: png(200, 100) };
+  const me = { ...DEFAULT_SETTINGS, author: 'Sam Taylor', company: 'Example Ltd', signatureImage: png(200, 100) };
 
   it('signs off with your signature from Settings and the people named, side by side', async () => {
     const b = await loadBundle(projectId);
@@ -280,16 +280,16 @@ describe('signatures', () => {
     expect(n.cols).toBe(2);
     expect(n.colWidthMm).toBe(80); // capped: (170 − 8) / 2 would be wider
     expect(n.items.map((s) => [s.role, s.name])).toEqual([
-      ['Prepared by', 'Ben Foote'],
+      ['Prepared by', 'Sam Taylor'],
       ['Reviewed by', 'Jane Doe'],
     ]);
-    expect(n.items[0].lines).toEqual([[{ text: 'WSP' }]]); // the company until you set the lines under your name
-    expect(n.items[1].lines).toEqual([[{ text: 'Principal Environmental Consultant' }], [{ text: 'WSP', bold: true }]]);
+    expect(n.items[0].lines).toEqual([[{ text: 'Example Ltd' }]]); // the company until you set the lines under your name
+    expect(n.items[1].lines).toEqual([[{ text: 'Principal Environmental Consultant' }], [{ text: 'Example Ltd', bold: true }]]);
     expect(n.items[1].date).toMatch(/^\d{1,2} \w+ \d{4}$/); // {{today}}, without a second "Date:"
     expect(n.items[0].image).toMatchObject({ widthMm: 30, heightMm: 15 }); // 15 mm high, in proportion
     expect(n.items[1].image).toMatchObject({ widthMm: 45, heightMm: 15 });
     // your own lines once set; nobody named at all: no sign-off
-    expect(signOff(buildReport({ bundle: b, template, period, settings: { ...me, signatureDetails: 'Environmental Scientist\nWSP' } }))!.items[0].lines).toEqual([[{ text: 'Environmental Scientist' }], [{ text: 'WSP' }]]);
+    expect(signOff(buildReport({ bundle: b, template, period, settings: { ...me, signatureDetails: 'Environmental Scientist\nExample Ltd' } }))!.items[0].lines).toEqual([[{ text: 'Environmental Scientist' }], [{ text: 'Example Ltd' }]]);
     const nobody: ReportTemplate = { ...template, blocks: [...annual.blocks.filter((x) => x.type !== 'signatures'), { ...block, signatories: [block.signatories[0], block.signatories[2]] } as ReportBlock] };
     expect(signOff(buildReport({ bundle: b, template: nobody, period, settings: DEFAULT_SETTINGS }))).toBeUndefined();
   });
@@ -307,14 +307,14 @@ describe('signatures', () => {
       [45, 15],
     ]);
     expect(pdf).toContain('"canvas":[{"type":"line"'); // John Smith signs by hand
-    expect(pdf).toContain('"text":"Ben Foote","bold":true');
+    expect(pdf).toContain('"text":"Sam Taylor","bold":true');
     const xml = await (await JSZip.loadAsync(await (await docxBlob(doc)).arrayBuffer())).file('word/document.xml')!.async('string');
     const ext = Array.from(xml.matchAll(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/g)).map((m) => [+(+m[1] / 36000).toFixed(0), +(+m[2] / 36000).toFixed(0)]); // EMU → mm
     expect(ext).toEqual([
       [30, 15],
       [45, 15],
     ]);
-    for (const text of ['Prepared by', 'Ben Foote', 'Reviewed by', 'Jane Doe', 'Approved for release by', 'John Smith', 'Date: ']) expect(xml).toContain(text);
+    for (const text of ['Prepared by', 'Sam Taylor', 'Reviewed by', 'Jane Doe', 'Approved for release by', 'John Smith', 'Date: ']) expect(xml).toContain(text);
     expect(xml).toMatch(/<w:pBdr><w:bottom [^>]*w:val="single"/); // the signing line
   });
 });

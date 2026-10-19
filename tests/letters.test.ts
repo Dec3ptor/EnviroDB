@@ -30,7 +30,7 @@ const event = BUILT_IN_TEMPLATES.find((t) => t.id === 'tpl-letter-event')!;
 const annual = BUILT_IN_TEMPLATES.find((t) => t.id === 'tpl-letter-annual')!;
 const march = { start: '2026-03-01', end: '2026-03-31', label: 'March 2026' };
 const year = { start: '2025-07-01', end: '2026-06-30', label: '2025/26' };
-const me: Settings = { ...DEFAULT_SETTINGS, author: 'Ben Foote', company: 'Example Ltd', signatureDetails: 'Environmental Scientist' };
+const me: Settings = { ...DEFAULT_SETTINGS, author: 'Sam Taylor', company: 'Example Ltd', signatureDetails: 'Environmental Scientist' };
 const texts = (n: DocNode) => (n.t === 'p' ? n.runs.map((r) => r.text).join('') : n.t === 'lines' ? n.lines.map((l) => l.map((r) => r.text).join('')).join('\n') : n.t === 'h' ? n.text : '');
 const allText = (doc: ReportDoc) => doc.nodes.map(texts).join('\n');
 
@@ -99,7 +99,7 @@ describe('letter text', () => {
     const doc = buildReport({ bundle: await loadBundle(projectId), template: event, period: march, settings: me });
     const sign = doc.nodes.find((n): n is Extract<DocNode, { t: 'signatures' }> => n.t === 'signatures')!;
     expect(sign.closing).toEqual([{ text: 'Kind regards,' }]);
-    expect(sign.items).toMatchObject([{ role: '', name: 'Ben Foote', lines: [[{ text: 'Environmental Scientist' }]] }]);
+    expect(sign.items).toMatchObject([{ role: '', name: 'Sam Taylor', lines: [[{ text: 'Environmental Scientist' }]] }]);
   });
 });
 

@@ -17,7 +17,7 @@ describe('backups', () => {
     const figs = `figs:${projectId}:tpl-letter-event:2026-09-01:2026-09-30`;
     await saveReportWork(draft, { 'le-intro': 'The September round went well.' });
     await saveReportWork(figs, { 'le-figures': [{ id: 'f1', src: png(40, 30), caption: 'Upstream' }] });
-    await saveSettings({ author: 'Ben Foote', signatureImage: png(60, 20) });
+    await saveSettings({ author: 'Sam Taylor', signatureImage: png(60, 20) });
     await db.meta.put({ key: 'autosaveLast', value: '2026-10-01T00:00:00Z' }); // the autosave's own bookkeeping
 
     const backup = JSON.parse(JSON.stringify(await exportWorkspace()));
@@ -31,7 +31,7 @@ describe('backups', () => {
     expect((await db.meta.get(draft))?.value).toEqual({ 'le-intro': 'The September round went well.' });
     expect((await db.meta.get(figs))?.value).toMatchObject({ 'le-figures': [{ caption: 'Upstream' }] });
     expect(await db.meta.get(`layout:${projectId}:tpl-annual`)).toBeUndefined();
-    expect((await getSettings()).author).toBe('Ben Foote');
+    expect((await getSettings()).author).toBe('Sam Taylor');
 
     // merge: your own settings stay, blanks are filled in
     await saveSettings({ author: 'Jane Doe', signatureImage: undefined });
