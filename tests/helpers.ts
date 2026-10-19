@@ -3,6 +3,7 @@ import { db } from '../src/db/db';
 import { buildIndex } from '../src/lib/dataIndex';
 import type { ProjectBundle } from '../src/lib/analysis';
 import { compareParams } from '../src/data/parameters';
+import { isQcSite } from '../src/lib/qc';
 
 /** Everything the report and analysis code needs about a project, read from the database. */
 export async function loadBundle(projectId: string): Promise<ProjectBundle> {
@@ -12,11 +13,14 @@ export async function loadBundle(projectId: string): Promise<ProjectBundle> {
   const results = await db.results.where('projectId').equals(projectId).toArray();
   const params = (await db.parameters.toArray()).sort(compareParams);
   const sets = await db.guidelineSets.toArray();
+  // as the app does: quality control sites and samples apart
+  const qcSites = sites.filter((s) => isQcSite(s));
+  const isQc = (s: (typeof samples)[number]) => !!s.qc || qcSites.some((q) => q.id === s.siteId);
   return {
     project,
-    sites,
+    sites: sites.filter((s) => !isQcSite(s)),
     siteMap: new Map(sites.map((s) => [s.id, s])),
-    samples,
+    samples: samples.filter((s) => !isQc(s)),
     params,
     paramMap: new Map(params.map((p) => [p.id, p])),
     guidelineSets: sets,
@@ -26,6 +30,7 @@ export async function loadBundle(projectId: string): Promise<ProjectBundle> {
     schedules: await db.schedules.where('projectId').equals(projectId).toArray(),
     obligations: await db.obligations.where('projectId').equals(projectId).toArray(),
     index: buildIndex(samples, results, sites, params),
+    qc: { sites: qcSites, samples: samples.filter(isQc), records: await db.qa.where('projectId').equals(projectId).toArray() },
   };
 }
 

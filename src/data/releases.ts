@@ -11,6 +11,18 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.3.0',
+    date: '2026-10-19',
+    title: 'QA/QC checks',
+    items: [
+      'A QA/QC tab on each project: possible bottle swaps between sites (by the sampler, or the lab for one set of analytes), results unlike a site’s earlier ones, field duplicates’ RPDs, blanks, dissolved over total and other parts bigger than the whole, ion balance, EC against TDS, field against lab readings, holding times, the lab’s comments and detection limits.',
+      'For each finding: Fine (with why), Leave out (kept, struck through, not used in statistics, compliance, graphs or reports), Swap back, or Query (an email to the lab to paste). Everything decided goes in the project’s QA/QC log, and can be undone.',
+      'Duplicates and blanks are kept out of the monitoring data at a quality control site – made for you when importing a sample named like “DUP1” or “Field blank”. A duplicate’s original sample is suggested from its results.',
+      'The import summary lists what the checks found in the new results, the dashboard’s actions include them, and a QA/QC report section sums it all up with an RPD table and the decisions made.',
+      'Long tables (a row per result) without a detection limit column are now recognised as such.',
+    ],
+  },
+  {
     version: '1.2.0',
     date: '2026-10-19',
     title: 'Lab inbox',

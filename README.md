@@ -273,6 +273,37 @@ there as they work and show up for the others within seconds.
   not listed again – unless the file changes (a lab's amended report), when it's back, marked *changed
   since imported*. EnviroDB looks every ten minutes while open, and when you come back to it. The files
   are read on your computer like any other import; nothing is uploaded.
+- **QA/QC checks.** Each project's *QA/QC* tab checks the results (the latest round, the last 12 months or
+  everything) and lists what to look at – the tab shows how many, the import summary lists what a new file
+  raised, and the dashboard's actions include it:
+  - **Possible bottle swaps.** Two samples from the same round that each look like the other site's usual
+    results – swapped by the sampler, or (for one set of analytes, e.g. the metals) by the lab.
+  - **Unlike earlier results.** A result far from the site's other results (more than 3.5 robust standard
+    deviations, on a log scale for concentrations) and outside their range – with a hint when it's about
+    1000× usual (µg/L reported as mg/L, or the other way).
+  - **Field duplicates.** The relative percent difference (RPD) for each analyte. Limits: 30% for results over
+    20× the detection limit, 50% for 10–20×, none closer to it or for micro-organisms (*Settings → QA/QC checks*).
+  - **Blanks**: anything found above the detection limit in a field, trip or equipment blank.
+  - **Parts bigger than the whole**: dissolved over total metals, ammonia or nitrate over total nitrogen, DRP
+    over total phosphorus, E. coli over faecal coliforms … by more than 10% and the detection limit.
+  - **Ion balance** (±5%, ±10% for low-ionic waters), **EC against TDS**, **field against lab** EC and pH,
+    **impossible values**, **holding times** (from the lab's received date: micro 24 h; BOD, nitrate, DRP,
+    turbidity 48 h; solids and ammonia 7 days), the **lab's own comments**, **detection limits above** a consent
+    limit or guideline, and **raised detection limits**.
+
+  For each: **Fine** (say why), **Leave out…** (the results stay, struck through, but aren't used in statistics,
+  compliance, graphs or reports), **Swap back** (the two samples change sites, or just the swapped analytes
+  change places) or **Query** (copies an email to the lab). Every decision goes in the project's **QA/QC log**
+  – who, when and why – and can be undone. A result can also be left out by hand from the sample's details on
+  the *Data* tab. Importing the lab's file again keeps left-out results left out unless the value changed; a
+  swapped pair goes back as labelled (ask the lab for an amended report), and the check finds it again.
+
+  **Duplicates and blanks** are QC samples: import them to a quality control site (site type *Quality
+  control*). A sample named like "DUP1", "QC2" or "Field blank" gets one when you click *New site* while
+  importing. They're kept out of the monitoring data. A duplicate's original sample is suggested from how
+  alike the results are – confirm it, or choose another. The report section **QA/QC** sums up the duplicates
+  (with an RPD table), the blanks, the checks run and the decisions made, and says how many checks were still
+  to be looked at.
 - **Version numbers.** The version is at the foot of the menu – click it for what's new. Reports, Excel
   files and backups record the version that made them. When a new version is published EnviroDB offers to
   reload, and it tells you if someone in your workspace is already using a newer one.

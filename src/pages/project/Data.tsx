@@ -4,7 +4,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending } from '@tabler/icons-react';
+import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending, IconEyeOff } from '@tabler/icons-react';
+import { excludeResult, restoreResults } from '../../db/qa';
 import { useProject } from '../../hooks/useProjectData';
 import { ConsentViewControl, EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, consentPresets, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
 import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResults, pivot, type ConsentView, type PivotRow, type CellFlag } from '../../lib/analysis';
@@ -63,13 +64,27 @@ function Legend({ guidelineNames, hardness }: { guidelineNames: string[]; hardne
 }
 
 
+/** A result left out after a QA/QC check: struck through, with why. */
+function Withheld({ r, p }: { r?: Result; p: Parameter }) {
+  if (!r?.excluded) return <td />;
+  return (
+    <td className="num result-excluded" title={`Left out (QA/QC): ${r.excluded.reason}`}>
+      {displayValue(r, p).text}
+    </td>
+  );
+}
+
 function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () => void }) {
-  const { sites, index, paramMap } = useProject();
+  const { sites: monitoring, qc, index, paramMap } = useProject();
+  const sites = [...monitoring, ...qc.sites];
+  const [leaving, setLeaving] = useState<Result | null>(null);
+  const [why, setWhy] = useState('');
   // remounted (via key) whenever a different sample is opened
   const [s, setDraft] = useState<Sample | null>(sample ? { ...sample } : null);
   const [edits, setEdits] = useState<Record<string, string>>({});
   if (!s) return null;
-  const results = (index.bySample.get(s.id) ?? []).slice().sort((a, b) => {
+  // every result, left-out ones too (struck through)
+  const results = (index.allBySample.get(s.id) ?? []).slice().sort((a, b) => {
     const [pa, pb] = [paramMap.get(a.parameterId), paramMap.get(b.parameterId)];
     return pa && pb ? compareParams(pa, pb) : Number(!pa) - Number(!pb);
   });
@@ -113,25 +128,78 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
               const p = paramMap.get(r.parameterId);
               return (
                 <Table.Tr key={r.id}>
-                  <Table.Td>{p?.name ?? r.parameterId}</Table.Td>
+                  <Table.Td>
+                    {r.excluded ? (
+                      <Tooltip label={`Left out${r.excluded.by ? ` by ${r.excluded.by}` : ''} on ${formatDate(r.excluded.at.slice(0, 10))}: ${r.excluded.reason}`} multiline w={280}>
+                        <span className="result-excluded">{p?.name ?? r.parameterId}</span>
+                      </Tooltip>
+                    ) : (
+                      p?.name ?? r.parameterId
+                    )}
+                  </Table.Td>
                   <Table.Td w={140}>
-                    <TextInput size="xs" value={edits[r.id] ?? (r.value === null ? r.text ?? '' : `${r.qualifier}${r.value}`)} onChange={(e) => setEdits({ ...edits, [r.id]: e.currentTarget.value })} />
+                    <TextInput size="xs" className={r.excluded ? 'result-excluded' : undefined} value={edits[r.id] ?? (r.value === null ? r.text ?? '' : `${r.qualifier}${r.value}`)} onChange={(e) => setEdits({ ...edits, [r.id]: e.currentTarget.value })} />
                   </Table.Td>
                   <Table.Td w={90}>
                     <Text size="xs" c="dimmed">
                       {unitLabel(r.unit)}
                     </Text>
                   </Table.Td>
-                  <Table.Td w={36}>
-                    <ActionIcon variant="subtle" color="red" size="sm" aria-label="Delete result" onClick={async () => { await db.results.delete(r.id); }}>
-                      <IconTrash size={14} />
-                    </ActionIcon>
+                  <Table.Td w={64}>
+                    <Group gap={2} wrap="nowrap">
+                      {r.excluded ? (
+                        <Tooltip label="Put back into the data">
+                          <ActionIcon variant="subtle" size="sm" aria-label="Put the result back" onClick={() => void restoreResults([r.id])}>
+                            <IconArrowBackUp size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip label="Leave out of the data (kept, with the reason)">
+                          <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Leave the result out" onClick={() => setLeaving(r)}>
+                            <IconEyeOff size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
+                      <ActionIcon variant="subtle" color="red" size="sm" aria-label="Delete result" onClick={async () => { await db.results.delete(r.id); }}>
+                        <IconTrash size={14} />
+                      </ActionIcon>
+                    </Group>
                   </Table.Td>
                 </Table.Tr>
               );
             })}
           </Table.Tbody>
         </Table>
+        {leaving && (
+          <Card withBorder p="sm">
+            <Stack gap={6}>
+              <Text size="sm" fw={500}>
+                Leave out {paramMap.get(leaving.parameterId)?.name ?? leaving.parameterId}?
+              </Text>
+              <Text size="xs" c="dimmed">
+                It stays here, struck through, but isn’t used in statistics, compliance, graphs or reports. It’s recorded in the QA/QC log.
+              </Text>
+              <TextInput size="xs" label="Why" placeholder="e.g. bottle contaminated – lab confirmed" value={why} onChange={(e) => setWhy(e.currentTarget.value)} data-autofocus />
+              <Group justify="flex-end" gap="xs">
+                <Button size="xs" variant="default" onClick={() => setLeaving(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="xs"
+                  color="gray"
+                  onClick={async () => {
+                    const p = paramMap.get(leaving.parameterId);
+                    await excludeResult(leaving, why, `${sites.find((x) => x.id === leaving.siteId)?.code ?? ''} ${p?.name ?? leaving.parameterId} ${displayValue(leaving, p).text}`.trim());
+                    setLeaving(null);
+                    setWhy('');
+                  }}
+                >
+                  Leave out
+                </Button>
+              </Group>
+            </Stack>
+          </Card>
+        )}
         <Group justify="space-between" mt="sm">
           <Button
             color="red"
@@ -264,7 +332,7 @@ function SamplesAsRows({ rows, columns, flags, onRow, head }: { rows: PivotRow[]
                 <td className="sticky-col-2">{row.site.code}</td>
                 {columns.map((p) => {
                   const r = row.cells.get(p.id);
-                  if (!r) return <td key={p.id} />;
+                  if (!r) return <Withheld key={p.id} r={row.withheld?.get(p.id)} p={p} />;
                   const f = flags.get(r.id);
                   return (
                     <td key={p.id} className={`num ${cellClass(f)} ${r.qualifier === '<' ? 'nd' : ''}`} title={[f?.messages.join('\n'), r.text && r.text !== String(r.value) ? `Reported: ${r.text} ${r.unit}` : ''].filter(Boolean).join('\n') || undefined}>
@@ -325,7 +393,7 @@ function ParamsAsRows({ rows, columns, flags, onRow }: { rows: PivotRow[]; colum
                 <td className="sticky-col-2">{unitLabel(p.unit)}</td>
                 {shown.map((row) => {
                   const r = row.cells.get(p.id);
-                  if (!r) return <td key={row.sample.id} />;
+                  if (!r) return <Withheld key={row.sample.id} r={row.withheld?.get(p.id)} p={p} />;
                   const f = flags.get(r.id);
                   return (
                     <td key={row.sample.id} className={`num ${cellClass(f)} ${r.qualifier === '<' ? 'nd' : ''}`} title={f?.messages.join('\n')}>
@@ -473,7 +541,7 @@ export function DataTab() {
   const consentCounts = useMemo(() => countWithData(consent, withData), [consent, withData]);
   const exportIds = noneInView ? [] : shownIds;
 
-  const { columns, rows } = useMemo(() => pivot(data, { siteIds, paramIds: shownIds, start: period.start, end: period.end }), [data, siteIds, shownIds, period]);
+  const { columns, rows } = useMemo(() => pivot(data, { siteIds, paramIds: shownIds, start: period.start, end: period.end, withheld: true }), [data, siteIds, shownIds, period]);
   const flags = useMemo(() => flagResults(data, evaluateAll(data, period.start, period.end), setIds, period.start, period.end), [data, setIds, period]);
   const guidelineNames = setIds.map((id) => setMap.get(id)?.shortName ?? '').filter(Boolean);
   const siteOrder = useMemo(() => new Map(sites.map((s, i) => [s.id, i])), [sites]);

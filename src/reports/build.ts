@@ -1,6 +1,7 @@
 import type { ChartBlock, FigureImage, GuidelineSet, Letterhead, LetterheadItem, Parameter, ReportBlock, ReportTemplate, Result, ResultsTableBlock, Rule, Sample, Settings, Site, TableCalc, TocBlock } from '../db/types';
 import { RULE_LEVELS } from '../db/types';
 import type { ProjectBundle } from '../lib/analysis';
+import { QA_DEFAULTS, qaInputFor, qcKind, runQa, withRecords } from '../lib/qa';
 import { displayValue, evaluateAll, flagResults, isLimitLevel, keyParameters, limitToSites, statsTable, type CellFlag } from '../lib/analysis';
 import type { RuleEvaluation } from '../lib/compliance';
 import { describeRule, expandRules, ruleParamIds, STATUS_META } from '../lib/compliance';
@@ -921,6 +922,82 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         { text: s.northing ? String(s.northing) : '', align: 'right' },
       ]);
       nodes.push({ t: 'table', caption: tableCaption(capText(blk)), head, body, widths: [width * 0.1, '*', width * 0.14, width * 0.18, width * 0.12, width * 0.12], fontSize: t.fontSize - 1, notes: b.sites.some((s) => s.easting) ? ['Coordinates are NZTM2000.'] : undefined });
+    },
+    qaSummary: (blk) => {
+      // from the whole project (QC samples and left-out results aren't in the report's own data), for its sites
+      const full = opts.bundle;
+      const keep = subset ? new Set(opts.siteIds) : null;
+      const ours = (ids: string[] | undefined) => !keep || !ids?.length || ids.some((id) => keep.has(id));
+      const qa = runQa(qaInputFor(full, { start, end }, settings));
+      const records = full.qc?.records ?? [];
+      const findings = withRecords(qa.findings, records).filter((f) => ours(f.siteIds));
+      const dups = qa.duplicates.filter((d) => d.rpd !== null && d.primary && (!keep || keep.has(d.primary.siteId)));
+      const checked = dups.filter((d) => d.pass !== null);
+      const passed = checked.filter((d) => d.pass).length;
+      const nDup = new Set(dups.map((d) => d.dup.id)).size;
+      const blanks = qa.qcSamples.filter((x) => qcKind(x, full.siteMap.get(x.siteId)) === 'blank');
+      const blankHits = findings.filter((f) => f.kind === 'blank');
+      const decided = records.filter((r) => r.date && r.date >= start && r.date <= end && ours(r.siteIds)).sort((a, c) => ((a.date ?? '') < (c.date ?? '') ? -1 : 1));
+      const left = decided.filter((r) => r.status === 'excluded').reduce((n, r) => n + (r.resultIds?.length ?? 0), 0);
+      const swapped = decided.filter((r) => r.status === 'swapped').length;
+      const open = findings.filter((f) => !f.record && f.severity === 'check');
+      const rpd = { high: settings.qaRpdLimit ?? QA_DEFAULTS.rpdLimit, near: settings.qaRpdLimitNearDl ?? QA_DEFAULTS.rpdLimitNearDl };
+      const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+      const text: string[] = [];
+      text.push(
+        nDup
+          ? `${plural(nDup, 'field duplicate')} ${nDup === 1 ? 'was' : 'were'} taken. ${checked.length ? `${passed} of ${checked.length} analyte pairs (${Math.round((passed / checked.length) * 100)}%) were within the relative percent difference (RPD) limits of ${rpd.high}% for results over 20 times the detection limit and ${rpd.near}% for 10–20 times; closer to the detection limit no limit applies.` : 'None of the results were far enough above the detection limit for the RPD limits to apply.'}`
+          : 'No field duplicates were taken in the period.',
+      );
+      if (blanks.length) text.push(`${plural(blanks.length, 'blank')} ${blanks.length === 1 ? 'was' : 'were'} analysed: ${blankHits.length ? `analytes were found above the detection limit in ${blankHits.length === blanks.length ? (blanks.length === 1 ? 'it' : 'all of them') : plural(blankHits.length, 'blank')} (${blankHits.flatMap((f) => f.lines.map((l) => l.split(' (')[0])).slice(0, 6).join('; ')}).` : 'nothing was found above the detection limits.'}`);
+      text.push(
+        'The results were checked for ion balance, dissolved against total metals and other parts against their wholes, EC against TDS, field against laboratory readings, holding times, detection limits, results unlike each site’s earlier results, and samples swapped between sites.',
+      );
+      if (left || swapped) text.push(`After review, ${[left && `${plural(left, 'result')} ${left === 1 ? 'was' : 'were'} left out of the data`, swapped && `${plural(swapped, 'swap')} of samples between sites ${swapped === 1 ? 'was' : 'were'} corrected`].filter(Boolean).join(' and ')}${blk.decisions !== false ? ', as listed below' : ''}.`);
+      else if (decided.length) text.push('No results were left out of the data.');
+      if (open.length) text.push(`${plural(open.length, 'matter')} raised by the checks ${open.length === 1 ? 'had' : 'had'} not been reviewed when this report was prepared.`);
+      for (const x of text) nodes.push({ t: 'p', runs: [{ text: x }] });
+
+      const pt = t.fontSize - 1;
+      const showDups = blk.duplicates === 'none' ? [] : blk.duplicates === 'outside' ? dups.filter((d) => d.pass === false) : dups;
+      if (showDups.length) {
+        const head: Cell[][] = [[{ text: 'Date' }, { text: 'Site' }, { text: 'Duplicate' }, { text: 'Analyte' }, { text: 'Sample', align: 'right' }, { text: 'Duplicate', align: 'right' }, { text: 'RPD', align: 'right' }, { text: 'Limit', align: 'right' }]];
+        const body: Cell[][] = showDups.map((d) => {
+          const p = full.paramMap.get(d.parameterId);
+          const bad = d.pass === false ? (look.highlight === 'text' ? { color: TEXT_FLAGS.exceed } : { fill: FILLS.guideline }) : {};
+          return [
+            { text: formatDate(d.dup.date) },
+            { text: full.siteMap.get(d.primary!.siteId)?.code ?? '', bold: true },
+            { text: d.dup.sampleName || full.siteMap.get(d.dup.siteId)?.code || '' },
+            { text: p?.short ?? p?.name ?? d.parameterId },
+            { text: d.a ? `${displayValue(d.a, p).text}` : '', align: 'right' },
+            { text: d.b ? `${displayValue(d.b, p).text}` : '', align: 'right' },
+            { text: `${Math.round(d.rpd!)}%`, align: 'right', ...bad },
+            { text: d.limit === null ? '–' : `${d.limit}%`, align: 'right' },
+          ] as Cell[];
+        });
+        nodes.push({
+          t: 'table',
+          caption: tableCaption(capText(blk)),
+          head,
+          body,
+          widths: [width * 0.13, width * 0.09, width * 0.13, '*', width * 0.12, width * 0.12, width * 0.08, width * 0.08],
+          fontSize: pt,
+          notes: [`RPD: relative percent difference, |a − b| ÷ mean × 100. Limit: ${rpd.high}% over 20× the detection limit, ${rpd.near}% for 10–20×, none (–) closer to it or for micro-organisms. Results in the units of the results tables.`],
+        });
+      }
+      if (blk.decisions !== false && decided.length) {
+        const LABEL: Record<string, string> = { accepted: 'Accepted', excluded: 'Left out of the data', swapped: 'Swapped back', queried: 'Queried with the laboratory' };
+        const head: Cell[][] = [[{ text: 'Sampled' }, { text: 'Site' }, { text: 'Finding' }, { text: 'Decision' }, { text: 'Reason' }]];
+        const body: Cell[][] = decided.map((r) => [
+          { text: r.date ? formatDate(r.date) : '' },
+          { text: (r.siteIds ?? []).map((id) => full.siteMap.get(id)?.code).filter(Boolean).join(', ') },
+          { text: r.title },
+          { text: `${LABEL[r.status] ?? r.status}${r.status === 'excluded' && r.resultIds?.length ? ` (${r.resultIds.length})` : ''}` },
+          { text: r.note ?? '' },
+        ]);
+        nodes.push({ t: 'table', caption: tableCaption(tidyCaption(fill(fillCaption('QA/QC decisions, [period]', capBase)))), head, body, widths: [width * 0.13, width * 0.1, '*', width * 0.18, width * 0.28], fontSize: pt });
+      }
     },
     samplingTable: (blk) => {
       const required = requiredRounds(b, start, end);

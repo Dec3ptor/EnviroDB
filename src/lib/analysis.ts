@@ -1,4 +1,4 @@
-import type { ExceedanceNote, GuidelineSet, MonitoringSchedule, Parameter, Project, ReportObligation, Result, Rule, Sample, Site } from '../db/types';
+import type { ExceedanceNote, GuidelineSet, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, Site } from '../db/types';
 import type { DataIndex } from './dataIndex';
 import { buildIndex, resultsFor } from './dataIndex';
 import { evaluateRules, ruleParamIds, type EvalContext, type RuleEvaluation } from './compliance';
@@ -10,8 +10,11 @@ import { fmtNum, statValue } from './values';
 /** Everything the analysis/report code needs about a project. */
 export interface ProjectBundle {
   project: Project;
+  /** The monitoring sites (quality control sites are in `qc`). */
   sites: Site[];
+  /** Every site, quality control ones included. */
   siteMap: Map<string, Site>;
+  /** The monitoring samples (duplicates and blanks are in `qc`). */
   samples: Sample[];
   params: Parameter[];
   paramMap: Map<string, Parameter>;
@@ -22,6 +25,8 @@ export interface ProjectBundle {
   schedules: MonitoringSchedule[];
   obligations: ReportObligation[];
   index: DataIndex;
+  /** QA/QC: the quality control sites and samples (duplicates and blanks), and the decisions made. */
+  qc?: { sites: Site[]; samples: Sample[]; records: QaRecord[] };
 }
 
 /**
@@ -40,7 +45,7 @@ export function limitToSites<B extends ProjectBundle>(b: B, siteIds: string[]): 
   return {
     ...b,
     sites,
-    siteMap: new Map(sites.map((s) => [s.id, s])),
+    siteMap: new Map([...sites, ...(b.qc?.sites ?? [])].map((s) => [s.id, s])),
     samples: b.samples.filter((s) => keep.has(s.siteId)),
     rules,
     schedules: b.schedules.map((sch) => ({ ...sch, siteIds: sch.siteIds.filter((id) => keep.has(id)) })).filter((sch) => sch.siteIds.length),
@@ -111,6 +116,8 @@ export interface PivotRow {
   sample: Sample;
   site: Site;
   cells: Map<string, Result>;
+  /** Results left out after a QA/QC check (with `withheld: true`), shown struck through. */
+  withheld?: Map<string, Result>;
 }
 
 export interface PivotOptions {
@@ -118,6 +125,8 @@ export interface PivotOptions {
   paramIds: string[];
   start: string;
   end: string;
+  /** Include results left out after a QA/QC check (in `withheld`). */
+  withheld?: boolean;
 }
 
 export function pivot(b: ProjectBundle, opts: PivotOptions): { columns: Parameter[]; rows: PivotRow[] } {
@@ -137,7 +146,14 @@ export function pivot(b: ProjectBundle, opts: PivotOptions): { columns: Paramete
       cells.set(r.parameterId, r);
       used.add(r.parameterId);
     }
-    if (cells.size) rows.push({ sample: s, site, cells });
+    const withheld = new Map<string, Result>();
+    if (opts.withheld)
+      for (const r of b.index.withheld?.get(s.id) ?? []) {
+        if (paramFilter && !paramFilter.has(r.parameterId)) continue;
+        withheld.set(r.parameterId, r);
+        used.add(r.parameterId);
+      }
+    if (cells.size || withheld.size) rows.push(withheld.size ? { sample: s, site, cells, withheld } : { sample: s, site, cells });
   }
   const siteOrder = new Map(b.sites.map((s, i) => [s.id, i]));
   rows.sort((a, c) => (a.sample.date < c.sample.date ? -1 : a.sample.date > c.sample.date ? 1 : (siteOrder.get(a.site.id) ?? 0) - (siteOrder.get(c.site.id) ?? 0)));

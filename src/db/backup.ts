@@ -127,7 +127,7 @@ export async function restoreWorkspace(obj: unknown, mode: 'replace' | 'merge'):
 export async function exportProjectPackage(projectId: string): Promise<WorkspaceBackup> {
   const project = await db.projects.get(projectId);
   if (!project) throw new Error('Project not found');
-  const [sites, samples, results, rules, notes, schedules, obligations, imports, calendarRows] = await Promise.all([
+  const [sites, samples, results, rules, notes, schedules, obligations, imports, calendarRows, qa] = await Promise.all([
     db.sites.where('projectId').equals(projectId).toArray(),
     db.samples.where('projectId').equals(projectId).toArray(),
     db.results.where('projectId').equals(projectId).toArray(),
@@ -137,6 +137,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     db.obligations.where('projectId').equals(projectId).toArray(),
     db.imports.where('projectId').equals(projectId).toArray(),
     db.calendarRows.where('projectId').equals(projectId).toArray(),
+    db.qa.where('projectId').equals(projectId).toArray(),
   ]);
   const calendarMarks = calendarRows.length ? await db.calendarMarks.where('item').anyOf(calendarRows.map((r) => r.id)).toArray() : [];
   const usedParams = new Set(results.map((r) => r.parameterId));
@@ -152,7 +153,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     appVersion: APP_VERSION,
-    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks },
+    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks, qa },
   };
 }
 
@@ -195,7 +196,7 @@ export async function importProjectPackage(obj: unknown): Promise<string> {
     };
     await put('sites', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId }));
     await put('imports', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId }));
-    await put('samples', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId, siteId: remap(r.siteId as string)!, importId: remap(r.importId as string) }));
+    await put('samples', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId, siteId: remap(r.siteId as string)!, importId: remap(r.importId as string), qcOf: remap(r.qcOf as string) }));
     await put('results', (r) => ({
       ...r, id: remap(r.id)!, projectId: newProjectId, sampleId: remap(r.sampleId as string)!, siteId: remap(r.siteId as string)!, importId: remap(r.importId as string),
     }));
@@ -212,6 +213,13 @@ export async function importProjectPackage(obj: unknown): Promise<string> {
     await put('calendarMarks', (r) => {
       const item = remap(r.item as string)!;
       return { ...r, id: r.field ? `${item}|${String(r.month).slice(0, 4)}|${r.field}` : `${item}|${r.month}`, item };
+    });
+    // the QA/QC log: its keys name samples, which a copy renames
+    const ids = (list: unknown) => (list as string[] | undefined)?.map((x) => (exists && map.has(x) ? map.get(x)! : x));
+    await put('qa', (r) => {
+      const key = String(r.key).split('|').map((x) => (exists && map.has(x) ? map.get(x)! : x)).join('|');
+      const swap = r.swap as { a: string; b: string; parameterIds?: string[] } | undefined;
+      return { ...r, id: `${newProjectId}|${key}`, projectId: newProjectId, key, siteIds: ids(r.siteIds), resultIds: ids(r.resultIds), swap: swap && { ...swap, a: ids([swap.a])![0], b: ids([swap.b])![0] } };
     });
   });
   return newProjectId;

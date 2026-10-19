@@ -48,6 +48,8 @@ export function detectLong(g: SheetGrid): { config: LongConfig; score: number } 
       }
     });
     if (cfg.analyte === null || cfg.value === null) score = 0;
+    // every column a long table needs, under its usual heading: it is one, whatever else the sheet looks like
+    else if (cfg.date !== null && (cfg.site !== null || cfg.sample !== null)) score += 30;
     if (!best || score > best.score) best = { config: cfg, score };
   }
   return best!;

@@ -2,10 +2,12 @@ import { InboxPanel } from '../../components/InboxPanel';
 import { lazy, Suspense, useState } from 'react';
 import { Badge, Button, Center, Group, Loader, Menu, Stack, Tabs, Text, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap } from '@tabler/icons-react';
+import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap, IconListCheck } from '@tabler/icons-react';
 import { ProjectDataProvider, useProject } from '../../hooks/useProjectData';
 import { OverviewTab } from './Overview';
 import { DataTab } from './Data';
+import { QaTab } from './QA';
+import { useProjectQa } from '../../hooks/useQa';
 import { ChartsTab } from './Charts';
 import { ComplianceTab } from './Compliance';
 import { ScheduleTab } from './Schedule';
@@ -22,6 +24,7 @@ const MapTab = lazy(() => import('./MapTab').then((m) => ({ default: m.MapTab })
 const TABS = [
   { value: 'overview', label: 'Overview', icon: IconLayoutDashboard },
   { value: 'data', label: 'Data', icon: IconTable },
+  { value: 'qa', label: 'QA/QC', icon: IconListCheck },
   { value: 'charts', label: 'Graphs', icon: IconChartLine },
   { value: 'map', label: 'Map', icon: IconMap },
   { value: 'compliance', label: 'Compliance', icon: IconShieldCheck },
@@ -37,6 +40,7 @@ function Header() {
   const base = `/projects/${project.id}`;
   const current = loc.pathname.slice(base.length + 1).split('/')[0] || 'overview';
   const [aiOpen, setAiOpen] = useState(false);
+  const qa = useProjectQa('12m');
   const meta = [project.client, project.consents && `Consent ${project.consents}`, project.regulator, `${sites.length} sites`, `${samples.length} samples`].filter(Boolean).join(' · ');
   return (
     <Stack gap="sm" mb="md">
@@ -94,7 +98,19 @@ function Header() {
       <Tabs value={current} onChange={(v) => navigate(!v || v === 'overview' ? base : `${base}/${v}`)} variant="outline">
         <Tabs.List style={{ flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none' }}>
           {TABS.map((t) => (
-            <Tabs.Tab key={t.value} value={t.value} leftSection={<t.icon size={16} />} ref={t.value === current ? scrollIntoTabs : undefined}>
+            <Tabs.Tab
+              key={t.value}
+              value={t.value}
+              leftSection={<t.icon size={16} />}
+              rightSection={
+                t.value === 'qa' && qa.toCheck ? (
+                  <Badge size="xs" circle={qa.toCheck < 10} color="orange" title={`${qa.toCheck} to look at in the last 12 months`} aria-label={`${qa.toCheck} to look at`}>
+                    {qa.toCheck}
+                  </Badge>
+                ) : undefined
+              }
+              ref={t.value === current ? scrollIntoTabs : undefined}
+            >
               {t.label}
             </Tabs.Tab>
           ))}
@@ -117,6 +133,7 @@ export function ProjectLayout() {
       <Routes>
         <Route index element={<OverviewTab />} />
         <Route path="data" element={<DataTab />} />
+        <Route path="qa" element={<QaTab />} />
         <Route path="charts" element={<ChartsTab />} />
         <Route
           path="map"

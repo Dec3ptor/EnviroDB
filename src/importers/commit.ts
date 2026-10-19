@@ -2,6 +2,7 @@ import { db } from '../db/db';
 import type { ImportBatch, Parameter, Result, Sample } from '../db/types';
 import { addParameterAlias, addSiteAlias, touchProject } from '../db/repo';
 import { stableId, uid } from '../lib/ids';
+import { isQcSite } from '../lib/qc';
 import { analyteMapKey, PROVISIONAL_NOTE, type ParsedImport } from './model';
 
 export interface ImportMapping {
@@ -25,6 +26,9 @@ export interface CommitSummary extends ImportBatch {
 
 export async function commitImport(projectId: string, parsed: ParsedImport, mapping: ImportMapping, opts: CommitOptions): Promise<CommitSummary> {
   const params = new Map<string, Parameter>((await db.parameters.toArray()).map((p) => [p.id, p]));
+  // at a quality control site each sample is its own (DUP1 and DUP2 the same day are two samples), told apart by name
+  const qcSites = new Set((await db.sites.where('projectId').equals(projectId).toArray()).filter((s) => isQcSite(s)).map((s) => s.id));
+  const qcName = (siteId: string, name?: string) => (qcSites.has(siteId) ? (name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() : '');
   const batch: ImportBatch = {
     id: uid('imp'),
     projectId,
@@ -42,7 +46,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
     const existingSamples = await db.samples.where('projectId').equals(projectId).toArray();
     const sampleBySiteDay = new Map<string, Sample>();
     for (const s of existingSamples) {
-      const k = `${s.siteId}|${s.date.slice(0, 10)}`;
+      const k = `${s.siteId}|${s.date.slice(0, 10)}|${qcName(s.siteId, s.sampleName)}`;
       if (!sampleBySiteDay.has(k)) sampleBySiteDay.set(k, s);
     }
     const touchedSampleIds = new Set<string>();
@@ -58,12 +62,13 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
         batch.skipped += raw.results.length;
         continue;
       }
-      const k = `${siteId}|${date.slice(0, 10)}`;
+      const qn = qcName(siteId, raw.sampleName);
+      const k = `${siteId}|${date.slice(0, 10)}|${qn}`;
       let sample = sampleBySiteDay.get(k);
       if (!sample) {
         sample = {
           // named after its site and day, so two people importing the same results at once make one sample
-          id: stableId('s', projectId, siteId, date.slice(0, 10)),
+          id: qn ? stableId('s', projectId, siteId, date.slice(0, 10), qn) : stableId('s', projectId, siteId, date.slice(0, 10)),
           projectId,
           siteId,
           date,
@@ -73,6 +78,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
           labNumber: raw.labNumber,
           importId: batch.id,
           notes: raw.notes,
+          receivedOn: raw.receivedOn,
         };
         sampleBySiteDay.set(k, sample);
         samplesToPut.push(sample);
@@ -84,6 +90,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
         if (!sample.labJob && (raw.labJob ?? parsed.labJob)) patch.labJob = raw.labJob ?? parsed.labJob;
         if (!sample.labName && (raw.labName ?? opts.labName)) patch.labName = raw.labName ?? opts.labName;
         if (sample.date.length === 10 && date.length > 10) patch.date = date;
+        if (!sample.receivedOn && raw.receivedOn) patch.receivedOn = raw.receivedOn;
         // final results replace provisional ones, and their note goes
         let notes = sample.notes;
         if (!raw.provisional && opts.duplicates !== 'skip' && notes?.includes(PROVISIONAL_NOTE)) notes = notes.split('\n').filter((l) => !l.startsWith(PROVISIONAL_NOTE)).join('\n') || undefined;
@@ -147,6 +154,9 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
         // the result itself is put again; others for the same analyte go
         toDelete.push(...ex.filter((e) => e.id !== res.id).map((e) => e.id));
         batch.replaced++;
+        // left out after a QA/QC check: stays left out if the lab's value is the same (an amended one is looked at again)
+        const was = ex.find((e) => e.excluded && e.value === res.value && e.qualifier === res.qualifier && e.unit === res.unit);
+        if (was) res.excluded = was.excluded;
       }
       finalResults.push(res);
     });

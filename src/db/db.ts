@@ -9,6 +9,7 @@ import type {
   MonitoringSchedule,
   Parameter,
   Project,
+  QaRecord,
   ReportObligation,
   ReportTemplate,
   Result,
@@ -45,6 +46,7 @@ export class EnviroDatabase extends Dexie {
   calendarRows!: Table<CalendarRow, string>;
   calendarMarks!: Table<CalendarMark, string>;
   inbox!: Table<InboxFile, string>;
+  qa!: Table<QaRecord, string>;
   meta!: Table<MetaRecord, string>;
   // the shared workspace: what changed when (syncState), what is still to be written to the folder (syncDirty),
   // colleagues' files already read (syncFiles) and this browser's own details (syncLocal)
@@ -86,13 +88,16 @@ export class EnviroDatabase extends Dexie {
     this.version(5).stores({
       inbox: 'id, projectId, path',
     });
+    this.version(6).stores({
+      qa: 'id, projectId',
+    });
   }
 }
 
 export const db = new EnviroDatabase();
 
 export const DATA_TABLES = [
-  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox',
+  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa',
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 

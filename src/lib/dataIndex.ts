@@ -1,10 +1,18 @@
 import type { Parameter, Result, Sample, Site } from '../db/types';
 import { convert } from './units';
+import { isQcSite } from './qc';
 
-/** Results organised for fast lookup: parameter → site → results sorted by date. */
+/**
+ * Results organised for fast lookup: parameter → site → results sorted by date. Only the monitoring data: results
+ * left out after a QA/QC check, and QC samples (duplicates and blanks), are kept apart (`allBySample`, `withheld`).
+ */
 export interface DataIndex {
   byParam: Map<string, Map<string, Result[]>>;
   bySample: Map<string, Result[]>;
+  /** Every result of each sample – left out ones and QC samples' included (to edit a sample). */
+  allBySample: Map<string, Result[]>;
+  /** Results left out after a QA/QC check, by sample. */
+  withheld: Map<string, Result[]>;
   sampleById: Map<string, Sample>;
   siteById: Map<string, Site>;
   paramById: Map<string, Parameter>;
@@ -17,8 +25,24 @@ export interface DataIndex {
 export function buildIndex(samples: Sample[], results: Result[], sites: Site[], params: Parameter[]): DataIndex {
   const byParam = new Map<string, Map<string, Result[]>>();
   const bySample = new Map<string, Result[]>();
+  const allBySample = new Map<string, Result[]>();
+  const withheld = new Map<string, Result[]>();
+  const push = (m: Map<string, Result[]>, k: string, r: Result) => {
+    const l = m.get(k);
+    if (l) l.push(r);
+    else m.set(k, [r]);
+  };
+  // QC samples: marked on the sample, or at a quality control site
+  const qcSites = new Set(sites.filter((s) => isQcSite(s)).map((s) => s.id));
+  const qcSamples = new Set(samples.filter((s) => s.qc || qcSites.has(s.siteId)).map((s) => s.id));
   let min: string | undefined, max: string | undefined;
   for (const r of results) {
+    push(allBySample, r.sampleId, r);
+    if (qcSamples.has(r.sampleId) || qcSites.has(r.siteId)) continue;
+    if (r.excluded) {
+      push(withheld, r.sampleId, r);
+      continue;
+    }
     let m = byParam.get(r.parameterId);
     if (!m) byParam.set(r.parameterId, (m = new Map()));
     let list = m.get(r.siteId);
@@ -55,6 +79,8 @@ export function buildIndex(samples: Sample[], results: Result[], sites: Site[], 
   return {
     byParam,
     bySample,
+    allBySample,
+    withheld,
     sampleById: new Map(samples.map((s) => [s.id, s])),
     siteById: new Map(sites.map((s) => [s.id, s])),
     paramById: new Map(params.map((p) => [p.id, p])),

@@ -59,6 +59,8 @@ export const SITE_TYPES = [
   'Sediment',
   'Air',
   'Other',
+  /** Duplicates and blanks: not a monitoring location, its samples are kept out of the monitoring data. */
+  'Quality control',
 ] as const;
 export type SiteType = (typeof SITE_TYPES)[number];
 
@@ -105,6 +107,15 @@ export interface Sample {
   labNumber?: string;
   importId?: ID;
   notes?: string;
+  /**
+   * A QC sample, kept out of the monitoring data: a field duplicate (of `qcOf`) or a blank. Samples at a "Quality
+   * control" site are QC samples too (duplicate or blank by their name).
+   */
+  qc?: 'duplicate' | 'blank';
+  /** A duplicate's original sample. */
+  qcOf?: ID;
+  /** When the lab received it ('YYYY-MM-DD' or with a time), from the lab's file – for holding times. */
+  receivedOn?: string;
 }
 
 export type Qualifier = '' | '<' | '>';
@@ -123,6 +134,11 @@ export interface Result {
   text?: string; // raw text as reported (e.g. "< 0.0010", "NS")
   dl?: number; // detection limit, if known
   importId?: ID;
+  /**
+   * Left out of the monitoring data after a QA/QC check – statistics, compliance, graphs and reports – and why. The
+   * result is kept, and shown struck through in the sample's details.
+   */
+  excluded?: { reason: string; by?: string; at: string };
 }
 
 export interface GuidelineValue {
@@ -350,6 +366,30 @@ export interface InboxFile {
   at: string;
 }
 
+/**
+ * What was decided about a QA/QC finding (by its key): fine as it is, results left out, samples swapped between
+ * sites, or queried with the lab – with who, when and why. The project's QA/QC log.
+ */
+export interface QaRecord {
+  /** `${projectId}|${key}` */
+  id: string;
+  projectId: ID;
+  key: string;
+  kind: string;
+  status: 'accepted' | 'excluded' | 'swapped' | 'queried';
+  note?: string;
+  /** The finding as it was when decided. */
+  title: string;
+  lines?: string[];
+  date?: string;
+  siteIds?: ID[];
+  resultIds?: ID[];
+  /** A swap made: the samples, and the analytes when not all. */
+  swap?: { a: ID; b: ID; parameterIds?: ID[] };
+  by?: string;
+  at: string;
+}
+
 export interface ImportBatch {
   id: ID;
   projectId: ID;
@@ -389,7 +429,8 @@ export type ReportBlockType =
   | 'calc'
   | 'programmeTable'
   | 'tarpTable'
-  | 'reportingTable';
+  | 'reportingTable'
+  | 'qaSummary';
 
 export interface ReportBlockBase {
   id: string;
@@ -505,6 +546,17 @@ export interface ChartBlock extends ReportBlockBase {
 }
 export interface SiteTableBlock extends ReportBlockBase {
   type: 'siteTable';
+}
+/**
+ * The QA/QC of the period's results: field duplicates (RPDs), blanks, the checks run, results left out and samples
+ * swapped (with why), and how many checks are still to be looked at.
+ */
+export interface QaSummaryBlock extends ReportBlockBase {
+  type: 'qaSummary';
+  /** The duplicates' table: every analyte with an RPD, or only those outside the limits (default 'all'). */
+  duplicates?: 'all' | 'outside' | 'none';
+  /** The decisions' table (results left out, samples swapped, accepted findings …) – default shown. */
+  decisions?: boolean;
 }
 /** What a monitoring round's results are compared with, besides limits and guidelines. */
 export type RoundCompare = 'previous' | 'change' | 'median' | 'range' | 'note';
@@ -683,6 +735,7 @@ export interface ReportingTableBlock extends ReportBlockBase {
 }
 
 export type ReportBlock =
+  | QaSummaryBlock
   | TitleBlock
   | HeadingBlock
   | TextBlock
@@ -781,6 +834,12 @@ export interface Settings {
   labTurnaroundDays?: number;
   /** Sampling rounds: results are to be sent on this many working days after they're back (default 5). */
   sendResultsDays?: number;
+  /** QA/QC: duplicate RPD limit (%) for results over 20× the detection limit (default 30). */
+  qaRpdLimit?: number;
+  /** QA/QC: duplicate RPD limit (%) for results 10–20× the detection limit (default 50). */
+  qaRpdLimitNearDl?: number;
+  /** QA/QC: how unusual a result is before it's flagged, in robust standard deviations (default 3.5). */
+  qaOutlierZ?: number;
 }
 
 /** Something in a letterhead's header or footer: a line of text ({page} = page number) or a picture. */

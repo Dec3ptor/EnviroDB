@@ -235,6 +235,8 @@ export function parseLabSheet(g: SheetGrid): ParsedImport | null {
         if (n && comments.has(n)) refs.set(n, [...(refs.get(n) ?? []), r.analyte]);
       }
       if (refs.size) s.notes = [...refs].map(([n, analytes]) => `Lab comment #${n} (${analytes.join(', ')}): ${comments.get(n)}`).join('\n');
+      const got = received ? parseDateAny(received) : null;
+      if (got) s.receivedOn = got;
       if (!s.date && received) {
         const d = parseDateAny(received);
         if (d) {

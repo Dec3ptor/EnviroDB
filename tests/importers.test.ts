@@ -92,4 +92,12 @@ describe('long format CSV', () => {
     const tss = p.samples[0].results.find((r) => r.analyte === 'Total Suspended Solids')!;
     expect(tss.parsed).toMatchObject({ value: 3, qualifier: '<' });
   });
+
+  it('knows a long table without a detection limit column', async () => {
+    const sites = ['DP1', 'DS1', 'US1', 'DUP1', 'Field blank'];
+    const params = ['pH', 'Total Suspended Solids', 'Turbidity', 'Electrical Conductivity (EC)', 'Dissolved Zinc', 'Nitrate-N'];
+    const csv = ['Site,Date,Parameter,Result,Units', ...sites.flatMap((s) => params.map((p, i) => `${s},2026-10-14,${p},${i + 1.5},g/m3`))].join('\n');
+    const grids = await readWorkbook(new TextEncoder().encode(csv).buffer, 'round.csv');
+    expect(planSheets(grids, index)[0].mode).toBe('long');
+  });
 });

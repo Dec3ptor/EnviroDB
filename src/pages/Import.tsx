@@ -1,4 +1,7 @@
 import { InboxPanel } from '../components/InboxPanel';
+import { QC_SITE_TYPE, looksLikeQc } from '../lib/qa';
+import { projectQa } from '../hooks/useQa';
+import { useSettings } from '../hooks/useSettings';
 import { markInboxImported, takeInboxImport, useInbox, type InboxCandidate } from '../sync/inbox';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -270,7 +273,9 @@ function NewParamModal({ initial, onClose, onCreated }: { initial: { name: strin
 
 export function ImportWizard(_props: { projectId: string }) {
   const data = useProject();
-  const { project, sites, params } = data;
+  const { project, params } = data;
+  // quality control sites too: duplicates and blanks are imported to them
+  const sites = useMemo(() => [...data.sites, ...data.qc.sites], [data.sites, data.qc.sites]);
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -368,7 +373,7 @@ export function ImportWizard(_props: { projectId: string }) {
       if (!sid || !d) continue;
       const existing = bySiteDay.get(`${sid}|${d.slice(0, 10)}`);
       if (!existing) continue;
-      const have = new Set((data.index.bySample.get(existing) ?? []).map((r) => r.parameterId));
+      const have = new Set((data.index.allBySample.get(existing) ?? []).map((r) => r.parameterId));
       for (const r of s.results) {
         const pid = paramMapping[analyteMapKey(r)];
         if (pid && have.has(pid)) n++;
@@ -385,7 +390,15 @@ export function ImportWizard(_props: { projectId: string }) {
       return;
     }
     // named after the project and code, so two people importing the same file at once make one site
-    const s = newSite(project.id, { id: stableId('site', project.id, code.toLowerCase()), code, name: code !== text ? text : undefined, order: sites.length + 1, aliases: code !== text ? [text] : [] });
+    const s = newSite(project.id, {
+      id: stableId('site', project.id, code.toLowerCase()),
+      code,
+      name: code !== text ? text : undefined,
+      order: sites.length + 1,
+      aliases: code !== text ? [text] : [],
+      // "DUP1", "Field blank" …: a quality control site, kept out of the monitoring data
+      ...(looksLikeQc(text) ? { type: QC_SITE_TYPE } : {}),
+    });
     await saveSite(s);
     setSiteMap((m) => ({ ...m, [text]: s.id }));
   };
@@ -426,6 +439,14 @@ export function ImportWizard(_props: { projectId: string }) {
     const hits = evals.flatMap((ev) => ev.exceedances.map((ex) => ({ ev, ex })));
     return { start, end, hits, inconclusive: evals.flatMap((ev) => ev.inconclusive.map((ex) => ({ ev, ex }))) };
   }, [summary, data]);
+  // QA/QC findings in the samples just imported
+  const settings = useSettings();
+  const importQa = useMemo(() => {
+    if (!summary) return null;
+    const mine = new Set([...data.index.allBySample.values()].flat().filter((r) => r.importId === summary.id).map((r) => r.sampleId));
+    if (!mine.size) return null;
+    return projectQa(data, 'all', settings).findings.filter((f) => !f.record && f.sampleIds.some((id) => mine.has(id)));
+  }, [summary, data, settings]);
 
   return (
     <Stack gap="md">
@@ -1000,6 +1021,36 @@ export function ImportWizard(_props: { projectId: string }) {
                   <Text size="sm" c="orange.8" mt="xs">
                     {importCheck.inconclusive.length} result(s) have a detection limit above the limit – ask the lab about lower detection limits.
                   </Text>
+                )}
+              </>
+            )}
+            {importQa && (
+              <>
+                <Title order={5} mt="md" mb={4}>
+                  QA/QC checks
+                </Title>
+                {importQa.length ? (
+                  <Alert color="orange" variant="light" icon={<IconAlertTriangle size={18} />} title={`${importQa.length} thing${importQa.length === 1 ? '' : 's'} to look at`}>
+                    <Stack gap={2}>
+                      {importQa.slice(0, 6).map((f) => (
+                        <Text key={f.key} size="sm">
+                          {f.title} <Text span size="xs" c="dimmed">({formatDate(f.date)})</Text>
+                        </Text>
+                      ))}
+                      {importQa.length > 6 && (
+                        <Text size="xs" c="dimmed">
+                          and {importQa.length - 6} more
+                        </Text>
+                      )}
+                      <Anchor size="sm" mt={4} onClick={() => navigate(`/projects/${project.id}/qa`)}>
+                        Look at them on the QA/QC tab
+                      </Anchor>
+                    </Stack>
+                  </Alert>
+                ) : (
+                  <Alert color="green" variant="light" icon={<IconCircleCheck size={18} />}>
+                    Nothing unusual: duplicates, blanks, ion balance, parts and wholes, and the sites’ earlier results all check out.
+                  </Alert>
                 )}
               </>
             )}

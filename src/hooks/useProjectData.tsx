@@ -3,16 +3,21 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Center, Loader, Stack, Text, Button } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { db } from '../db/db';
-import type { ExceedanceNote, GuidelineSet, ImportBatch, MonitoringSchedule, Parameter, Project, ReportObligation, Result, Rule, Sample, Site } from '../db/types';
+import type { ExceedanceNote, GuidelineSet, ImportBatch, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, Site } from '../db/types';
+import { isQcSite } from '../lib/qc';
 import { buildIndex, type DataIndex } from '../lib/dataIndex';
 import { SERIES_LIGHT } from '../theme';
 import { compareParams } from '../data/parameters';
 
 export interface ProjectData {
   project: Project;
+  /** The monitoring sites (quality control sites are in `qc`). */
   sites: Site[];
+  /** Every site, quality control ones included. */
   siteMap: Map<string, Site>;
+  /** The monitoring samples (duplicates and blanks are in `qc`). */
   samples: Sample[];
+  /** Every result, QC samples' and left-out ones included. */
   results: Result[];
   params: Parameter[];
   paramMap: Map<string, Parameter>;
@@ -24,6 +29,8 @@ export interface ProjectData {
   obligations: ReportObligation[];
   imports: ImportBatch[];
   index: DataIndex;
+  /** QA/QC: the quality control sites and samples (duplicates and blanks), and the decisions made. */
+  qc: { sites: Site[]; samples: Sample[]; records: QaRecord[] };
   siteColor: (siteId: string) => string;
 }
 
@@ -53,18 +60,23 @@ export function ProjectDataProvider({ projectId, children }: { projectId: string
   const imports = useLiveQuery(() => db.imports.where('projectId').equals(projectId).reverse().sortBy('importedAt'), [projectId]);
   const params = useLiveQuery(() => db.parameters.toArray(), []);
   const guidelineSets = useLiveQuery(() => db.guidelineSets.toArray(), []);
+  const qaRecords = useLiveQuery(() => db.qa.where('projectId').equals(projectId).toArray(), [projectId]);
 
   const value = useMemo<ProjectData | null>(() => {
-    if (!project || !sites || !samples || !results || !rules || !notes || !schedules || !obligations || !imports || !params || !guidelineSets) return null;
+    if (!project || !sites || !samples || !results || !rules || !notes || !schedules || !obligations || !imports || !params || !guidelineSets || !qaRecords) return null;
     const sortedSites = [...sites].sort((a, b) => a.order - b.order || a.code.localeCompare(b.code));
     const sortedParams = [...params].sort(compareParams);
     const index = buildIndex(samples, results, sortedSites, sortedParams);
-    const colorIdx = new Map(sortedSites.map((s, i) => [s.id, i]));
+    const monitoringSites = sortedSites.filter((s) => !isQcSite(s));
+    const qcSiteIds = new Set(sortedSites.filter((s) => isQcSite(s)).map((s) => s.id));
+    const isQc = (s: Sample) => !!s.qc || qcSiteIds.has(s.siteId);
+    const byDate = [...samples].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const colorIdx = new Map(monitoringSites.map((s, i) => [s.id, i]));
     return {
       project,
-      sites: sortedSites,
+      sites: monitoringSites,
       siteMap: new Map(sortedSites.map((s) => [s.id, s])),
-      samples: [...samples].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
+      samples: byDate.filter((s) => !isQc(s)),
       results,
       params: sortedParams,
       paramMap: new Map(sortedParams.map((p) => [p.id, p])),
@@ -76,9 +88,10 @@ export function ProjectDataProvider({ projectId, children }: { projectId: string
       obligations,
       imports,
       index,
+      qc: { sites: sortedSites.filter((s) => qcSiteIds.has(s.id)), samples: byDate.filter(isQc), records: qaRecords },
       siteColor: (id: string) => SERIES_LIGHT[(colorIdx.get(id) ?? 0) % SERIES_LIGHT.length],
     };
-  }, [project, sites, samples, results, rules, notes, schedules, obligations, imports, params, guidelineSets]);
+  }, [project, sites, samples, results, rules, notes, schedules, obligations, imports, params, guidelineSets, qaRecords]);
 
   if (project === null) {
     return (

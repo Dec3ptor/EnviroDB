@@ -27,6 +27,8 @@ export interface RawSample {
   provisional?: boolean;
   /** The lab, when files from several labs are imported together. */
   labName?: string;
+  /** When the lab received (registered) the sample, for holding times. */
+  receivedOn?: string;
 }
 
 /** Start of the note on samples whose results were still with the lab when imported. */

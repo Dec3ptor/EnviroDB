@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { APP_BUILD, APP_VERSION } from '../lib/version';
+import { QA_DEFAULTS } from '../lib/qa';
 import { DEFAULT_LAB_DAYS, DEFAULT_SEND_DAYS } from '../lib/rounds';
 import { Anchor, Badge, Button, Card, FileButton, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -131,6 +132,29 @@ export function SettingsPage() {
             value={settings.sendResultsDays ?? DEFAULT_SEND_DAYS}
             onChange={(v) => typeof v === 'number' && v > 0 && void saveSettings({ sendResultsDays: v })}
             suffix=" working days"
+          />
+        </SimpleGrid>
+      </Card>
+
+      <Card>
+        <Title order={4} mb={4}>
+          QA/QC checks
+        </Title>
+        <Text size="xs" c="dimmed" mb="xs">
+          For the team: limits for field duplicates (relative percent difference) and how unusual a result must be before it’s flagged. Duplicates closer than 10× the detection limit have no limit.
+        </Text>
+        <SimpleGrid cols={{ base: 1, sm: 3 }}>
+          <NumberInput label="RPD limit" description="Results over 20× the detection limit" min={5} max={200} value={settings.qaRpdLimit ?? QA_DEFAULTS.rpdLimit} onChange={(v) => typeof v === 'number' && v > 0 && void saveSettings({ qaRpdLimit: v })} suffix="%" />
+          <NumberInput label="RPD limit near detection" description="Results 10–20× the detection limit" min={5} max={200} value={settings.qaRpdLimitNearDl ?? QA_DEFAULTS.rpdLimitNearDl} onChange={(v) => typeof v === 'number' && v > 0 && void saveSettings({ qaRpdLimitNearDl: v })} suffix="%" />
+          <NumberInput
+            label="Unusual results"
+            description="Robust standard deviations from the site’s others"
+            min={2}
+            max={10}
+            step={0.5}
+            decimalScale={1}
+            value={settings.qaOutlierZ ?? QA_DEFAULTS.outlierZ}
+            onChange={(v) => typeof v === 'number' && v >= 2 && void saveSettings({ qaOutlierZ: v })}
           />
         </SimpleGrid>
       </Card>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActionIcon, Anchor, Autocomplete, Box, Button, Card, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Table, TagsInput, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -85,7 +85,8 @@ function SiteRow({ site, index, count, onMove }: { site: Site; index: number; co
 }
 
 function BulkSitesModal({ onClose }: { onClose: () => void }) {
-  const { project, sites } = useProject();
+  const { project, sites: monitoring, qc } = useProject();
+  const sites = [...monitoring, ...qc.sites];
   const [text, setText] = useState('');
   const [type, setType] = useState<Site['type']>('Surface water');
   const lines = text
@@ -194,7 +195,9 @@ function ParametersCard() {
 }
 
 export function SetupTab() {
-  const { project, sites, rules } = useProject();
+  const { project, sites: monitoring, qc, rules } = useProject();
+  // quality control sites (duplicates, blanks) are set up here too
+  const sites = useMemo(() => [...monitoring, ...qc.sites].sort((a, b) => a.order - b.order || a.code.localeCompare(b.code)), [monitoring, qc.sites]);
   // the details as saved, with your unsaved edits on top (a colleague's change to anything else shows straight away)
   const [p, setP, { dirty, reset }] = useEditable<Project>(project);
   const [bulk, setBulk] = useState(false);

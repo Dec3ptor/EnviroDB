@@ -4,7 +4,7 @@ import { ActionIcon, Anchor, Badge, Button, Group, List, Paper, SegmentedControl
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  IconAlertTriangle, IconBook2, IconCalendarDue, IconCalendarMonth, IconCheck, IconCircleCheck, IconCircleX, IconFileReport, IconFlask, IconFolders, IconListCheck, IconSettings, IconUpload, IconHourglassHigh, IconInbox } from '@tabler/icons-react';
+  IconAlertTriangle, IconBook2, IconCalendarDue, IconCalendarMonth, IconCheck, IconCircleCheck, IconCircleX, IconFileReport, IconFlask, IconFolders, IconListCheck, IconSettings, IconUpload, IconHourglassHigh, IconInbox, IconZoomCheck } from '@tabler/icons-react';
 import { db } from '../../db/db';
 import type { ProjectBundle } from '../../lib/analysis';
 import type { RuleEvaluation } from '../../lib/compliance';
@@ -90,7 +90,7 @@ function KeyFigures({ bundles, dash, today }: WidgetCtx) {
   );
 }
 
-const ACTION_ICON: Record<Action['kind'], typeof IconFlask> = { report: IconFileReport, results: IconListCheck, lab: IconHourglassHigh, inbox: IconInbox, sampling: IconFlask, exceedance: IconAlertTriangle };
+const ACTION_ICON: Record<Action['kind'], typeof IconFlask> = { report: IconFileReport, results: IconListCheck, lab: IconHourglassHigh, inbox: IconInbox, qa: IconZoomCheck, sampling: IconFlask, exceedance: IconAlertTriangle };
 const URGENCY_COLOR = ['red', 'orange', 'gray'] as const;
 
 function ActionsToTake({ actions }: WidgetCtx) {

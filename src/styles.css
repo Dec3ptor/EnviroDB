@@ -725,3 +725,22 @@ body {
 .round-dots i.on { background: var(--mantine-color-teal-6); }
 .round-row { padding: 3px 0; border-bottom: 1px solid var(--mantine-color-default-border); }
 .round-row:last-of-type { border-bottom: 0; }
+
+/* QA/QC findings */
+.qa-row {
+  border-left: 3px solid var(--mantine-color-gray-4);
+  padding: 4px 0 4px 10px;
+}
+.qa-lines {
+  margin: 4px 0 2px;
+  padding-left: 18px;
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1.45;
+}
+.qa-lines li {
+  overflow-wrap: anywhere;
+}
+.result-excluded {
+  text-decoration: line-through;
+  opacity: 0.65;
+}

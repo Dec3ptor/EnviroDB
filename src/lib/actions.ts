@@ -11,7 +11,7 @@ import { nextObligation, scheduleStatus } from './schedule';
 
 export interface Action {
   id: string;
-  kind: 'report' | 'results' | 'lab' | 'inbox' | 'sampling' | 'exceedance';
+  kind: 'report' | 'results' | 'lab' | 'inbox' | 'qa' | 'sampling' | 'exceedance';
   /** 0 overdue or needing a response, 1 due soon, 2 to keep in mind. */
   urgency: 0 | 1 | 2;
   title: string;
@@ -137,4 +137,26 @@ export function inboxActions(files: Array<{ projectId?: string; name: string; mo
       date: new Date(Math.max(...list.map((f) => f.modified))).toISOString().slice(0, 10),
     };
   });
+}
+
+/** Projects whose recent results have QA/QC findings nobody has looked at. */
+export function qaActions(list: Array<{ project: { id: string; name: string; status: string }; findings: Array<{ title: string; date: string; severity: string; record?: unknown }> }>): Action[] {
+  const out: Action[] = [];
+  for (const { project, findings } of list) {
+    if (project.status !== 'active') continue;
+    const open = findings.filter((f) => f.severity === 'check' && !f.record);
+    if (!open.length) continue;
+    out.push({
+      id: `qa:${project.id}`,
+      kind: 'qa',
+      urgency: 1,
+      title: `QA/QC: ${open.length} thing${open.length === 1 ? '' : 's'} to look at`,
+      detail: open.slice(0, 2).map((f) => f.title).join(' · ') + (open.length > 2 ? ` and ${open.length - 2} more` : ''),
+      projectId: project.id,
+      projectName: project.name,
+      link: `/projects/${project.id}/qa`,
+      date: open.reduce((m, f) => (f.date > m ? f.date : m), ''),
+    });
+  }
+  return out;
 }

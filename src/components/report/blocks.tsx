@@ -43,12 +43,13 @@ export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string
   programmeTable: { label: 'Monitoring programme', help: 'Each sampling schedule: its sites, how often and what for' },
   tarpTable: { label: 'Trigger–action–response plan', help: 'Each consent limit and trigger level, when it is exceeded and the response required' },
   reportingTable: { label: 'Reporting requirements', help: 'Each report: how often, when it is next due and who it goes to' },
+  qaSummary: { label: 'QA/QC', help: 'Field duplicates (RPDs), blanks, the checks run on the results, and the results left out or samples swapped – with why' },
 };
 
 /** The sections offered to add, grouped as in the palette. */
 export const BLOCK_GROUPS: Array<{ label: string; types: ReportBlockType[] }> = [
   { label: 'Text and layout', types: ['heading', 'text', 'spacer', 'pageBreak', 'title', 'toc', 'letter', 'signatures'] },
-  { label: 'From the results', types: ['summary', 'calc', 'resultsTable', 'roundTable', 'roundReview', 'statsTable', 'chart', 'figures'] },
+  { label: 'From the results', types: ['summary', 'calc', 'resultsTable', 'roundTable', 'roundReview', 'statsTable', 'chart', 'figures', 'qaSummary'] },
   { label: 'Compliance', types: ['complianceTable', 'exceedances', 'triggerTable'] },
   { label: 'Programme and plans', types: ['programmeTable', 'tarpTable', 'reportingTable', 'siteTable', 'samplingTable'] },
 ];
@@ -68,6 +69,7 @@ const REF_KIND: Partial<Record<ReportBlockType, 'table' | 'fig'>> = {
   programmeTable: 'table',
   tarpTable: 'table',
   reportingTable: 'table',
+  qaSummary: 'table',
   chart: 'fig',
   figures: 'fig',
 };
@@ -116,6 +118,8 @@ export function newBlock(type: ReportBlockType): ReportBlock {
     case 'programmeTable':
     case 'reportingTable':
       return { id, type, title: '' };
+    case 'qaSummary':
+      return { id, type, duplicates: 'all', decisions: true };
     default:
       return { id, type } as ReportBlock;
   }
@@ -155,6 +159,8 @@ export function blockSummary(b: ReportBlock): string {
       return b.rows.length ? `${b.rows.length} value${b.rows.length === 1 ? '' : 's'}${b.show === 'list' ? ' as a list' : ' in a table'}` : 'No values chosen yet';
     case 'tarpTable':
       return b.levels === 'limits' ? 'Consent limits' : b.levels === 'triggers' ? 'Trigger levels' : 'Limits and trigger levels, with their responses';
+    case 'qaSummary':
+      return ['A summary of the checks', b.duplicates === 'none' ? '' : b.duplicates === 'outside' ? 'duplicates outside the limits' : 'every duplicate RPD', b.decisions === false ? '' : 'the decisions made'].filter(Boolean).join(' · ');
     default:
       return BLOCK_LABELS[b.type].help;
   }
@@ -914,6 +920,30 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
         <Stack gap="xs">
           <Text size="xs" c="dimmed">
             {block.type === 'programmeTable' ? 'From the project’s sampling schedules (Schedule tab): sites, frequency, parameters and notes.' : 'From the project’s reporting obligations (Schedule tab): frequency, when the next one is due and who it goes to.'}
+          </Text>
+        </Stack>
+      );
+    case 'qaSummary':
+      return (
+        <Stack gap="xs">
+          <div>
+            <Text size="sm" fw={500} mb={4}>
+              Field duplicates table
+            </Text>
+            <SegmentedControl
+              size="xs"
+              value={block.duplicates ?? 'all'}
+              onChange={(v) => set({ duplicates: v as typeof block.duplicates })}
+              data={[
+                { value: 'all', label: 'Every RPD' },
+                { value: 'outside', label: 'Outside the limits' },
+                { value: 'none', label: 'None' },
+              ]}
+            />
+          </div>
+          <Switch label="Table of the decisions made (results left out, samples swapped, findings accepted)" checked={block.decisions !== false} onChange={(e) => set({ decisions: e.currentTarget.checked })} />
+          <Text size="xs" c="dimmed">
+            From the project’s QA/QC tab, for the report’s period. Also says how many checks were still to be looked at.
           </Text>
         </Stack>
       );

@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import type { Project } from '../db/types';
 import { buildIndex } from '../lib/dataIndex';
+import { isQcSite } from '../lib/qc';
 import type { ProjectBundle } from '../lib/analysis';
 import { compareParams } from '../data/parameters';
 
@@ -18,9 +19,10 @@ export function useAllBundles(): { bundles: ProjectBundle[]; projects: Project[]
   const notes = useLiveQuery(() => db.notes.toArray(), []);
   const schedules = useLiveQuery(() => db.schedules.toArray(), []);
   const obligations = useLiveQuery(() => db.obligations.toArray(), []);
+  const qa = useLiveQuery(() => db.qa.toArray(), []);
 
   return useMemo(() => {
-    if (!projects || !sites || !samples || !results || !params || !sets || !rules || !notes || !schedules || !obligations) return { bundles: [], projects: [], loading: true };
+    if (!projects || !sites || !samples || !results || !params || !sets || !rules || !notes || !schedules || !obligations || !qa) return { bundles: [], projects: [], loading: true };
     const by = <T extends { projectId: string }>(list: T[]) => {
       const m = new Map<string, T[]>();
       for (const x of list) {
@@ -30,18 +32,22 @@ export function useAllBundles(): { bundles: ProjectBundle[]; projects: Project[]
       }
       return m;
     };
-    const sitesBy = by(sites), samplesBy = by(samples), resultsBy = by(results), rulesBy = by(rules), notesBy = by(notes), schBy = by(schedules), oblBy = by(obligations);
+    const sitesBy = by(sites), samplesBy = by(samples), resultsBy = by(results), rulesBy = by(rules), notesBy = by(notes), schBy = by(schedules), oblBy = by(obligations), qaBy = by(qa);
     const sortedParams = [...params].sort(compareParams);
     const paramMap = new Map(sortedParams.map((p) => [p.id, p]));
     const setMap = new Map(sets.map((s) => [s.id, s]));
     const bundles = projects.map<ProjectBundle>((project) => {
-      const ps = [...(sitesBy.get(project.id) ?? [])].sort((a, b) => a.order - b.order || a.code.localeCompare(b.code));
-      const psamples = [...(samplesBy.get(project.id) ?? [])].sort((a, b) => (a.date < b.date ? -1 : 1));
+      const all = [...(sitesBy.get(project.id) ?? [])].sort((a, b) => a.order - b.order || a.code.localeCompare(b.code));
+      const ps = all.filter((s) => !isQcSite(s));
+      const qcSites = all.filter((s) => isQcSite(s));
+      const qcIds = new Set(qcSites.map((s) => s.id));
+      const allSamples = [...(samplesBy.get(project.id) ?? [])].sort((a, b) => (a.date < b.date ? -1 : 1));
+      const isQc = (s: (typeof allSamples)[number]) => !!s.qc || qcIds.has(s.siteId);
       return {
         project,
         sites: ps,
-        siteMap: new Map(ps.map((s) => [s.id, s])),
-        samples: psamples,
+        siteMap: new Map(all.map((s) => [s.id, s])),
+        samples: allSamples.filter((s) => !isQc(s)),
         params: sortedParams,
         paramMap,
         guidelineSets: sets,
@@ -50,9 +56,10 @@ export function useAllBundles(): { bundles: ProjectBundle[]; projects: Project[]
         notes: notesBy.get(project.id) ?? [],
         schedules: schBy.get(project.id) ?? [],
         obligations: oblBy.get(project.id) ?? [],
-        index: buildIndex(psamples, resultsBy.get(project.id) ?? [], ps, sortedParams),
+        index: buildIndex(allSamples, resultsBy.get(project.id) ?? [], all, sortedParams),
+        qc: { sites: qcSites, samples: allSamples.filter(isQc), records: qaBy.get(project.id) ?? [] },
       };
     });
     return { bundles, projects, loading: false };
-  }, [projects, sites, samples, results, params, sets, rules, notes, schedules, obligations]);
+  }, [projects, sites, samples, results, params, sets, rules, notes, schedules, obligations, qa]);
 }

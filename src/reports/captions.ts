@@ -124,6 +124,8 @@ export function defaultCaption(b: ReportBlock): string {
       return 'Exceedances recorded, [period]';
     case 'siteTable':
       return 'Monitoring sites';
+    case 'qaSummary':
+      return 'Field duplicate results, [period]';
     case 'samplingTable':
       return 'Samples collected, [period]';
     case 'calc':
