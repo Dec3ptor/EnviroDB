@@ -15,8 +15,7 @@ import type {
   Rule,
   Sample,
   Settings,
-  Site,
-} from './types';
+  Site, InboxFile } from './types';
 import { BUILT_IN_PARAMETERS, splitPhysicalAndField } from '../data/parameters';
 import { BUILT_IN_GUIDELINES } from '../data/guidelines';
 import { BUILT_IN_TEMPLATES, QUICK_CHECK_TEMPLATE, QUICK_CHECK_TEMPLATE_ID } from '../data/templates';
@@ -45,6 +44,7 @@ export class EnviroDatabase extends Dexie {
   templates!: Table<ReportTemplate, string>;
   calendarRows!: Table<CalendarRow, string>;
   calendarMarks!: Table<CalendarMark, string>;
+  inbox!: Table<InboxFile, string>;
   meta!: Table<MetaRecord, string>;
   // the shared workspace: what changed when (syncState), what is still to be written to the folder (syncDirty),
   // colleagues' files already read (syncFiles) and this browser's own details (syncLocal)
@@ -83,13 +83,16 @@ export class EnviroDatabase extends Dexie {
     this.version(4).stores({
       calendarRows: 'id, projectId, order',
     });
+    this.version(5).stores({
+      inbox: 'id, projectId, path',
+    });
   }
 }
 
 export const db = new EnviroDatabase();
 
 export const DATA_TABLES = [
-  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks',
+  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox',
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 

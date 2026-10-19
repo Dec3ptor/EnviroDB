@@ -11,7 +11,7 @@ import { nextObligation, scheduleStatus } from './schedule';
 
 export interface Action {
   id: string;
-  kind: 'report' | 'results' | 'lab' | 'sampling' | 'exceedance';
+  kind: 'report' | 'results' | 'lab' | 'inbox' | 'sampling' | 'exceedance';
   /** 0 overdue or needing a response, 1 due soon, 2 to keep in mind. */
   urgency: 0 | 1 | 2;
   title: string;
@@ -117,3 +117,24 @@ export function actionsToTake(bundles: ProjectBundle[], sheet: CalendarSheet | n
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const monthLabel = (m: string) => `${MONTHS[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
+
+/** New lab files in the inbox, by project: one action each, to import them. */
+export function inboxActions(files: Array<{ projectId?: string; name: string; modified: number }>, projects: Map<string, { name: string }>): Action[] {
+  const by = new Map<string, typeof files>();
+  for (const f of files) by.set(f.projectId ?? '', [...(by.get(f.projectId ?? '') ?? []), f]);
+  return [...by].map(([pid, list]) => {
+    const p = pid ? projects.get(pid) : undefined;
+    const n = list.length;
+    return {
+      id: `inbox:${pid}`,
+      kind: 'inbox' as const,
+      urgency: 1 as const,
+      title: `${n} new lab file${n === 1 ? '' : 's'} to import${p ? `: ${p.name}` : ''}`,
+      detail: list.slice(0, 3).map((f) => f.name).join(', ') + (n > 3 ? ` and ${n - 3} more` : ''),
+      projectId: pid,
+      projectName: p?.name ?? 'Lab inbox',
+      link: pid ? `/projects/${pid}/import` : '/import',
+      date: new Date(Math.max(...list.map((f) => f.modified))).toISOString().slice(0, 10),
+    };
+  });
+}

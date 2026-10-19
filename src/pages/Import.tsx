@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { InboxPanel } from '../components/InboxPanel';
+import { markInboxImported, takeInboxImport, useInbox, type InboxCandidate } from '../sync/inbox';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Anchor, Badge, Button, Card, Checkbox, Group, Modal, NumberInput, Paper, ScrollArea, SegmentedControl, Select, SimpleGrid, Stack, Stepper, Table, Text, TextInput, ThemeIcon, Title, Tooltip, Autocomplete, Loader, Center,
 } from '@mantine/core';
@@ -305,7 +307,20 @@ export function ImportWizard(_props: { projectId: string }) {
     });
   }, [analyteRows]);
 
-  const load = async (files: Array<File | InputFile>) => {
+  // files sent from the lab inbox: read straight away, and remembered as imported once they are
+  const fromInbox = useRef<InboxCandidate[]>([]);
+  const { queued } = useInbox();
+  useEffect(() => {
+    const taken = takeInboxImport(project.id);
+    if (taken?.files.length) {
+      fromInbox.current = taken.from;
+      void load(taken.files, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id, queued]);
+
+  const load = async (files: Array<File | InputFile>, inbox = false) => {
+    if (!inbox) fromInbox.current = [];
     setLoading(true);
     try {
       const inputs = await Promise.all(files.map(async (f) => ({ name: f.name, data: f instanceof File ? await f.arrayBuffer() : f.data })));
@@ -387,6 +402,10 @@ export function ImportWizard(_props: { projectId: string }) {
         units: unitMap,
       };
       const res = await commitImport(project.id, parsed, mapping, { duplicates: dupes, rememberAliases: remember, fileName: state!.fileName, labName: parsed.labName });
+      if (fromInbox.current.length) {
+        await markInboxImported(fromInbox.current, project.id, res.id);
+        fromInbox.current = [];
+      }
       setSummary(res);
       setStep(5);
     } catch (e) {
@@ -1031,6 +1050,7 @@ export function ImportPage() {
         </EmptyState>
       ) : (
         <>
+          <InboxPanel />
           <Select label="Project" data={projects.map((p) => ({ value: p.id, label: p.code ? `${p.name} (${p.code})` : p.name }))} value={projectId} onChange={setProjectId} w={420} searchable allowDeselect={false} />
           {projectId && (
             <ProjectDataProvider key={projectId} projectId={projectId}>

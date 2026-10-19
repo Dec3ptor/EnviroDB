@@ -11,6 +11,18 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.2.0',
+    date: '2026-10-19',
+    title: 'Lab inbox',
+    items: [
+      'Lab files waiting to be imported are listed on the Import data page, counted in the menu and added to the dashboard’s actions.',
+      'Make an Inbox folder in the workspace folder (one click on the Import page) and save lab emails’ attachments there – by hand or with an Outlook rule.',
+      'Or point EnviroDB at the folder your projects are kept in, and choose each project’s lab folder: its folders for each round or monitoring type are looked in too.',
+      'Spreadsheets, CSVs, PDFs and zips that look like lab results are listed; photos, reports and EnviroDB’s own downloads are left out. A file named with a project’s code goes with that project.',
+      'Tick files and Import – the import opens with them loaded. Imported and set-aside files are remembered for the whole team, and come back if the lab amends them.',
+    ],
+  },
+  {
     version: '1.1.0',
     date: '2026-10-19',
     title: 'Sampling rounds',

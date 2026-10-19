@@ -36,6 +36,11 @@ export interface Project {
   purchaseOrder?: string;
   /** The project's folder: a link or a path to copy (e.g. a SharePoint link or G:\\CLIENTS\\…). */
   folder?: string;
+  /**
+   * Where the project's lab results are saved, inside each person's projects folder ("Clients/Kōwhai/Lab results"):
+   * EnviroDB looks there, subfolders and all, for lab files not yet imported.
+   */
+  labFolder?: string;
   /** Notes for the monitoring calendar (kept here by its first version; a calendar row made for the project starts with them). */
   calendarNotes?: string;
   createdAt: string;
@@ -322,6 +327,27 @@ export interface ReportObligation {
   notes?: string;
   active: boolean;
   submissions: ReportSubmission[];
+}
+
+/**
+ * A file from the inbox (the workspace's Inbox folder, or a project's lab folder) that has been dealt with: imported,
+ * or set aside as not lab results. A file changed since (a lab's amended report) is new again.
+ */
+export interface InboxFile {
+  /** Where and which version: `${where}|${path}|${size}|${modified}`. */
+  id: ID;
+  where: 'inbox' | 'project';
+  /** Inside the workspace folder (where 'inbox'), or the projects folder (where 'project'). */
+  path: string;
+  name: string;
+  size: number;
+  modified: number;
+  projectId?: ID;
+  status: 'imported' | 'dismissed';
+  importId?: ID;
+  /** Who, and when. */
+  by?: string;
+  at: string;
 }
 
 export interface ImportBatch {

@@ -1,3 +1,4 @@
+import { InboxPanel } from '../../components/InboxPanel';
 import { lazy, Suspense, useState } from 'react';
 import { Badge, Button, Center, Group, Loader, Menu, Stack, Tabs, Text, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -135,7 +136,15 @@ export function ProjectLayout() {
         <Route path="schedule" element={<ScheduleTab />} />
         <Route path="reports" element={<ReportsTab />} />
         <Route path="setup" element={<SetupTab />} />
-        <Route path="import" element={<ImportWizard projectId={projectId} />} />
+        <Route
+          path="import"
+          element={
+            <Stack gap="md">
+              <InboxPanel projectId={projectId} />
+              <ImportWizard projectId={projectId} />
+            </Stack>
+          }
+        />
         <Route path="consent-setup" element={<ConsentSetupPage />} />
       </Routes>
     </ProjectDataProvider>

@@ -18,6 +18,8 @@ export interface WorkspaceFolder {
   /** A file's size and time, or null when there is no such file. */
   info(path: string): Promise<FileInfo | null>;
   read(path: string): Promise<{ text: string; info: FileInfo } | null>;
+  /** A file as it is (e.g. a lab's Excel or PDF), or null when there is no such file. */
+  file(path: string): Promise<File | null>;
   /** Replaces the file (creating it and its directories when needed). */
   write(path: string, text: string): Promise<void>;
   remove(path: string): Promise<void>;
@@ -101,6 +103,14 @@ export function handleFolder(root: DirectoryHandle): WorkspaceFolder {
         throw e;
       }
     },
+    async file(path) {
+      try {
+        return await (await fileHandle(path, false)).getFile();
+      } catch (e) {
+        if (isNotFound(e)) return null;
+        throw e;
+      }
+    },
     async write(path, text) {
       const w = await (await fileHandle(path, true)).createWritable();
       await w.write(text);
@@ -155,6 +165,11 @@ export function memoryFolder(name = 'Workspace'): WorkspaceFolder & { files: Map
       check();
       const f = files.get(path);
       return f ? { text: f.text, info: { lastModified: f.lastModified, size: new TextEncoder().encode(f.text).length } } : null;
+    },
+    async file(path: string) {
+      check();
+      const f = files.get(path);
+      return f ? new File([f.text], path.split('/').pop() ?? path, { lastModified: f.lastModified }) : null;
     },
     async write(path: string, text: string) {
       check();

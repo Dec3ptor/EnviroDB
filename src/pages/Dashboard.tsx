@@ -19,7 +19,8 @@ import { fmtNum } from '../lib/values';
 import { NewProjectButton } from './Projects';
 import { db } from '../db/db';
 import { useCalendarSheet } from '../hooks/useCalendarSheet';
-import { actionsToTake } from '../lib/actions';
+import { actionsToTake, inboxActions } from '../lib/actions';
+import { useInbox } from '../sync/inbox';
 import { useSettings } from '../hooks/useSettings';
 import { autoScale, GRID, readLayout, WIDGET_MAP, WIDGETS, type DashboardData, type PlacedWidget, type WidgetCtx, type WidgetId } from './dashboard/widgets';
 import type { Deadline } from './dashboard/widgets';
@@ -157,7 +158,12 @@ export function DashboardPage() {
   const today = todayStr();
   const sheet = useCalendarSheet(Number(today.slice(0, 4)));
   const settings = useSettings();
-  const actions = useMemo(() => actionsToTake(bundles, sheet, today, { labDays: settings.labTurnaroundDays, sendDays: settings.sendResultsDays }), [bundles, sheet, today, settings.labTurnaroundDays, settings.sendResultsDays]);
+  const inbox = useInbox();
+  const actions = useMemo(() => {
+    const projects = new Map(bundles.map((b) => [b.project.id, b.project]));
+    const all = [...inboxActions(inbox.files, projects), ...actionsToTake(bundles, sheet, today, { labDays: settings.labTurnaroundDays, sendDays: settings.sendResultsDays })];
+    return all.sort((a, b) => a.urgency - b.urgency || a.date.localeCompare(b.date));
+  }, [bundles, sheet, today, settings.labTurnaroundDays, settings.sendResultsDays, inbox.files]);
   const saved = useLiveQuery(() => db.meta.get(DASHBOARD_KEY), [], null);
   const [editing, setEditing] = useState(false);
   const [narrow, setNarrow] = useState(false);

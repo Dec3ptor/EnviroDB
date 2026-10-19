@@ -255,6 +255,24 @@ there as they work and show up for the others within seconds.
   what each round needs next, on the calendar and each project's *Schedule* tab. *Actions to take* on the
   dashboard includes them, with a button to tick the results sent. An import long after the sampling
   (old results brought in later) isn't taken as when the results came back.
+- **Lab inbox.** Lab files waiting to be imported are listed on the *Import data* page, the menu shows
+  how many, and *Actions to take* on the dashboard includes them. EnviroDB looks in two kinds of place:
+  - **The team's Inbox folder**, inside the workspace folder (*Make one* on the Import page). Save lab
+    emails' attachments there by hand, or set up an Outlook rule to do it. A file whose name has a
+    project's code in it (`DEMO-001 9100001.csv`) is put with that project; others ask which project.
+  - **Each project's own folder.** Show EnviroDB the folder your projects are kept in (once, on each
+    computer), then on a project's import page *Choose the lab folder* – for example
+    `Clients/Kōwhai/Lab results`. Folders inside it (one per round or monitoring type) are looked in too.
+    A project whose calendar folder path runs through the projects folder is looked in without choosing.
+
+  It lists spreadsheets, CSVs, PDFs and zips that look like lab results – the lab's own layouts and
+  headings, or a lab's name, job number or "COA" in a PDF's name – and leaves out photos, reports and
+  EnviroDB's own downloads. Folders like *Old*, *Superseded*, *Archive* and *Photos*, and project files
+  more than about a year old, aren't looked in. Tick files and *Import*: the import opens with them
+  loaded. Imported files, and ones set aside as *Not lab results*, are remembered for the whole team and
+  not listed again – unless the file changes (a lab's amended report), when it's back, marked *changed
+  since imported*. EnviroDB looks every ten minutes while open, and when you come back to it. The files
+  are read on your computer like any other import; nothing is uploaded.
 - **Version numbers.** The version is at the foot of the menu – click it for what's new. Reports, Excel
   files and backups record the version that made them. When a new version is published EnviroDB offers to
   reload, and it tells you if someone in your workspace is already using a newer one.
@@ -364,11 +382,13 @@ envirodb-workspace.json          which workspace this is
 clients/<person>/client.json     who that is and when they were last connected
 clients/<person>/*.json          the changes that person made (projects, sites, results by year …)
 backups/EnviroDB backup <date>.json   a copy of everything, made each day (the last ten are kept)
+Inbox/                           lab files waiting to be imported (yours to add to and tidy)
 ```
 
 Each browser writes only its own files, so OneDrive, SharePoint and network drives never see two
 people saving the same file (no "conflicted copy" files) – files can arrive in any order and every
-browser still ends up with the same data. Don't edit or delete files in the folder by hand.
+browser still ends up with the same data. Don't edit or delete files in the folder by hand – except in
+*Inbox*, which is the team's to use.
 
 ### Backups and sharing outside the team
 

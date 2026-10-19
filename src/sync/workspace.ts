@@ -381,6 +381,9 @@ function stopLoops(): void {
   leader = false;
 }
 
+/** The workspace folder, while connected (e.g. to look in its Inbox folder). */
+export const currentWorkspaceFolder = (): WorkspaceFolder | null => ctx?.folder ?? null;
+
 /** Read and write now. */
 export function syncNow(): void {
   schedule(0);

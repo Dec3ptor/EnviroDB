@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { AppShell, Burger, Group, NavLink, Text, ActionIcon, useMantineColorScheme, Divider, ScrollArea, Box } from '@mantine/core';
+import { AppShell, Badge, Burger, Group, NavLink, Text, ActionIcon, useMantineColorScheme, Divider, ScrollArea, Box } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -20,6 +20,7 @@ import {
 import { db } from '../db/db';
 import { WorkspaceBadge } from './workspace/Workspace';
 import { VersionFooter } from './Version';
+import { startInboxWatch, useInbox } from '../sync/inbox';
 
 export function Shell() {
   const [opened, { toggle, close }] = useDisclosure();
@@ -27,13 +28,15 @@ export function Shell() {
   const { colorScheme, toggleColorScheme } = useMantineColorScheme();
   const projects = useLiveQuery(() => db.projects.where('status').equals('active').toArray(), []);
   useEffect(() => close(), [location.pathname, close]);
+  useEffect(() => startInboxWatch(), []);
+  const inboxCount = useInbox().files.length;
 
   const path = location.pathname;
   const nav = [
     { to: '/', label: 'Dashboard', icon: IconLayoutDashboard, active: path === '/' },
     { to: '/projects', label: 'Projects', icon: IconFolders, active: path === '/projects' },
     { to: '/calendar', label: 'Monitoring calendar', icon: IconCalendarMonth, active: path.startsWith('/calendar') },
-    { to: '/import', label: 'Import data', icon: IconUpload, active: path.startsWith('/import') },
+    { to: '/import', label: 'Import data', icon: IconUpload, active: path.startsWith('/import'), badge: inboxCount },
     { to: '/quick-check', label: 'Quick check', icon: IconTestPipe, active: path.startsWith('/quick-check') },
   ];
   // reference data shared by every project
@@ -73,7 +76,17 @@ export function Shell() {
       <AppShell.Navbar p="xs">
         <AppShell.Section>
           {nav.map((n) => (
-            <NavLink key={n.to} component={Link} to={n.to} label={n.label} leftSection={<n.icon size={18} stroke={1.6} />} active={n.active} variant="light" style={{ borderRadius: 8 }} />
+            <NavLink
+              key={n.to}
+              component={Link}
+              to={n.to}
+              label={n.label}
+              leftSection={<n.icon size={18} stroke={1.6} />}
+              rightSection={'badge' in n && n.badge ? <Badge size="sm" variant="filled" color="teal" title={`${n.badge} new lab file${n.badge === 1 ? '' : 's'} in the inbox`}>{n.badge}</Badge> : undefined}
+              active={n.active}
+              variant="light"
+              style={{ borderRadius: 8 }}
+            />
           ))}
           <Divider my={6} label="Library" labelPosition="left" />
           {library.map((n) => (
