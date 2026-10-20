@@ -15,7 +15,7 @@ type PdfMake = {
 };
 
 let pdfMakePromise: Promise<PdfMake> | null = null;
-async function loadPdfMake(): Promise<PdfMake> {
+export async function loadPdfMake(): Promise<PdfMake> {
   if (!pdfMakePromise) {
     pdfMakePromise = (async () => {
       const mod = (await import('pdfmake/build/pdfmake')) as unknown as { default?: PdfMake } & PdfMake;

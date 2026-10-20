@@ -411,6 +411,17 @@ there as they work and show up for the others within seconds.
      the phone flashes the results as a stream of QR codes the webcam reads instead: the readings in a second or
      two, then the photos (made smaller, about 60 KB each – a few seconds a photo). The phone remembers a network
      where Wi-Fi didn't work and goes to the flashing code sooner. Then the same review and *Add* as a file.
+  6. **Printable field codes** (project ⋯ menu) make a PDF of QR codes to take into the field instead of the
+     computer's screen: the **project's code** (a cover page, with how to use them and the sites) and a **code for
+     each site** – as cards (4 a page, to laminate), labels (8 a page, for a post or the site folder) or a page
+     each. They hold no dates, so they serve every round. Scanned with the phone's camera, or with *Scan a printed
+     code* in EnviroDB field, the project's code opens the day's sheet with all its sites; a site's code adds the
+     site to the day's sheet and opens it, **filling in the time** and **recording the phone's location** (each
+     can be switched off), and says how far the phone is from the site's recorded location – warning when it looks
+     like the wrong site. Sites scanned one after another make one sheet for the day (the same one *Field sheet for
+     a phone* makes, so the two mix), and last time's readings come from what the phone recorded there before.
+     Options: the sites, the readings to take, what to note, the layout, and what's printed beside each code
+     (site name, project, readings, location, directions and notes).
 - **Client data packs.** A project's *Data pack* tab makes one HTML file with its data for the client –
   set up the way you want them to see it, and previewed as they will (on a computer or a phone):
   - **Sections** in the order you choose, each switched on or off and named as you like: a summary, the sites
@@ -578,6 +589,10 @@ EnviroDB has no server and never uploads anything. The only things that cross th
 - **Field mode** on a phone loads EnviroDB from GitHub Pages like the rest of it (and keeps a copy of the app's
   files for use with no signal); a field sheet travels in the link's "#" part, which browsers never send. What's
   recorded stays on the phone until you send the results file yourself. *Directions* opens the phone's maps.
+  A **printed field code** holds the project's and sites' names, the readings to take and – if you choose – the
+  sites' locations and directions; never results. Anyone who scans one can read that, so leave the directions out
+  if they mention gate codes or keys and the codes are left at the sites. The phone checks what a code holds
+  before using it, and a code can't rename a site or project already on the phone.
 - **Sending from the phone to the computer** (*Receive from a phone*) uses no server and no internet: the Wi-Fi
   link is direct between the two devices on the local network (no STUN or TURN servers, so it can't go anywhere
   else), and the flashing code goes by camera. The computer's code holds a fresh key each time; the results are

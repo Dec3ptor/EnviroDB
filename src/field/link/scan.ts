@@ -23,9 +23,10 @@ export const stopCamera = (s: MediaStream | null | undefined) => s?.getTracks().
 
 /**
  * Reads codes from the video as fast as it can, until stopped. Once a code is found, only the area around it is read
- * (quicker, and at full sharpness for dense codes); if it's lost for a moment, the whole view again.
+ * (quicker, and at full sharpness for dense codes); if it's lost for a moment, the whole view again. Codes that
+ * aren't EnviroDB's letters go to `onText` when it's given (a printed field code holds a link).
  */
-export function scanVideo(video: HTMLVideoElement, onCode: (bytes: Uint8Array) => void | Promise<void>, onRate?: (codesPerSecond: number) => void): () => void {
+export function scanVideo(video: HTMLVideoElement, onCode: (bytes: Uint8Array) => void | Promise<void>, onRate?: (codesPerSecond: number) => void, onText?: (text: string) => void): () => void {
   let stopped = false;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
@@ -79,7 +80,7 @@ export function scanVideo(video: HTMLVideoElement, onCode: (bytes: Uint8Array) =
             if (bytes) {
               reads++;
               await onCode(bytes);
-            }
+            } else onText?.(found.data);
           }
         } else if (region && ++misses > 6) {
           region = null;

@@ -11,6 +11,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.16.0',
+    date: '2026-10-20',
+    title: 'Printable field codes',
+    items: [
+      'Project ⋯ → Printable field codes makes a PDF of QR codes to take into the field: the project’s code (a cover page with how to use them and the sites) and a code for each site – cards (4 a page, to laminate), labels (8 a page) or a page each. They hold no dates, so print them once for every round.',
+      'Scan the project’s code to open the day’s field sheet with all its sites. Scan a site’s code at the site and it opens that site with the time filled in and the phone’s location recorded – and says how far you are from the site’s recorded location, warning when it looks like the wrong site.',
+      'Sites scanned one after another make one sheet for the day (the same sheet as Field sheet for a phone, so the two mix); last time’s readings come from what the phone recorded there before.',
+      'In EnviroDB field: Scan a printed code, with the phone’s camera, without leaving the app.',
+      'Options: the sites, readings to take, what to note, the layout, what to fill in when a site’s code is scanned, and what’s printed beside each code. The codes are kept small so a scuffed or laminated print still scans, and the PDF is previewed before you download it.',
+      'Directions and notes are left out of the codes unless you ask: anyone who scans a code can read what it holds.',
+    ],
+  },
+  {
     version: '1.15.1',
     date: '2026-10-20',
     title: 'Trigger lines you can tell apart',

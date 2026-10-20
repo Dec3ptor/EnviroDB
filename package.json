@@ -1,7 +1,7 @@
 {
   "name": "envirodb",
   "private": true,
-  "version": "1.15.1",
+  "version": "1.16.0",
   "description": "Environmental monitoring, consent compliance and reporting app that runs entirely in the browser (GitHub Pages).",
   "type": "module",
   "scripts": {

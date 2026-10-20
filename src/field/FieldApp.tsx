@@ -2,14 +2,15 @@
 // readings and what was seen – it all stays on the phone, with or without a signal – then send the results back as a
 // file (to the team's OneDrive Inbox folder, or by email), for EnviroDB on the computer to add.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActionIcon, Alert, Anchor, AppShell, Badge, Button, Card, Center, Chip, FileButton, Group, Loader, Modal, NumberInput, Progress, SegmentedControl, Select, Stack, Text, TextInput, Textarea, Title, UnstyledButton } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { HashRouter, Route, Routes, useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
+import { HashRouter, Route, Routes, useLocation, useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { IconArrowLeft, IconCamera, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconDeviceDesktop, IconFileImport, IconMapPin, IconSend, IconTrash, IconWifiOff } from '@tabler/icons-react';
-import { addSheet, deleteSheet, fieldDb, getPref, resultsFileName, resultsOf, saveVisit, setPref } from './db';
-import { APPEARANCE, checkSheet, decodeSheet, FLOW, NOT_SAMPLED, readingWarning, WEATHER, type FieldSheet, type FieldVisit } from './model';
+import { IconArrowLeft, IconCamera, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconDeviceDesktop, IconFileImport, IconMapPin, IconQrcode, IconSend, IconTrash, IconWifiOff } from '@tabler/icons-react';
+import { addFromCode, addSheet, deleteSheet, fieldDb, getPref, resultsFileName, resultsOf, saveVisit, setPref } from './db';
+import { APPEARANCE, checkSheet, decodeCode, decodeSheet, distanceM, fieldLinkPath, FLOW, NOT_SAMPLED, readingWarning, WEATHER, type FieldCodeFill, type FieldSheet, type FieldVisit } from './model';
+import { openCamera, scanVideo, stopCamera } from './link/scan';
 import { keepOffline, type OfflineState } from './offline';
 import { LinkPage } from './LinkPage';
 
@@ -133,10 +134,11 @@ function Home({ offline }: { offline: OfflineState }) {
             No field sheets on this phone yet
           </Text>
           <Text size="sm" c="dimmed">
-            On the computer, open the project in EnviroDB and choose <b>Field sheet</b> (in the project’s ⋯ menu). Scan its QR code with this phone’s camera – or open the sheet’s file from OneDrive below.
+            On the computer, open the project in EnviroDB and choose <b>Field sheet</b> (in the project’s ⋯ menu). Scan its QR code with this phone’s camera – or open the sheet’s file from OneDrive below. A project’s or a site’s <b>printed field code</b> works too.
           </Text>
         </Card>
       )}
+      <ScanCodeButton />
       <FileButton accept=".json,application/json" onChange={(f) => void openFile(f)}>
         {(props) => (
           <Button {...props} variant="default" size="md" leftSection={<IconFileImport size={18} />}>
@@ -176,6 +178,108 @@ function OpenLink() {
     <Center h={200}>
       <Loader />
     </Center>
+  );
+}
+
+const todayLocal = () => nowLocal().slice(0, 10);
+
+/** A printed code (a project's or a site's): its sites join today's sheet, and a site's code opens that site. */
+function OpenCode() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const k = params.get('k');
+    if (!k) return navigate('/field', { replace: true });
+    decodeCode(k).then(
+      async (code) => {
+        const sheet = await addFromCode(code, todayLocal());
+        const at = `/field/s/${encodeURIComponent(sheet.id)}`;
+        if (code.site) navigate(`${at}/${encodeURIComponent(code.site)}`, { replace: true, state: { scanned: code.fill } });
+        else navigate(at, { replace: true });
+      },
+      (e: Error) => setError(e.message),
+    );
+  }, []);
+  return error ? (
+    <Stack>
+      <Header title="EnviroDB field" back="/field" />
+      <Alert color="red">This code isn’t one EnviroDB can read: {error}</Alert>
+    </Stack>
+  ) : (
+    <Center h={200}>
+      <Loader />
+    </Center>
+  );
+}
+
+/** Scanning a printed field code (or a field sheet's code) from inside field mode, with the phone's camera. */
+function ScanCodeButton({ size = 'md' }: { size?: 'md' | 'sm' }) {
+  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+  return (
+    <>
+      <Button variant="default" size={size} leftSection={<IconQrcode size={size === 'md' ? 18 : 15} />} onClick={() => setOpen(true)}>
+        Scan a printed code
+      </Button>
+      <Modal opened={open} onClose={() => setOpen(false)} title="Scan a field code" centered>
+        {open && (
+          <CodeScanner
+            onLink={(path) => {
+              setOpen(false);
+              navigate(path);
+            }}
+          />
+        )}
+      </Modal>
+    </>
+  );
+}
+
+/** The camera, reading codes until it finds a field link (started once it's on screen). */
+function CodeScanner({ onLink }: { onLink: (path: string) => void }) {
+  const video = useRef<HTMLVideoElement>(null);
+  const [error, setError] = useState('');
+  const [other, setOther] = useState(false);
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let stop = () => {};
+    let done = false;
+    void (async () => {
+      try {
+        stream = await openCamera('environment');
+        const v = video.current;
+        if (!v || done) return stopCamera(stream);
+        v.srcObject = stream;
+        await v.play();
+        stop = scanVideo(v, () => {}, undefined, (text) => {
+          const path = fieldLinkPath(text);
+          if (!path) return setOther(true);
+          if (done) return;
+          done = true;
+          onLink(path);
+        });
+      } catch (e) {
+        if (!done) setError((e as Error).message);
+      }
+    })();
+    return () => {
+      done = true;
+      stop();
+      stopCamera(stream);
+    };
+  }, []);
+  return error ? (
+    <Alert color="red" variant="light">
+      {error}
+    </Alert>
+  ) : (
+    <Stack gap="xs">
+      <video ref={video} muted playsInline style={{ width: '100%', borderRadius: 8, background: '#000' }} />
+      <Text size="sm" c={other ? 'orange' : 'dimmed'}>
+        {other ? 'That code isn’t an EnviroDB field code – try the site’s or the project’s code.' : 'Point the camera at a project’s or a site’s printed code.'}
+      </Text>
+    </Stack>
   );
 }
 
@@ -233,6 +337,7 @@ function SheetPage() {
           </UnstyledButton>
         );
       })}
+      <ScanCodeButton size="sm" />
       <Button size="md" mt="sm" leftSection={<IconSend size={18} />} onClick={() => navigate(`/field/s/${encodeURIComponent(sheet.id)}/send`)} disabled={!visits.length}>
         Send the results
       </Button>
@@ -279,14 +384,35 @@ function readPhoto(file: File): Promise<string> {
   });
 }
 
+/** How far the phone was from the site's recorded place: a warning when it looks like the wrong site. */
+function SiteDistance({ gps, site, code }: { gps: { lat: number; lng: number; acc?: number }; site: { lat: number; lng: number }; code: string }) {
+  const d = distanceM(gps, site);
+  const far = d > Math.max(150, 2 * (gps.acc ?? 0));
+  const text = d >= 1000 ? `${(d / 1000).toFixed(d >= 10000 ? 0 : 1)} km` : `${Math.round(d)} m`;
+  return far ? (
+    <Alert color="orange" variant="light" p="xs">
+      <Text size="sm">
+        The phone is about {text} from {code}’s recorded location – is this the right site?
+      </Text>
+    </Alert>
+  ) : (
+    <Text size="xs" c="teal" mt={-6}>
+      <IconCheck size={12} style={{ verticalAlign: -1 }} /> About {text} from {code}’s recorded location
+    </Text>
+  );
+}
+
 function SitePage() {
   const { sheetId = '', siteId = '' } = useParams();
   const stored = useLiveQuery(async () => (await fieldDb.sheets.get(sheetId)) ?? null, [sheetId]);
   // null: nothing recorded here yet (undefined: still looking)
   const saved = useLiveQuery(async () => (await fieldDb.visits.get(`${sheetId}|${siteId}`)) ?? null, [sheetId, siteId]);
   const navigate = useNavigate();
+  const location = useLocation();
   const [v, setV] = useState<FieldVisit | null>(null);
   const [locating, setLocating] = useState(false);
+  /** Opened by scanning the site's printed code: what it fills in, and what it did. */
+  const [scanned, setScanned] = useState<{ fill: FieldCodeFill; did: string[] } | null>(null);
   // the site's record (a new one when there's none yet); the next site starts from its own
   useEffect(() => {
     if (saved === undefined || (saved && saved.visit.siteId !== siteId) || v?.siteId === siteId) return;
@@ -300,18 +426,6 @@ function SitePage() {
       void saveVisit(sheetId, next);
       return next;
     });
-  };
-  if (stored === undefined || saved === undefined || !v || v.siteId !== siteId) return <Loader />;
-  if (!stored) return <Navigate to="/field" />;
-  const sheet = stored.sheet;
-  const site = sheet.sites.find((s) => s.id === siteId);
-  if (!site) return <Navigate to={`/field/s/${encodeURIComponent(sheetId)}`} />;
-  const idx = sheet.sites.indexOf(site);
-  const next = sheet.sites[idx + 1];
-  const back = `/field/s/${encodeURIComponent(sheetId)}`;
-  const finish = () => {
-    update({ done: true });
-    navigate(next ? `${back}/${encodeURIComponent(next.id)}` : back);
   };
   const locate = () => {
     if (!navigator.geolocation) return notifications.show({ color: 'orange', message: 'This phone can’t give its location here.' });
@@ -328,6 +442,34 @@ function SitePage() {
       { enableHighAccuracy: true, timeout: 20000 },
     );
   };
+  // a site's printed code, scanned here: the time and the location filled in (unless already recorded)
+  const fill = (location.state as { scanned?: FieldCodeFill } | null)?.scanned;
+  useEffect(() => {
+    if (!fill || !v || v.siteId !== siteId) return;
+    const did: string[] = [];
+    if (fill.time && !v.time) {
+      update({ time: nowLocal() });
+      did.push('the time');
+    }
+    if (fill.gps && !v.gps) {
+      locate();
+      did.push('the location');
+    }
+    setScanned({ fill, did });
+    navigate(location.pathname, { replace: true, state: null });
+  }, [fill, v?.siteId]);
+  if (stored === undefined || saved === undefined || !v || v.siteId !== siteId) return <Loader />;
+  if (!stored) return <Navigate to="/field" />;
+  const sheet = stored.sheet;
+  const site = sheet.sites.find((s) => s.id === siteId);
+  if (!site) return <Navigate to={`/field/s/${encodeURIComponent(sheetId)}`} />;
+  const idx = sheet.sites.indexOf(site);
+  const next = sheet.sites[idx + 1];
+  const back = `/field/s/${encodeURIComponent(sheetId)}`;
+  const finish = () => {
+    update({ done: true });
+    navigate(next ? `${back}/${encodeURIComponent(next.id)}` : back);
+  };
   return (
     <Stack gap="sm">
       <Header title={`${site.code}${site.name ? ` – ${site.name}` : ''}`} back={back} right={<Text size="xs" c="dimmed">{idx + 1}/{sheet.sites.length}</Text>} />
@@ -340,6 +482,11 @@ function SitePage() {
             </Anchor>
           )}
         </Card>
+      )}
+      {scanned && (
+        <Alert color="teal" variant="light" p="xs" icon={<IconQrcode size={16} />}>
+          <Text size="sm">Scanned at {site.code}{scanned.did.length ? ` – ${scanned.did.join(' and ')} filled in` : ''}{locating ? ' (finding the location…)' : ''}.</Text>
+        </Alert>
       )}
       <Chip checked={!!v.notSampled} onChange={(on) => update({ notSampled: on ? NOT_SAMPLED[0] : undefined, done: on ? true : v.done })} color="gray">
         Not sampled
@@ -395,6 +542,7 @@ function SitePage() {
           </Text>
         )}
       </Group>
+      {v.gps && site.lat !== undefined && site.lng !== undefined && <SiteDistance gps={v.gps} site={{ lat: site.lat, lng: site.lng }} code={site.code} />}
       {sheet.observe.photos && (
         <div>
           <FileButton
@@ -574,6 +722,7 @@ export default function FieldApp() {
           <Routes>
             <Route path="/field" element={<Home offline={offline} />} />
             <Route path="/field/open" element={<OpenLink />} />
+            <Route path="/field/code" element={<OpenCode />} />
             <Route path="/field/s/:sheetId" element={<SheetPage />} />
             <Route path="/field/s/:sheetId/send" element={<SendPage />} />
             <Route path="/field/s/:sheetId/link" element={<LinkRoute />} />

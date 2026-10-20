@@ -197,3 +197,221 @@ export function checkResults(x: unknown): FieldResults {
     visits: visits.filter((v) => v.siteId),
   };
 }
+
+// ------------------------------------------------------------ printed codes: a project's or a site's, kept for good
+
+/** What the phone does when a site's printed code is scanned there. */
+export interface FieldCodeFill {
+  /** Fill in the time sampled: now. */
+  time: boolean;
+  /** Record the phone's location. */
+  gps: boolean;
+}
+
+/**
+ * A printed field code: a project's (its sites) or one site's. Unlike a sheet it has no day – scanned, it opens (or
+ * adds to) that day's sheet on the phone, so the same printed code serves every round.
+ */
+export interface FieldCode {
+  app: typeof FIELD_APP;
+  kind: 'field-code';
+  v: 1;
+  project: FieldSheet['project'];
+  /** A site's own code: the site it opens. */
+  site?: string;
+  sites: FieldSite[];
+  measures: FieldMeasure[];
+  observe: FieldSheet['observe'];
+  fill: FieldCodeFill;
+  made: string;
+  appVersion: string;
+}
+
+// A printed code is read by a phone's camera from paper – maybe scuffed, at an angle – so it's kept small: an array
+// rather than named fields, compressed, in capital letters and digits (which a QR code holds in fewer squares).
+type Wire = [
+  1,
+  [string, string, string | null],
+  number,
+  Array<[string, string, string | null, number | null, number | null, string | null, number[] | null]>,
+  Array<[string, string, string, number | null]>,
+  number,
+  number,
+  string,
+];
+
+function toWire(c: FieldCode): Wire {
+  const at = new Map(c.measures.map((m, i) => [m.id, i]));
+  const o = c.observe;
+  return [
+    1,
+    [c.project.id, c.project.name, c.project.code ?? null],
+    c.site ? c.sites.findIndex((s) => s.id === c.site) : -1,
+    c.sites.map((s) => [s.id, s.code, s.name ?? null, s.lat ?? null, s.lng ?? null, s.note ?? null, s.measures ? s.measures.map((id) => at.get(id)!).filter((i) => i !== undefined) : null]),
+    c.measures.map((m) => [m.id, m.name, m.unit, m.dp ?? null]),
+    (o.weather ? 1 : 0) | (o.flow ? 2 : 0) | (o.appearance ? 4 : 0) | (o.photos ? 8 : 0),
+    (c.fill.time ? 1 : 0) | (c.fill.gps ? 2 : 0),
+    c.appVersion,
+  ];
+}
+
+function fromWire(w: unknown): unknown {
+  if (!Array.isArray(w) || w[0] !== 1) throw new Error('This isn’t an EnviroDB field code.');
+  const arr = (x: unknown) => (Array.isArray(x) ? x : []);
+  const val = <T>(x: T | null) => (x === null ? undefined : x);
+  const [, p, site, sites, measures, observe, fill, appVersion] = w as unknown[];
+  const ms = arr(measures).map((m) => arr(m)).map(([id, name, unit, dp]) => ({ id, name, unit, dp: val(dp) }));
+  const ss = arr(sites).map((x) => arr(x)).map(([id, code, name, lat, lng, note, own]) => ({ id, code, name: val(name), lat: val(lat), lng: val(lng), note: val(note), measures: Array.isArray(own) ? own.map((i) => (ms[i as number] as { id?: unknown } | undefined)?.id) : undefined }));
+  const pp = arr(p);
+  const bits = (n: unknown, k: number) => typeof n === 'number' && (n & k) !== 0;
+  return {
+    app: FIELD_APP,
+    kind: 'field-code',
+    project: { id: pp[0], name: pp[1], code: val(pp[2]) },
+    site: typeof site === 'number' && site >= 0 ? (ss[site] as { id?: unknown } | undefined)?.id : undefined,
+    sites: ss,
+    measures: ms,
+    observe: { weather: bits(observe, 1), flow: bits(observe, 2), appearance: bits(observe, 4), photos: bits(observe, 8) },
+    fill: { time: bits(fill, 1), gps: bits(fill, 2) },
+    made: '',
+    appVersion,
+  };
+}
+
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+function toBase32(bytes: Uint8Array): string {
+  let out = '', bits = 0, value = 0;
+  for (const b of bytes) {
+    value = (value << 8) | b;
+    bits += 8;
+    while (bits >= 5) {
+      out += B32[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += B32[(value << (5 - bits)) & 31];
+  return out;
+}
+function fromBase32(text: string): Uint8Array {
+  const out: number[] = [];
+  let bits = 0, value = 0;
+  for (const ch of text) {
+    const i = B32.indexOf(ch);
+    if (i < 0) throw new Error('This isn’t an EnviroDB field code.');
+    value = (value << 5) | i;
+    bits += 5;
+    if (bits >= 8) {
+      out.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  return new Uint8Array(out);
+}
+async function squeeze(bytes: Uint8Array, t: CompressionStream | DecompressionStream): Promise<Uint8Array> {
+  return new Uint8Array(await new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(t)).arrayBuffer());
+}
+
+/** A printed code as the letters after `k=` in its link. */
+export async function encodeCode(code: FieldCode): Promise<string> {
+  return toBase32(await squeeze(new TextEncoder().encode(JSON.stringify(toWire(code))), new CompressionStream('deflate-raw')));
+}
+
+export async function decodeCode(text: string): Promise<FieldCode> {
+  let json: string;
+  try {
+    json = new TextDecoder().decode(await squeeze(fromBase32(text.trim()), new DecompressionStream('deflate-raw')));
+  } catch {
+    throw new Error('This isn’t an EnviroDB field code.');
+  }
+  return checkCode(fromWire(JSON.parse(json)));
+}
+
+/** A field code read from a QR code: checked like a sheet (anyone can print a QR code). */
+export function checkCode(x: unknown): FieldCode {
+  if (!isObj(x) || x.app !== FIELD_APP || x.kind !== 'field-code') throw new Error('This isn’t an EnviroDB field code.');
+  const s = checkSheet({ ...x, kind: 'field-sheet' });
+  if (!s.project.id) throw new Error('This field code doesn’t say which project it’s for.');
+  if (!s.sites.length) throw new Error('This field code has no sites.');
+  const f = isObj(x.fill) ? x.fill : {};
+  const site = str(x.site, 80);
+  return {
+    app: FIELD_APP,
+    kind: 'field-code',
+    v: 1,
+    project: s.project,
+    ...(site && s.sites.some((y) => y.id === site) ? { site } : {}),
+    sites: s.sites.map((y) => ({ ...y, last: undefined })),
+    measures: s.measures,
+    observe: s.observe,
+    fill: { time: f.time !== false, gps: !!f.gps },
+    made: s.made,
+    appVersion: s.appVersion,
+  };
+}
+
+const ROUND_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** The day's sheet a printed code starts, named as the computer names a day's sheet (so the two become one). */
+export function codeSheet(code: FieldCode, date: string): FieldSheet {
+  return {
+    app: FIELD_APP,
+    kind: 'field-sheet',
+    v: 1,
+    id: `${code.project.id}:${date}`,
+    project: code.project,
+    round: `${ROUND_MONTHS[Number(date.slice(5, 7)) - 1] ?? ''} ${date.slice(0, 4)} monitoring`.trim(),
+    date,
+    sites: code.sites.map((s) => ({ ...s })),
+    measures: code.measures,
+    observe: code.observe,
+    made: new Date().toISOString(),
+    appVersion: code.appVersion,
+  };
+}
+
+const defined = <T extends object>(o: T): Partial<T> => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+
+/**
+ * Two sheets for the same project and day as one: every site of both (a site scanned from its printed code joins the
+ * day's sheet), each site asked only its own readings. `lead` is the one whose order, round and site details come
+ * first: the computer's sheet when it's opened again for the day ('add' – its readings and observations decide for
+ * its sites); the phone's own when a printed code adds to it ('old' – so a code can't rename what's there, and its
+ * readings and observations are added).
+ */
+export function mergeSheets(old: FieldSheet, add: FieldSheet, lead: 'old' | 'add'): FieldSheet {
+  const [first, second] = lead === 'old' ? [old, add] : [add, old];
+  const own = (sh: FieldSheet, id: string) => {
+    const s = sh.sites.find((x) => x.id === id);
+    return s ? (s.measures ?? sh.measures.map((m) => m.id)) : [];
+  };
+  const ids = [...first.sites.map((s) => s.id), ...second.sites.filter((s) => !first.sites.some((x) => x.id === s.id)).map((s) => s.id)];
+  // the computer's sheet opened again decides its own sites' readings; a printed code adds to a site's
+  const wanted = new Map(ids.map((id) => [id, new Set(first.sites.some((s) => s.id === id) && lead === 'add' ? own(first, id) : [...own(first, id), ...own(second, id)])]));
+  const used = new Set([...wanted.values()].flatMap((w) => [...w]));
+  const measures = [...first.measures, ...second.measures.filter((m) => !first.measures.some((x) => x.id === m.id))].filter((m) => used.has(m.id));
+  const sites = ids.map((id): FieldSite => {
+    const a = first.sites.find((x) => x.id === id);
+    const b = second.sites.find((x) => x.id === id);
+    const mine = measures.filter((m) => wanted.get(id)!.has(m.id)).map((m) => m.id);
+    const site = { ...defined(b ?? ({} as FieldSite)), ...defined(a ?? ({} as FieldSite)) } as FieldSite;
+    delete site.measures;
+    return mine.length < measures.length ? { ...site, measures: mine } : site;
+  });
+  const or = (k: keyof FieldSheet['observe']) => (lead === 'add' ? add.observe[k] : old.observe[k] || add.observe[k]);
+  return { ...first, sites, measures, observe: { weather: or('weather'), flow: or('flow'), appearance: or('appearance'), photos: or('photos') } };
+}
+
+/** Metres between two places (on a sphere: near enough to tell the right site from the wrong one). */
+export function distanceM(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/** A field link read from a QR code: a sheet's or a printed code's, as the field-mode page to go to. */
+export function fieldLinkPath(text: string): string | null {
+  const m = /#\/field\/(open\?s|code\?k)=([A-Za-z0-9_-]+)\s*$/.exec(text.trim());
+  return m ? `/field/${m[1]}=${m[2]}` : null;
+}

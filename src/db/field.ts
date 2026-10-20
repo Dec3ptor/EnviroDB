@@ -5,7 +5,7 @@
 import { db, getSettings } from './db';
 import type { ImportBatch, Parameter, Result, Sample, Site } from './types';
 import type { ProjectBundle } from '../lib/analysis';
-import { FIELD_APP, readingWarning, type FieldMeasure, type FieldResults, type FieldSheet, type FieldVisit } from '../field/model';
+import { FIELD_APP, readingWarning, type FieldCode, type FieldCodeFill, type FieldMeasure, type FieldResults, type FieldSheet, type FieldVisit } from '../field/model';
 import { stableId, uid } from '../lib/ids';
 import { siteLatLng } from '../lib/nztm';
 import { convert, unitLabel } from '../lib/units';
@@ -84,6 +84,33 @@ export function makeSheet(b: ProjectBundle, c: SheetChoices): FieldSheet {
     by: c.by || undefined,
     made: new Date().toISOString(),
     appVersion: APP_VERSION,
+  };
+}
+
+// ------------------------------------------------------------ printed codes
+
+export interface CodeChoices {
+  siteIds: string[];
+  measureIds: string[];
+  observe: FieldSheet['observe'];
+  fill: FieldCodeFill;
+  /** The sites' locations: shown on the phone (directions) and to check it's at the right site. */
+  withLocation: boolean;
+  /** The sites' descriptions (directions, access): anyone who scans a code can read them. */
+  withNotes: boolean;
+}
+
+/**
+ * Printed codes for a project: the project's (every site chosen) and one for each site. They hold no day and no
+ * results, so they stay right from round to round; each site's asks only for its own readings.
+ */
+export function makeCodes(b: ProjectBundle, c: CodeChoices): { project: FieldCode; sites: FieldCode[] } {
+  const sheet = makeSheet(b, { round: '', date: '', siteIds: c.siteIds, measureIds: c.measureIds, observe: c.observe, withLast: false });
+  const sites = sheet.sites.map((s) => ({ id: s.id, code: s.code, name: s.name, ...(c.withLocation ? { lat: s.lat, lng: s.lng } : {}), ...(c.withNotes ? { note: s.note } : {}), measures: s.measures }));
+  const base = { app: FIELD_APP as typeof FIELD_APP, kind: 'field-code' as const, v: 1 as const, project: sheet.project, observe: sheet.observe, fill: c.fill, made: sheet.made.slice(0, 10), appVersion: sheet.appVersion };
+  return {
+    project: { ...base, sites, measures: sheet.measures },
+    sites: sites.map(({ measures, ...s }) => ({ ...base, site: s.id, sites: [s], measures: measures ? sheet.measures.filter((m) => measures.includes(m.id)) : sheet.measures })),
   };
 }
 

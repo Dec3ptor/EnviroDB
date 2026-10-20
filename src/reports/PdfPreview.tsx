@@ -80,11 +80,13 @@ function PdfPage({ pdf, n, width, height, label, scroller }: { pdf: PDFDocumentP
  * Pages of the report's PDF, drawn to scale. With `fill` the preview takes the height it is given and scrolls its
  * pages itself (the page count and zoom stay in view), so reading the preview doesn't scroll the whole page.
  */
-export function PdfPreview({ doc, building, fill }: { doc: ReportDoc | null; building?: boolean; fill?: boolean }) {
+export function PdfPreview({ doc, load, building, fill }: { doc?: ReportDoc | null; load?: (() => Promise<Uint8Array>) | null; building?: boolean; fill?: boolean }) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const current = useRef<PDFDocumentLoadingTask | null>(null);
   const [pages, setPages] = useState<PageSize[]>([]);
-  const [shown, setShown] = useState<ReportDoc | null>(null); // the report the pages on screen are for
+  // what's shown: a report, or any other PDF (`load` makes it; a new function is a new PDF)
+  const src = doc ?? load ?? null;
+  const [shown, setShown] = useState<unknown>(null); // what the pages on screen are of
   const [making, setMaking] = useState(false);
   const [error, setError] = useState('');
   const [zoom, setZoom] = useState(1);
@@ -102,12 +104,12 @@ export function PdfPreview({ doc, building, fill }: { doc: ReportDoc | null; bui
   useEffect(() => () => void current.current?.destroy(), []);
 
   useEffect(() => {
-    if (!doc) return;
+    if (!src) return;
     let cancelled = false;
     setMaking(true);
     void (async () => {
       try {
-        const [lib, bytes] = await Promise.all([loadPdfJs(), pdfBytes(doc)]);
+        const [lib, bytes] = await Promise.all([loadPdfJs(), doc ? pdfBytes(doc) : load!()]);
         if (cancelled) return;
         const task = lib.getDocument({ data: bytes });
         const next = await task.promise;
@@ -124,13 +126,13 @@ export function PdfPreview({ doc, building, fill }: { doc: ReportDoc | null; bui
         current.current = task;
         setPdf(next);
         setPages(sizes);
-        setShown(doc);
+        setShown(() => src); // (a function is kept as it is, not called)
         setError('');
         if (old) window.setTimeout(() => void old.destroy(), 1500);
       } catch (e) {
         if (!cancelled) {
           setError((e as Error).message);
-          setShown(doc);
+          setShown(() => src); // (a function is kept as it is, not called)
         }
       } finally {
         if (!cancelled) setMaking(false);
@@ -139,12 +141,12 @@ export function PdfPreview({ doc, building, fill }: { doc: ReportDoc | null; bui
     return () => {
       cancelled = true;
     };
-  }, [doc]);
+  }, [src]);
 
   const widest = Math.max(1, ...pages.map((p) => p.width));
   const scale = (Math.max(160, avail - 24) / widest) * zoom; // one scale for every page, so sizes compare truly
   const landscape = pages.filter((p) => p.width > p.height).length;
-  const busy = making || !!building || (!!doc && doc !== shown);
+  const busy = making || !!building || (!!src && src !== shown);
 
   return (
     <div data-ready={!busy} style={fill ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>

@@ -2,7 +2,7 @@ import { InboxPanel } from '../../components/InboxPanel';
 import { lazy, Suspense, useState } from 'react';
 import { Badge, Button, Center, Group, Loader, Menu, Stack, Tabs, Text, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap, IconListCheck, IconTrendingUp, IconFlag, IconPackageExport, IconDeviceMobile, IconDeviceMobileDown } from '@tabler/icons-react';
+import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconCalendarEvent, IconSparkles, IconMap, IconListCheck, IconTrendingUp, IconFlag, IconPackageExport, IconDeviceMobile, IconDeviceMobileDown, IconQrcode } from '@tabler/icons-react';
 import { ProjectDataProvider, useProject } from '../../hooks/useProjectData';
 import { OverviewTab } from './Overview';
 import { DataTab } from './Data';
@@ -21,6 +21,7 @@ import { downloadProjectPackage } from '../../db/backup';
 import { AiInputModal } from '../../components/AiInputModal';
 import { FieldResultsModal, FieldSheetModal } from '../../components/FieldSheet';
 import { ReceiveFromPhone } from '../../components/ReceiveFromPhone';
+import { FieldCodesModal } from '../../components/FieldCodes';
 import type { FieldResults } from '../../field/model';
 
 // the map (and Leaflet) loads only when the tab is opened
@@ -50,6 +51,7 @@ function Header() {
   const current = loc.pathname.slice(base.length + 1).split('/')[0] || 'overview';
   const [aiOpen, setAiOpen] = useState(false);
   const [fieldOpen, setFieldOpen] = useState(false);
+  const [codesOpen, setCodesOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [received, setReceived] = useState<{ results: FieldResults; name: string } | null>(null);
   const qa = useProjectQa('12m');
@@ -100,6 +102,9 @@ function Header() {
               <Menu.Item leftSection={<IconDeviceMobile size={16} />} onClick={() => setFieldOpen(true)}>
                 Field sheet for a phone
               </Menu.Item>
+              <Menu.Item leftSection={<IconQrcode size={16} />} onClick={() => setCodesOpen(true)}>
+                Printable field codes
+              </Menu.Item>
               <Menu.Item leftSection={<IconDeviceMobileDown size={16} />} onClick={() => setReceiveOpen(true)}>
                 Receive from a phone
               </Menu.Item>
@@ -136,6 +141,7 @@ function Header() {
       </Tabs>
       <AiInputModal opened={aiOpen} onClose={() => setAiOpen(false)} />
       <FieldSheetModal opened={fieldOpen} onClose={() => setFieldOpen(false)} />
+      {codesOpen && <FieldCodesModal opened={codesOpen} onClose={() => setCodesOpen(false)} />}
       {receiveOpen && <ReceiveFromPhone opened={receiveOpen} onClose={() => setReceiveOpen(false)} onReceived={(results, name) => setReceived({ results, name })} />}
       {received && <FieldResultsModal results={received.results} fileName={received.name} onClose={() => setReceived(null)} />}
     </Stack>
