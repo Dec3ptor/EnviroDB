@@ -3,7 +3,7 @@
 import type { PackSection, PackSettings, Parameter, Site } from '../db/types';
 import { evaluateAll, flagResults, limitToSites, type ProjectBundle } from '../lib/analysis';
 import { ruleParamIds, type RuleStatus } from '../lib/compliance';
-import { buildChartSpec, type ChartLine } from '../charts/timeSeries';
+import { buildChartSpec, thresholdStyles, type ChartLine } from '../charts/timeSeries';
 import { convert, unitLabel } from '../lib/units';
 import { siteLatLng } from '../lib/nztm';
 import { addDays, addMonths, formatDate } from '../lib/dates';
@@ -13,6 +13,16 @@ import { overlayFor, seriesDays } from '../lib/continuous';
 export const PACK_FORMAT = 1;
 
 /** What the viewer draws: compact, with sites, analytes and samples by their place in the lists. */
+export interface PackLine {
+  values: number[];
+  text: string;
+  kind: ChartLine['kind'];
+  /** [light, dark] */
+  color: [string, string];
+  /** SVG dash pattern ('' = solid). */
+  dash: string;
+}
+
 export interface PackData {
   format: number;
   pack: { version: number; made: string; app: string; company?: string };
@@ -30,8 +40,8 @@ export interface PackData {
    */
   results: Array<[number, number, number | null, string?, number?, number?, string?]>;
   notes: string[];
-  /** Each analyte's limit, trigger and guideline lines. */
-  lines: ChartLine[][];
+  /** Each analyte's limit, trigger and guideline lines, in key order, each in its colours as on the app's graphs. */
+  lines: PackLine[][];
   compliance: Array<{ name: string; condition?: string; status: RuleStatus; summary: string }>;
   /** An aerial photo behind the map, and where it is (Web Mercator, 0–1). */
   map?: { image: string; box: [number, number, number, number]; attribution: string };
@@ -152,9 +162,11 @@ export function buildPackData(b: ProjectBundle, settings: PackSettings, ctx: Pac
   }
 
   const sets = setIds.map((id) => b.setMap.get(id)!);
-  const lines = params.map((p) =>
-    buildChartSpec({ index: scoped.index, param: p, sites: scoped.sites, siteIds, start: period.start, end: period.end, guidelineSets: sets, rules: s.limits ? scoped.rules : [], setMap: b.setMap, showRules: s.limits }).lines.map((l) => ({ ...l })),
-  );
+  const lines = params.map((p): PackLine[] => {
+    const spec = buildChartSpec({ index: scoped.index, param: p, sites: scoped.sites, siteIds, start: period.start, end: period.end, guidelineSets: sets, rules: s.limits ? scoped.rules : [], setMap: b.setMap, showRules: s.limits });
+    const dark = thresholdStyles(spec.lines, true);
+    return thresholdStyles(spec.lines).map((l, i) => ({ values: l.values, text: l.text, kind: l.kind, color: [l.color, dark[i].color], dash: l.dash ? l.dash.join(' ') : '' }));
+  });
 
   const colorOf = new Map(b.sites.map((x, i) => [x.id, SERIES_LIGHT[i % SERIES_LIGHT.length]]));
   // rainfall or flow behind the graphs, a value a day over the pack's dates

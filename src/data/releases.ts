@@ -11,6 +11,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.15.1',
+    date: '2026-10-20',
+    title: 'Trigger lines you can tell apart',
+    items: [
+      'On graphs, each trigger line has a colour of its own instead of all being amber: the main trigger amber, then indigo, teal and plum (Trigger 1 before Trigger 2, and a trigger set for one site apart from another’s). Each keeps its own dash pattern too, for grey-scale print.',
+      'Limits stay red, so red always means a consent limit; two limits on one graph are told apart by their dashes. A second guideline set is drawn in a lighter grey than the first.',
+      'The colours were checked so they stay apart for colour-blind readers, in light and dark mode. Report graphs, Word exports and client data packs use them too.',
+    ],
+  },
+  {
     version: '1.15.0',
     date: '2026-10-20',
     title: 'Big master spreadsheets: every analyte, and quicker',

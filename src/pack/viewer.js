@@ -73,6 +73,9 @@ label.check { display: inline-flex; gap: 6px; align-items: center; font-size: 14
 .axis text { fill: var(--muted); font-size: 11px; }
 .axis line, .axis path { stroke: var(--line); }
 .grid line { stroke: var(--line); stroke-dasharray: 2 3; }
+.thr { stroke: var(--lc); }
+:host(.dark) .thr { stroke: var(--lcd); }
+@media (prefers-color-scheme: dark) { :host(.auto) .thr { stroke: var(--lcd); } }
 .key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 12.5px; color: var(--muted); }
 .key span { display: inline-flex; align-items: center; gap: 6px; }
 .graph { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; }
@@ -741,12 +744,11 @@ export function renderPack(data, host) {
           keyBox.append(el('span', null, sw, `${rain ? 'Daily rainfall' : 'Daily mean'} (${ov.unit}) – ${ov.name}`));
         }
       }
-      // limits, triggers and guidelines
-      const style = { limit: ['var(--bad)', '', 1.6], trigger: ['var(--warn)', '7 4', 1.4], guideline: ['var(--muted)', '2 3', 1.3] };
+      // limits, triggers and guidelines: each in its own colour (the stylesheet picks light or dark) and dashes
       lines.forEach((l, k) => {
-        const [color, dash, w] = style[l.kind] || style.guideline;
-        if (drawn[k]) for (const v of l.values) svg.append(sv('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: color, 'stroke-dasharray': dash || null, 'stroke-width': w }));
-        const sw = sv('svg', { width: 22, height: 8 }, sv('line', { x1: 0, x2: 22, y1: 4, y2: 4, stroke: color, 'stroke-dasharray': dash || null, 'stroke-width': 2 }));
+        const own = { style: `--lc:${l.color[0]};--lcd:${l.color[1]}`, class: 'thr', 'stroke-dasharray': l.dash || null, 'stroke-linecap': 'round' };
+        if (drawn[k]) for (const v of l.values) svg.append(sv('line', { ...own, x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), 'stroke-width': 1.8 }));
+        const sw = sv('svg', { width: 26, height: 8 }, sv('line', { ...own, x1: 1, x2: 25, y1: 4, y2: 4, 'stroke-width': 2 }));
         keyBox.append(el('span', null, sw, `${l.text}${drawn[k] ? '' : ' (off the scale)'}`));
       });
       // the sites' results: lines through them, hollow circles for those below the detection limit

@@ -30,6 +30,11 @@ export interface ChartLine {
   /** Text for the key, with the unit, e.g. "Limit 100 mg/L (Condition 8(a))". */
   text: string;
   kind: 'limit' | 'trigger' | 'guideline';
+  /**
+   * Which of its kind's colours the line takes: a trigger's place among the graph's triggers (the main one first), a
+   * guideline set's among the sets shown. (Limits are all red.)
+   */
+  tone?: number;
 }
 export interface ChartSpec {
   title: string;
@@ -88,6 +93,27 @@ export interface ChartInput {
 
 const isLimitLevel = (level: string) => /limit/i.test(level);
 
+/** Trigger levels in the order they take colours: the main trigger first (amber, as in the tables). */
+const TRIGGER_ORDER = ['trigger', 'trigger 1', 'trigger 2', 'alert', 'target', 'info'];
+
+/**
+ * The order a graph's triggers take their colours in – by level, then statistic, then sites – so the main trigger is
+ * amber and Trigger 1 comes before Trigger 2 on every graph.
+ */
+function triggerOrder(siteOrder: Map<string, number>): (a: Rule, b: Rule) => number {
+  const stat = (r: Rule) => (r.kind === 'statistic' ? `${r.statistic ?? 'mean'} ${r.percentile ?? ''}`.trim() : '');
+  const sites = (r: Rule) => r.siteIds.map((id) => siteOrder.get(id) ?? 1e6).sort((a, b) => a - b);
+  const rank = (level: string) => {
+    const i = TRIGGER_ORDER.indexOf(level);
+    return i < 0 ? TRIGGER_ORDER.length : i;
+  };
+  return (a, b) => {
+    const la = a.level.trim().toLowerCase(), lb = b.level.trim().toLowerCase();
+    const sa = sites(a), sb = sites(b);
+    return rank(la) - rank(lb) || la.localeCompare(lb, undefined, { numeric: true }) || stat(a).localeCompare(stat(b)) || sa.length - sb.length || sa.join(',').localeCompare(sb.join(','), undefined, { numeric: true });
+  };
+}
+
 export function buildChartSpec(input: ChartInput): ChartSpec {
   const { index, param, sites } = input;
   const unit = param.unit;
@@ -114,21 +140,27 @@ export function buildChartSpec(input: ChartInput): ChartSpec {
   const lines: ChartLine[] = [];
   const usable = (v: number | null | undefined): v is number => v !== undefined && v !== null && Number.isFinite(v) && (!input.log || v > 0);
   /** Add a line (or the two lines of a range); values are in the chart's unit. */
-  const addLine = (lo: number | null | undefined, hi: number | null | undefined, name: string, kind: ChartLine['kind'], note = '') => {
+  const addLine = (lo: number | null | undefined, hi: number | null | undefined, name: string, kind: ChartLine['kind'], note = '', tone?: number): ChartLine | undefined => {
     const values = [lo, hi].filter(usable);
-    if (!values.length) return;
+    if (!values.length) return undefined;
     const valueText = usable(lo) && usable(hi) ? `${fmtNum(lo)}–${fmtNum(hi)}` : usable(lo) ? `min ${fmtNum(lo)}` : fmtNum(hi!);
     const text = `${name} ${valueText} ${u}${note ? ` (${note})` : ''}`;
     const same = lines.find((l) => l.kind === kind && l.values.length === values.length && l.values.every((v, i) => Math.abs(v - values[i]) < 1e-12));
-    if (same) same.text = `${same.text}; ${text}`;
-    else lines.push({ values, text, kind });
+    if (same) {
+      same.text = `${same.text}; ${text}`;
+      return same;
+    }
+    const line: ChartLine = { values, text, kind, ...(tone !== undefined ? { tone } : {}) };
+    lines.push(line);
+    return line;
   };
-  for (const set of input.guidelineSets) {
+  input.guidelineSets.forEach((set, i) => {
     const g = guidelineFor(set, param.id, unit);
-    if (g) addLine(g.min, g.max, set.shortName, 'guideline', g.hardness ? 'at 30 mg/L hardness' : '');
-  }
+    if (g) addLine(g.min, g.max, set.shortName, 'guideline', g.hardness ? 'at 30 mg/L hardness' : '', i);
+  });
   if (input.showRules) {
     const multiSite = series.length > 1;
+    const triggerRule = new Map<ChartLine, Rule>();
     for (const r of input.rules) {
       if (!r.active || r.parameterId !== param.id || r.kind === 'change' || r.kind === 'guideline') continue;
       if (r.siteIds.length && !r.siteIds.some((id) => wanted.includes(id))) continue;
@@ -139,9 +171,12 @@ export function buildChartSpec(input: ChartInput): ChartSpec {
       const from = r.limitSetId ? input.setMap?.get(r.limitSetId)?.shortName : '';
       const note = [r.condition, at, from, r.limitSetId && r.hardnessAdjust ? 'at 30 mg/L hardness' : ''].filter(Boolean).join(', ');
       const inUnit = (v: number | undefined) => (v === undefined ? undefined : convert(v, ru, unit));
-      if (r.operator === 'outside') addLine(inUnit(r.min), inUnit(r.max), name, kind, note);
-      else addLine(undefined, inUnit(r.value), name, kind, note);
+      const line = r.operator === 'outside' ? addLine(inUnit(r.min), inUnit(r.max), name, kind, note) : addLine(undefined, inUnit(r.value), name, kind, note);
+      if (line && kind === 'trigger' && !triggerRule.has(line)) triggerRule.set(line, r);
     }
+    // each trigger on the graph a colour of its own, in a fixed order
+    const order = triggerOrder(siteOrder);
+    [...triggerRule.entries()].sort(([, a], [, b]) => order(a, b)).forEach(([line], i) => (line.tone = i));
   }
   const siteNames = series.map((s) => s.name).join(', ');
   const xs = series.flatMap((s) => s.points.map((p) => p.t));
@@ -173,17 +208,21 @@ export interface RenderOpts {
 const FONT = 'Roboto, system-ui, -apple-system, "Segoe UI", Arial, sans-serif';
 
 /**
- * Limit / trigger / guideline line colours: red, amber and grey, stepped in lightness so they stay apart for
- * colour-blind readers and in grey-scale print (checked with the dataviz palette validator, all pairs).
+ * Limit, trigger and guideline line colours. Limits are red (red always means a consent limit); each trigger has a
+ * colour of its own – amber, indigo, teal, plum – and guideline sets are charcoal and grey. Checked with the dataviz
+ * palette validator, all pairs, light and dark: the limit and the four triggers stay apart for colour-blind readers
+ * (worst ΔE 14.9 light, 12.2 dark) and everyone else (19.7, 16.5). Light amber is under 3:1 on white, so the key
+ * names every line beside its sample. Dark amber is brighter than the dark band on purpose: dimmed into it, it can't
+ * be told from the limit red by colour-blind readers.
  */
-const LINE_COLORS = {
-  light: { limit: '#d03b3b', trigger: '#d99400', guideline: '#3d3c39' },
-  dark: { limit: '#e5534b', trigger: '#f2b632', guideline: '#e9e8e3' },
+export const LINE_COLORS: Record<'light' | 'dark', Record<ChartLine['kind'], string[]>> = {
+  light: { limit: ['#d03b3b'], trigger: ['#d99400', '#716df6', '#009eaf', '#85258a'], guideline: ['#3d3c39', '#706e68'] },
+  dark: { limit: ['#e5534b'], trigger: ['#f2b632', '#6e69f3', '#10a6ad', '#a0429f'], guideline: ['#e9e8e3', '#898781'] },
 };
-/** Each kind has its own dash pattern (null = solid); a second line of the same kind takes the next one. */
+/** Each kind has its own dash patterns (null = solid) – a second cue beside the colour, for print and colour blindness. */
 const DASHES: Record<ChartLine['kind'], Array<number[] | null>> = {
   limit: [null, [14, 4], [14, 4, 3, 4]],
-  trigger: [[7, 4], [7, 3, 2, 3], [3, 3]],
+  trigger: [[7, 4], [7, 3, 2, 3], [3, 3], [12, 4, 2, 4]],
   guideline: [[0.1, 4.5], [10, 3, 0.1, 3, 0.1, 3], [5, 6]],
 };
 
@@ -194,12 +233,29 @@ export interface ThresholdStyle {
   dash: number[] | null;
 }
 
-/** The threshold lines in key order – limits, triggers, then guidelines – each with its colour and dash pattern. */
-export function thresholdStyles(lines: ChartLine[], dark = false): ThresholdStyle[] {
+/**
+ * The threshold lines in key order – limits, triggers (in their colours' order), then guidelines – each with its
+ * colour and dash pattern. Two lines of a kind on one graph never share a colour while there are colours left.
+ */
+export function thresholdStyles(lines: ChartLine[], dark = false): Array<ThresholdStyle & { kind: ChartLine['kind']; line: ChartLine }> {
   const colors = dark ? LINE_COLORS.dark : LINE_COLORS.light;
-  return (['limit', 'trigger', 'guideline'] as const).flatMap((kind) =>
-    lines.filter((l) => l.kind === kind).map((l, i) => ({ text: l.text, values: l.values, color: colors[kind], dash: DASHES[kind][i % DASHES[kind].length] })),
-  );
+  return (['limit', 'trigger', 'guideline'] as const).flatMap((kind) => {
+    const pal = colors[kind];
+    const dashes = DASHES[kind];
+    const used = new Set<number>();
+    return lines
+      .filter((l) => l.kind === kind)
+      .map((l, i) => ({ l, i, tone: kind === 'limit' ? 0 : l.tone ?? i }))
+      .sort((a, b) => a.tone - b.tone || a.i - b.i)
+      .map(({ l, tone }, i) => {
+        let k = tone % pal.length;
+        for (let n = 0; n < pal.length && used.has(k); n++) k = (k + 1) % pal.length;
+        used.add(k);
+        // limits (all red) are told apart by their dashes alone; the others' dashes go with their colour
+        const d = kind === 'limit' ? i : k + Math.floor(i / pal.length);
+        return { kind, line: l, text: l.text, values: l.values, color: pal[k], dash: dashes[d % dashes.length] };
+      });
+  });
 }
 
 let measureCtx: CanvasRenderingContext2D | null | undefined;

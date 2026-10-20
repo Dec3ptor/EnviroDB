@@ -52,8 +52,11 @@ there as they work and show up for the others within seconds.
   can show concentrations in g/m³, mg/L or µg/L (it remembers your choice); comparisons always
   convert units automatically. With several guideline sets chosen, each set's exceedances have a
   colour of their own (amber, blue, green, pink, teal) in tables, Excel exports and reports, with a key.
-- **Graph** any parameter by site, with consent limits (solid red), triggers (dashed amber) and
-  guideline values (dotted grey) drawn as lines and named in a key below the graph. Graphs export
+- **Graph** any parameter by site, with consent limits (red), triggers and guideline values (dotted grey)
+  drawn as lines and named in a key below the graph. Each trigger on a graph has a colour and dash pattern
+  of its own – the main trigger amber, then indigo, teal and plum (Trigger 1 before Trigger 2) – and a
+  second guideline set is a lighter grey, so they can be told apart (in colour, in grey-scale print and
+  by colour-blind readers). Client data packs draw them the same way. Graphs export
   as high-resolution PNGs, can be copied straight into Word, or exported all at once to a
   Word document.
 - **Put the sites on a map.** A project's *Map* tab shows its monitoring sites on LINZ aerial
