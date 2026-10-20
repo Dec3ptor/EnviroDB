@@ -433,6 +433,15 @@ there as they work and show up for the others within seconds.
      a phone* makes, so the two mix), and last time's readings come from what the phone recorded there before.
      Options: the sites, the readings to take, what to note, the layout, and what's printed beside each code
      (site name, project, readings, location, directions and notes).
+  7. **The team key** (optional, off unless turned on: *Settings → Field codes: team key*) locks field sheets'
+     QR codes, links and files, and printed field codes, so they open only on phones set up for the team; the
+     results those phones send back as a file are locked too, and open only in the workspace. Each phone is set
+     up once: *Set up a phone* shows a code that opens the phone's *Team key* page, then – only when asked – the
+     key itself, which that page scans (it isn't a link, so the phone's own camera app never opens it). A locked
+     sheet or code scanned on a phone that isn't set up says only that it's locked, with *Set up this phone*;
+     once set up, it opens straight after. *Make a new key* (after a phone is lost, say) locks new sheets and
+     codes with the new one – set the phones up again and print the codes again; older keys are kept so what was
+     locked with them still opens. Turned off, sheets and codes are plain again and the key is kept.
 - **Client data packs.** A project's *Data pack* tab makes one HTML file with its data for the client –
   set up the way you want them to see it, and previewed as they will (on a computer or a phone):
   - **Sections** in the order you choose, each switched on or off and named as you like: a summary, the sites
@@ -605,8 +614,14 @@ EnviroDB has no server and never uploads anything. The only things that cross th
   anything else. Where you are stays on the phone (and in the results, for a site placed by GPS).
   A **printed field code** holds the project's and sites' names, the readings to take and – if you choose – the
   sites' locations and directions; never results. Anyone who scans one can read that, so leave the directions out
-  if they mention gate codes or keys and the codes are left at the sites. The phone checks what a code holds
-  before using it, and a code can't rename a site or project already on the phone.
+  if they mention gate codes or keys and the codes are left at the sites – or turn on the **team key**. The phone
+  checks what a code holds before using it, and a code can't rename a site or project already on the phone.
+- **The team key** (when turned on) locks field sheets, printed codes and phones' results files with AES-256-GCM:
+  only the team's phones and the workspace can read them, and anything changed or swapped (a sheet passed off as
+  a code, say) doesn't open. Each locked piece shows only which key it needs (a short fingerprint) and, for a
+  results file, which project it's for (so the Inbox knows where it goes). The key is kept in the workspace's
+  settings – anyone with the workspace folder has it, as they have the data – and on each phone set up with it,
+  never in an issued report's record. It works in the browser (Web Crypto); nothing is sent anywhere.
 - **Sending from the phone to the computer** (*Receive from a phone*) uses no server and no internet: the Wi-Fi
   link is direct between the two devices on the local network (no STUN or TURN servers, so it can't go anywhere
   else), and the flashing code goes by camera. The computer's code holds a fresh key each time; the results are

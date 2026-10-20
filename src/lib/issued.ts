@@ -176,7 +176,8 @@ export function snapshotContent(input: SnapshotInput): SnapshotContent {
   const words = JSON.stringify([template, input.promptTexts ?? {}]).toLowerCase();
   const parameters = b.params.filter((p) => usedParams.has(p.id) || named2.includes(`"${p.id}"`)).map((p) => ({ ...p, aliases: p.aliases.filter((a) => words.includes(a.toLowerCase())) }));
   const guidelineSets = b.guidelineSets.filter((g) => named2.includes(`"${g.id}"`));
-  const { lastBackupAt: _l, defaultTemplateId: _d, guidelineUnit: _g, ...kept } = settings;
+  // the team key never goes into a report's record
+  const { lastBackupAt: _l, defaultTemplateId: _d, guidelineUnit: _g, teamKey: _t, ...kept } = settings;
   return {
     v: SNAPSHOT_VERSION,
     issuedOn: input.issuedOn,

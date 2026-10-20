@@ -6,6 +6,7 @@
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 import qrcode from 'qrcode-generator';
 import type { FieldCode, FieldCodeFill, FieldMeasure, FieldSite } from '../field/model';
+import { showKeyId } from '../field/lock';
 import { loadPdfMake } from './pdf';
 import { downloadBlob } from '../db/backup';
 import { MADE_BY } from '../lib/version';
@@ -40,6 +41,8 @@ export interface CodesPdfInput {
   /** 'YYYY-MM-DD' */
   printed: string;
   dateFormat?: DateFormat;
+  /** The team key the codes are locked with (its fingerprint), if they are. */
+  lockedWith?: string;
 }
 
 const A4: [number, number] = [595.28, 841.89];
@@ -54,7 +57,7 @@ export function qrMatrix(text: string): { n: number; dark: Array<[number, number
     try {
       const qr = qrcode(0, level);
       // a printed code's letters (capitals and digits) take fewer squares than the address before them
-      const m = /^(.*[?&]k=)([A-Z2-7]+)$/.exec(text);
+      const m = /^(.*[?&][kx]=)([A-Z2-7]+)$/.exec(text);
       if (m) {
         qr.addData(m[1], 'Byte');
         qr.addData(m[2], 'Alphanumeric');
@@ -214,12 +217,20 @@ function coverPage(input: CodesPdfInput, pc: { code: FieldCode; link: string }):
         `The project’s code opens the day’s field sheet with all its sites. A site’s code adds the site to the day’s sheet and opens it${fillText(input.fill, located)}.`,
         'What’s recorded stays on the phone, with or without a signal, until it’s sent: Send the results, on the day’s sheet.',
         'With no signal, the phone needs to have opened EnviroDB field once before.',
+        ...(input.lockedWith ? ['Locked codes: each phone is set up once for the team – on the computer, in Settings, under Field codes: team key, choose Set up a phone.'] : []),
         'Print the codes again after adding sites or changing the readings to take.',
       ],
       fontSize: 9.5,
       lineHeight: 1.25,
     },
-    { text: `Anyone who scans a code can read what it holds: ${held.join(', ')}. Codes hold no results.`, fontSize: 8.5, color: GREY, margin: [0, 10, 0, 0] },
+    {
+      text: input.lockedWith
+        ? `The codes are locked with the team key (${showKeyId(input.lockedWith)}): they open only on phones set up for the team, and anyone else who scans one learns nothing from it. They hold ${held.join(', ')} – no results.`
+        : `Anyone who scans a code can read what it holds: ${held.join(', ')}. Codes hold no results.`,
+      fontSize: 8.5,
+      color: GREY,
+      margin: [0, 10, 0, 0],
+    },
     { text: 'Sites', fontSize: 12, bold: true, margin: [0, 18, 0, 4] },
     {
       table: {

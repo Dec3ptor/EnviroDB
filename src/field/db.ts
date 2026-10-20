@@ -3,6 +3,7 @@
 
 import Dexie, { type Table } from 'dexie';
 import { codeSheet, FIELD_APP, mergeSheets, type FieldCode, type FieldResults, type FieldSheet, type FieldSite, type FieldVisit } from './model';
+import { mergeKeys, parseKeys, type TeamKey } from './lock';
 
 export interface StoredSheet {
   id: string;
@@ -10,6 +11,8 @@ export interface StoredSheet {
   addedAt: string;
   /** When the results were last sent. */
   sentAt?: string;
+  /** The team key it came locked with (its fingerprint): the results file is locked with it too. */
+  lockedWith?: string;
 }
 
 export interface StoredVisit {
@@ -37,7 +40,7 @@ export const fieldDb = new FieldDatabase();
  * the new sheet's sites and readings – keeping any site recorded here that the new one leaves out (one scanned from
  * its printed code, say).
  */
-export async function addSheet(sheet: FieldSheet): Promise<void> {
+export async function addSheet(sheet: FieldSheet, lockedWith?: string): Promise<void> {
   const cur = await fieldDb.sheets.get(sheet.id);
   let next = sheet;
   if (cur) {
@@ -46,14 +49,14 @@ export async function addSheet(sheet: FieldSheet): Promise<void> {
     const kept = { ...cur.sheet, sites: cur.sheet.sites.filter((s) => recorded.has(s.id) || s.added || s.located || sheet.sites.some((x) => x.id === s.id)) };
     next = mergeSheets(kept, sheet, 'add');
   }
-  await fieldDb.sheets.put({ id: sheet.id, sheet: next, addedAt: cur?.addedAt ?? new Date().toISOString(), sentAt: cur?.sentAt });
+  await fieldDb.sheets.put({ id: sheet.id, sheet: next, addedAt: cur?.addedAt ?? new Date().toISOString(), sentAt: cur?.sentAt, lockedWith: lockedWith ?? cur?.lockedWith });
 }
 
 /**
  * A printed code scanned on `date`: its sites join that day's sheet for the project (started if there's none yet),
  * with last time's readings at each from what this phone recorded there before.
  */
-export async function addFromCode(code: FieldCode, date: string): Promise<FieldSheet> {
+export async function addFromCode(code: FieldCode, date: string, lockedWith?: string): Promise<FieldSheet> {
   const fresh = codeSheet(code, date);
   const before = (await fieldDb.visits.toArray()).filter((v) => v.sheetId.startsWith(`${code.project.id}:`) && v.sheetId.slice(code.project.id.length + 1) < date && Object.keys(v.visit.values).length);
   fresh.sites = fresh.sites.map((site) => {
@@ -66,7 +69,7 @@ export async function addFromCode(code: FieldCode, date: string): Promise<FieldS
   });
   const cur = await fieldDb.sheets.get(fresh.id);
   const sheet = cur ? mergeSheets(cur.sheet, fresh, 'old') : fresh;
-  await fieldDb.sheets.put({ id: sheet.id, sheet, addedAt: cur?.addedAt ?? new Date().toISOString(), sentAt: cur?.sentAt });
+  await fieldDb.sheets.put({ id: sheet.id, sheet, addedAt: cur?.addedAt ?? new Date().toISOString(), sentAt: cur?.sentAt, lockedWith: lockedWith ?? cur?.lockedWith });
   return sheet;
 }
 
@@ -86,6 +89,20 @@ export async function getPref(key: string): Promise<string> {
 }
 export async function setPref(key: string, value: string): Promise<void> {
   await fieldDb.prefs.put({ key, value });
+}
+
+/** The team's keys this phone was set up with, newest first (none unless it was set up). */
+export async function teamKeys(): Promise<TeamKey[]> {
+  return parseKeys(await getPref('teamKeys'));
+}
+/** Setting the phone up for the team: the keys join any it has (newest first). */
+export async function addTeamKeys(keys: TeamKey[]): Promise<TeamKey[]> {
+  const next = mergeKeys(keys, await teamKeys());
+  await setPref('teamKeys', JSON.stringify(next));
+  return next;
+}
+export async function forgetTeamKeys(): Promise<void> {
+  await fieldDb.prefs.delete('teamKeys');
 }
 
 /** What was recorded on a sheet, as the file to send back: the visits, sites added here, locations set here. */

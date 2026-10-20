@@ -16,6 +16,7 @@ import { PageHeader } from '../components/common';
 import type { Settings } from '../db/types';
 import { SignatureInput, myDetails } from '../components/report/Signatures';
 import { LetterheadCard } from '../components/report/Letterhead';
+import { TeamKeyCard } from '../components/TeamKey';
 import { APP_COLOURS, DEFAULT_APP_COLOUR, isHexColour } from '../lib/palette';
 
 function fmtBytes(n?: number) {
@@ -163,6 +164,8 @@ export function SettingsPage() {
       </Card>
 
       <LetterheadCard />
+
+      <TeamKeyCard />
 
       <WorkspaceCard />
 

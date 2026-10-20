@@ -11,6 +11,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.18.0',
+    date: '2026-10-21',
+    title: 'A team key for field codes',
+    items: [
+      'Optional, and off unless you turn it on: Settings → Field codes: team key locks field sheets’ QR codes, links and files, and printed field codes, so they open only on the team’s phones. Anyone else who scans one learns nothing from it – handy when codes are left at sites or notes hold gate codes.',
+      'Set up a phone once: Set up a phone shows a code that opens the phone’s Team key page, then the key for that page to scan. The phone shows the same key fingerprint as the computer. In EnviroDB field, Team key is at the bottom of the first page.',
+      'A locked sheet or code on a phone that isn’t set up says only that it’s locked, with Set up this phone – once set up, it opens straight after.',
+      'Results a phone sends back as a file for a locked sheet are locked too, and open on the Import page and from the Inbox as before.',
+      'Make a new key (after a phone is lost, say): new sheets and codes are locked with it – set the phones up again and print the codes again. Older keys are kept so what was locked with them still opens. Turned off, sheets and codes are plain again.',
+      'The printed codes’ cover page says when they’re locked, and with which key.',
+    ],
+  },
+  {
     version: '1.17.0',
     date: '2026-10-21',
     title: 'Maps in field mode',

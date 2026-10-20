@@ -3,6 +3,7 @@
 // never needs the team's shared folder.
 
 import { gunzip, gzip } from '../lib/issued';
+import { b64url, fromB64url, fromBase32, lock, lockedWith, toBase32, unlock, type TeamKey } from './lock';
 
 export const FIELD_APP = 'EnviroDB';
 
@@ -145,18 +146,6 @@ export function readingWarning(m: FieldMeasure, v: number, last?: number): strin
 
 // ------------------------------------------------------------ the sheet as a link (for a QR code)
 
-const b64url = (bytes: Uint8Array) => {
-  let s = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-};
-const fromB64url = (t: string) => {
-  const s = atob(t.replace(/-/g, '+').replace(/_/g, '/'));
-  const out = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
-  return out;
-};
-
 /** The sheet, compressed, as text for a link's # part (which browsers never send to the server). */
 export async function encodeSheet(sheet: FieldSheet): Promise<string> {
   return b64url(await gzip(JSON.stringify(sheet)));
@@ -164,6 +153,63 @@ export async function encodeSheet(sheet: FieldSheet): Promise<string> {
 
 export async function decodeSheet(text: string): Promise<FieldSheet> {
   return checkSheet(JSON.parse(await gunzip(fromB64url(text.trim()))));
+}
+
+/** The sheet locked with the team key, as text for a link (`e=`). */
+export async function lockSheet(sheet: FieldSheet, key: TeamKey): Promise<string> {
+  return b64url(await lock(await gzip(JSON.stringify(sheet)), key, 'sheet'));
+}
+
+/** A locked sheet's link opened with the team's keys, and the key it was locked with (its fingerprint). */
+export async function unlockSheet(text: string, keys: TeamKey[]): Promise<{ sheet: FieldSheet; keyId: string }> {
+  let bytes: Uint8Array;
+  try {
+    bytes = fromB64url(text.trim());
+  } catch {
+    throw new Error('This isn’t a field sheet EnviroDB can read.');
+  }
+  return { sheet: checkSheet(JSON.parse(await gunzip(await unlock(bytes, keys, 'sheet')))), keyId: lockedWith(bytes) };
+}
+
+/** A field sheet's link: locked with the team key when one is given. */
+export async function sheetLink(base: string, sheet: FieldSheet, key?: TeamKey | null): Promise<string> {
+  return key ? `${base}#/field/open?e=${await lockSheet(sheet, key)}` : `${base}#/field/open?s=${await encodeSheet(sheet)}`;
+}
+
+// ------------------------------------------------------------ files locked with the team key
+
+/**
+ * A sheet's or a results file locked with the team key. What it is shows (and a results file's project, for the
+ * Inbox to know where it goes); the rest is locked.
+ */
+export async function lockFile(content: FieldSheet | FieldResults, key: TeamKey): Promise<Record<string, unknown>> {
+  const results = content.kind === 'field-results';
+  return {
+    app: FIELD_APP,
+    kind: content.kind,
+    v: 1,
+    ...(results ? { sheet: { project: { id: content.sheet.project.id } } } : {}),
+    locked: b64url(await lock(await gzip(JSON.stringify(content)), key, results ? 'results' : 'sheet')),
+  };
+}
+
+/** Whether a file's contents are locked with a team key. */
+export const isLockedFile = (raw: unknown) => isObj(raw) && raw.app === FIELD_APP && typeof raw.locked === 'string';
+
+/** A file's contents, opened with the team's keys if locked (anything else as it is – to be checked as usual). */
+export async function unlockFile(raw: unknown, keys: TeamKey[]): Promise<{ content: unknown; keyId?: string }> {
+  if (!isLockedFile(raw)) return { content: raw };
+  const r = raw as Record<string, unknown>;
+  if (r.kind !== 'field-sheet' && r.kind !== 'field-results') throw new Error('This isn’t a field sheet or field results.');
+  let bytes: Uint8Array;
+  try {
+    bytes = fromB64url(r.locked as string);
+  } catch {
+    throw new Error('This file is damaged.');
+  }
+  const inner = JSON.parse(await gunzip(await unlock(bytes, keys, r.kind === 'field-sheet' ? 'sheet' : 'results'))) as unknown;
+  if (!isObj(inner) || inner.kind !== r.kind || isLockedFile(inner)) throw new Error('This file is damaged.');
+  return { content: inner, keyId: lockedWith(bytes) };
 }
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x);
@@ -327,35 +373,6 @@ function fromWire(w: unknown): unknown {
   };
 }
 
-const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-function toBase32(bytes: Uint8Array): string {
-  let out = '', bits = 0, value = 0;
-  for (const b of bytes) {
-    value = (value << 8) | b;
-    bits += 8;
-    while (bits >= 5) {
-      out += B32[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-  if (bits > 0) out += B32[(value << (5 - bits)) & 31];
-  return out;
-}
-function fromBase32(text: string): Uint8Array {
-  const out: number[] = [];
-  let bits = 0, value = 0;
-  for (const ch of text) {
-    const i = B32.indexOf(ch);
-    if (i < 0) throw new Error('This isn’t an EnviroDB field code.');
-    value = (value << 5) | i;
-    bits += 5;
-    if (bits >= 8) {
-      out.push((value >>> (bits - 8)) & 255);
-      bits -= 8;
-    }
-  }
-  return new Uint8Array(out);
-}
 async function squeeze(bytes: Uint8Array, t: CompressionStream | DecompressionStream): Promise<Uint8Array> {
   return new Uint8Array(await new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(t)).arrayBuffer());
 }
@@ -373,6 +390,29 @@ export async function decodeCode(text: string): Promise<FieldCode> {
     throw new Error('This isn’t an EnviroDB field code.');
   }
   return checkCode(fromWire(JSON.parse(json)));
+}
+
+/** A printed code locked with the team key, as the letters after `x=` in its link. */
+export async function lockCode(code: FieldCode, key: TeamKey): Promise<string> {
+  return toBase32(await lock(await squeeze(new TextEncoder().encode(JSON.stringify(toWire(code))), new CompressionStream('deflate-raw')), key, 'code'));
+}
+
+/** A locked printed code opened with the team's keys, and the key it was locked with (its fingerprint). */
+export async function unlockCode(text: string, keys: TeamKey[]): Promise<{ code: FieldCode; keyId: string }> {
+  const bytes = fromBase32(text.trim());
+  const opened = await unlock(bytes, keys, 'code');
+  let json: string;
+  try {
+    json = new TextDecoder().decode(await squeeze(opened, new DecompressionStream('deflate-raw')));
+  } catch {
+    throw new Error('This isn’t an EnviroDB field code.');
+  }
+  return { code: checkCode(fromWire(JSON.parse(json))), keyId: lockedWith(bytes) };
+}
+
+/** A printed code's link: locked with the team key when one is given. */
+export async function codeLink(base: string, code: FieldCode, key?: TeamKey | null): Promise<string> {
+  return key ? `${base}#/field/code?x=${await lockCode(code, key)}` : `${base}#/field/code?k=${await encodeCode(code)}`;
 }
 
 /** A field code read from a QR code: checked like a sheet (anyone can print a QR code). */
@@ -465,7 +505,7 @@ export function distanceM(a: { lat: number; lng: number }, b: { lat: number; lng
 
 /** A field link read from a QR code: a sheet's or a printed code's, as the field-mode page to go to. */
 export function fieldLinkPath(text: string): string | null {
-  const m = /#\/field\/(open\?s|code\?k)=([A-Za-z0-9_-]+)\s*$/.exec(text.trim());
+  const m = /#\/field\/(open\?[se]|code\?[kx])=([A-Za-z0-9_-]+)\s*$/.exec(text.trim());
   return m ? `/field/${m[1]}=${m[2]}` : null;
 }
 

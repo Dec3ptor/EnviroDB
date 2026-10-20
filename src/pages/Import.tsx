@@ -14,7 +14,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IconAlertTriangle, IconArrowLeft, IconArrowRight, IconCheck, IconCircleCheck, IconFileSpreadsheet, IconPlus, IconUpload, IconX, IconBolt, IconFileReport, IconTable, IconShieldCheck,
 } from '@tabler/icons-react';
-import { db } from '../db/db';
+import { db, getSettings } from '../db/db';
 import { ProjectDataProvider, useProject } from '../hooks/useProjectData';
 import { cellAt, cellText, columnLetter, type SheetGrid } from '../importers/workbook';
 import { defaultPlans, readImportFiles, type InputFile } from '../importers/files';
@@ -36,7 +36,9 @@ import { evaluateAll } from '../lib/analysis';
 import { fmtNum } from '../lib/values';
 import { guessGroup, PARAMETER_GROUPS } from '../data/parameters';
 import { NewProjectButton } from './Projects';
-import { checkResults, type FieldResults } from '../field/model';
+import { checkResults, unlockFile, type FieldResults } from '../field/model';
+import { LockedError, showKeyId } from '../field/lock';
+import { teamKeysOf } from '../components/TeamKey';
 import { FieldResultsModal } from '../components/FieldSheet';
 
 const ACCEPT = {
@@ -354,10 +356,17 @@ export function ImportWizard(_props: { projectId: string }) {
           notifications.show({ title: `${f.name} is a report template file`, message: 'Import it on the Report templates page (Library → Report templates → Import).', color: 'blue' });
           continue;
         }
-        const results = checkResults(raw);
+        // locked with the team key: opened with the workspace's keys
+        const { content } = await unlockFile(raw, teamKeysOf(await getSettings()));
+        const results = checkResults(content);
         setField({ results, name: f.name, inbox: fromInbox.current.filter((c) => c.name === f.name) });
       } catch (e) {
-        notifications.show({ title: `${f.name} isn’t field results`, message: (e as Error).message, color: 'red' });
+        const locked = e instanceof LockedError && e.reason === 'no-key';
+        notifications.show({
+          title: locked ? `${f.name} is locked with another team key` : `${f.name} isn’t field results`,
+          message: locked ? `It’s locked with a team key (${showKeyId((e as LockedError).keyId)}) this workspace doesn’t have – was the phone set up from another workspace?` : (e as Error).message,
+          color: 'red',
+        });
       }
     }
     const files = all.filter((f) => !isJson(f));

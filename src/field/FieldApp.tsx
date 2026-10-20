@@ -7,11 +7,12 @@ import { ActionIcon, Alert, Anchor, AppShell, Badge, Button, Card, Center, Chip,
 import { notifications } from '@mantine/notifications';
 import { HashRouter, Route, Routes, useLocation, useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { IconArrowLeft, IconCamera, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconDeviceDesktop, IconFileImport, IconList, IconMap, IconMapPin, IconPlus, IconQrcode, IconSend, IconTrash, IconWifiOff } from '@tabler/icons-react';
-import { addFromCode, addSheet, addSite, deleteSheet, fieldDb, getPref, resultsFileName, resultsOf, saveVisit, setPref, updateSite } from './db';
+import { IconArrowLeft, IconCamera, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconDeviceDesktop, IconFileImport, IconKey, IconList, IconLock, IconMap, IconMapPin, IconPlus, IconQrcode, IconSend, IconTrash, IconWifiOff } from '@tabler/icons-react';
+import { addFromCode, addSheet, addSite, addTeamKeys, deleteSheet, fieldDb, forgetTeamKeys, getPref, resultsFileName, resultsOf, saveVisit, setPref, teamKeys, updateSite } from './db';
+import { isSetupText, LockedError, readSetupText, showKeyId } from './lock';
 import { currentPosition, LocationPicker, NavigateMenu, SheetMap, type Placed, type SiteStatus } from './FieldMap';
 import { SITE_TYPES } from '../db/types';
-import { APPEARANCE, checkSheet, decodeCode, decodeSheet, distanceM, fieldLinkPath, FLOW, newFieldSiteId, NOT_SAMPLED, readingWarning, WEATHER, type FieldCodeFill, type FieldSheet, type FieldSite, type FieldVisit } from './model';
+import { APPEARANCE, checkSheet, decodeCode, decodeSheet, distanceM, fieldLinkPath, FLOW, lockFile, newFieldSiteId, NOT_SAMPLED, readingWarning, unlockCode, unlockFile, unlockSheet, WEATHER, type FieldCodeFill, type FieldSheet, type FieldSite, type FieldVisit } from './model';
 import { openCamera, scanVideo, stopCamera } from './link/scan';
 import { keepOffline, type OfflineState } from './offline';
 import { LinkPage } from './LinkPage';
@@ -85,14 +86,17 @@ function Home({ offline }: { offline: OfflineState }) {
   const navigate = useNavigate();
   const sheets = useLiveQuery(() => fieldDb.sheets.orderBy('addedAt').reverse().toArray(), []);
   const visits = useLiveQuery(() => fieldDb.visits.toArray(), []);
+  const keys = useLiveQuery(() => teamKeys(), []);
   const openFile = async (f: File | null) => {
     if (!f) return;
     try {
-      const sheet = checkSheet(JSON.parse(await f.text()));
-      await addSheet(sheet);
+      const { content, keyId } = await unlockFile(JSON.parse(await f.text()), await teamKeys());
+      const sheet = checkSheet(content);
+      await addSheet(sheet, keyId);
       navigate(`/field/s/${encodeURIComponent(sheet.id)}`);
     } catch (e) {
-      notifications.show({ color: 'red', message: (e as Error).message });
+      const locked = e instanceof LockedError && e.reason === 'no-key';
+      notifications.show({ color: 'red', title: locked ? 'This sheet is locked with your team’s key' : undefined, message: locked ? 'Set this phone up for the team first (Team key, below).' : (e as Error).message });
     }
   };
   return (
@@ -148,33 +152,68 @@ function Home({ offline }: { offline: OfflineState }) {
           </Button>
         )}
       </FileButton>
-      <Anchor size="xs" c="dimmed" href="./" onClick={(e) => (e.preventDefault(), (location.hash = '#/'), location.reload())}>
-        Open the rest of EnviroDB (needs the team’s shared folder)
-      </Anchor>
+      <Group justify="space-between" gap="xs">
+        <Anchor size="xs" c="dimmed" href="./" onClick={(e) => (e.preventDefault(), (location.hash = '#/'), location.reload())}>
+          Open the rest of EnviroDB (needs the team’s shared folder)
+        </Anchor>
+        <Anchor size="xs" c="dimmed" component={Link} to="/field/team">
+          <IconKey size={12} style={{ verticalAlign: -1 }} /> {keys?.length ? `Team key ${showKeyId(keys[0].id)}` : 'Team key'}
+        </Anchor>
+      </Group>
     </Stack>
   );
 }
 
-/** A sheet from a link (a scanned QR code): kept on the phone, then opened. */
+/** Why a locked link, code or file didn't open – and setting up the phone, then trying again. */
+function LockedNote({ error, what }: { error: Error; what: string }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const keys = useLiveQuery(() => teamKeys(), []);
+  if (!(error instanceof LockedError)) return <Alert color="red">This {what} isn’t one EnviroDB can read: {error.message}</Alert>;
+  if (error.reason === 'damaged') return <Alert color="red">This {what} didn’t open with the team key – it’s been changed or damaged. Make it again on the computer.</Alert>;
+  const setUp = (keys ?? []).length > 0;
+  return (
+    <Alert color="orange" title={`This ${what} is locked with your team’s key`}>
+      <Stack gap="xs">
+        <Text size="sm">
+          {setUp
+            ? `This phone has a different key – the team has a newer one (${showKeyId(error.keyId)}), or the ${what} is another team’s. Set the phone up again from the computer.`
+            : 'Only phones set up for the team can open it, and this one isn’t yet.'}
+        </Text>
+        <Text size="sm" c="dimmed">
+          On the computer: Settings → Field codes: team key → Set up a phone. Then scan the key it shows – this {what} opens straight after.
+        </Text>
+        <Button leftSection={<IconKey size={16} />} onClick={() => navigate('/field/team', { state: { then: `${location.pathname}${location.search}` } })}>
+          Set up this phone
+        </Button>
+      </Stack>
+    </Alert>
+  );
+}
+
+/** A sheet from a link (a scanned QR code): kept on the phone, then opened. Locked ones (`e=`) open with the team key. */
 function OpenLink() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [error, setError] = useState('');
+  const [error, setError] = useState<Error | null>(null);
   useEffect(() => {
     const s = params.get('s');
-    if (!s) return navigate('/field', { replace: true });
-    decodeSheet(s).then(
-      async (sheet) => {
-        await addSheet(sheet);
+    const e = params.get('e');
+    if (!s && !e) return navigate('/field', { replace: true });
+    void (async () => {
+      try {
+        const { sheet, keyId } = e ? await unlockSheet(e, await teamKeys()) : { sheet: await decodeSheet(s!), keyId: undefined };
+        await addSheet(sheet, keyId);
         navigate(`/field/s/${encodeURIComponent(sheet.id)}`, { replace: true });
-      },
-      (e: Error) => setError(e.message),
-    );
-  }, []);
+      } catch (err) {
+        setError(err as Error);
+      }
+    })();
+  }, [params]);
   return error ? (
     <Stack>
       <Header title="EnviroDB field" back="/field" />
-      <Alert color="red">This link isn’t a field sheet EnviroDB can read: {error}</Alert>
+      <LockedNote error={error} what="field sheet" />
     </Stack>
   ) : (
     <Center h={200}>
@@ -189,29 +228,125 @@ const todayLocal = () => nowLocal().slice(0, 10);
 function OpenCode() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [error, setError] = useState('');
+  const [error, setError] = useState<Error | null>(null);
   useEffect(() => {
     const k = params.get('k');
-    if (!k) return navigate('/field', { replace: true });
-    decodeCode(k).then(
-      async (code) => {
-        const sheet = await addFromCode(code, todayLocal());
+    const x = params.get('x');
+    if (!k && !x) return navigate('/field', { replace: true });
+    void (async () => {
+      try {
+        const { code, keyId } = x ? await unlockCode(x, await teamKeys()) : { code: await decodeCode(k!), keyId: undefined };
+        const sheet = await addFromCode(code, todayLocal(), keyId);
         const at = `/field/s/${encodeURIComponent(sheet.id)}`;
         if (code.site) navigate(`${at}/${encodeURIComponent(code.site)}`, { replace: true, state: { scanned: code.fill } });
         else navigate(at, { replace: true });
-      },
-      (e: Error) => setError(e.message),
-    );
-  }, []);
+      } catch (err) {
+        setError(err as Error);
+      }
+    })();
+  }, [params]);
   return error ? (
     <Stack>
       <Header title="EnviroDB field" back="/field" />
-      <Alert color="red">This code isn’t one EnviroDB can read: {error}</Alert>
+      <LockedNote error={error} what="code" />
     </Stack>
   ) : (
     <Center h={200}>
       <Loader />
     </Center>
+  );
+}
+
+/** The team key from the code a computer shows: kept on this phone. */
+async function takeTeamKey(text: string): Promise<boolean> {
+  try {
+    const keys = await readSetupText(text);
+    await addTeamKeys(keys);
+    notifications.show({ color: 'teal', title: 'This phone is set up for the team', message: `Team key ${showKeyId(keys[0].id)} – the same as the computer shows.` });
+    return true;
+  } catch (e) {
+    notifications.show({ color: 'red', message: (e as Error).message });
+    return false;
+  }
+}
+
+/** Setting this phone up for the team: scanning the key a computer shows (Settings → Field codes: team key). */
+function TeamPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const then = (location.state as { then?: string } | null)?.then;
+  const keys = useLiveQuery(() => teamKeys(), []);
+  const [scanning, setScanning] = useState<boolean | null>(null);
+  const [removing, setRemoving] = useState(false);
+  // not set up yet: straight to the camera
+  useEffect(() => {
+    if (keys && scanning === null) setScanning(keys.length === 0);
+  }, [keys, scanning]);
+  if (!keys) return <Loader />;
+  return (
+    <Stack gap="sm">
+      <Header title="Team key" back="/field" />
+      {keys.length ? (
+        <Card withBorder padding="sm">
+          <Group gap="xs" wrap="nowrap">
+            <IconLock size={20} color="var(--mantine-color-teal-7)" />
+            <div>
+              <Text fw={600}>Set up for the team</Text>
+              <Text size="sm" c="dimmed">
+                Key {showKeyId(keys[0].id)}
+                {keys.length > 1 ? ` (and ${keys.length - 1} older, for codes printed before it)` : ''}
+              </Text>
+            </div>
+          </Group>
+        </Card>
+      ) : (
+        <Text size="sm">
+          If your team locks its field sheets and printed codes with a team key, they open only on phones set up with it. On the computer: <b>Settings → Field codes: team key → Set up a phone</b>, then scan the key it shows.
+        </Text>
+      )}
+      {scanning ? (
+        <Card withBorder padding="sm">
+          <CodeScanner
+            want="key"
+            onKey={(text) =>
+              void takeTeamKey(text).then((ok) => {
+                if (!ok) return;
+                setScanning(false);
+                if (then) navigate(then, { replace: true });
+              })
+            }
+          />
+          <Button mt="xs" variant="default" fullWidth onClick={() => setScanning(false)}>
+            Stop the camera
+          </Button>
+        </Card>
+      ) : (
+        <Button leftSection={<IconQrcode size={18} />} variant={keys.length ? 'default' : 'filled'} onClick={() => setScanning(true)}>
+          {keys.length ? 'Scan a new team key' : 'Scan the team key'}
+        </Button>
+      )}
+      {keys.length > 0 && (
+        <Button variant="subtle" color="red" onClick={() => setRemoving(true)}>
+          Remove the team key from this phone
+        </Button>
+      )}
+      <Modal opened={removing} onClose={() => setRemoving(false)} title="Remove the team key from this phone?" centered>
+        <Text size="sm" mb="md">
+          Locked field sheets and codes won’t open on it until it’s set up again. What’s recorded on the phone stays.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={() => setRemoving(false)}>
+            Keep it
+          </Button>
+          <Button color="red" onClick={() => void forgetTeamKeys().then(() => setRemoving(false))}>
+            Remove
+          </Button>
+        </Group>
+      </Modal>
+      <Text size="xs" c="dimmed">
+        The key stays on this phone. With it, the phone opens the team’s locked field sheets and codes, and locks the results it sends back for them.
+      </Text>
+    </Stack>
   );
 }
 
@@ -231,6 +366,10 @@ function ScanCodeButton({ size = 'md' }: { size?: 'md' | 'sm' }) {
               setOpen(false);
               navigate(path);
             }}
+            onKey={(text) => {
+              setOpen(false);
+              void takeTeamKey(text);
+            }}
           />
         )}
       </Modal>
@@ -238,8 +377,11 @@ function ScanCodeButton({ size = 'md' }: { size?: 'md' | 'sm' }) {
   );
 }
 
-/** The camera, reading codes until it finds a field link (started once it's on screen). */
-function CodeScanner({ onLink }: { onLink: (path: string) => void }) {
+/**
+ * The camera, reading codes until it finds a field link – or, `want: 'key'`, the team key (started once it's on
+ * screen). The team key's code isn't a link, so a phone's own camera app never opens it as one.
+ */
+function CodeScanner({ want = 'link', onLink, onKey }: { want?: 'link' | 'key'; onLink?: (path: string) => void; onKey?: (text: string) => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState('');
   const [other, setOther] = useState(false);
@@ -255,9 +397,13 @@ function CodeScanner({ onLink }: { onLink: (path: string) => void }) {
         v.srcObject = stream;
         await v.play();
         stop = scanVideo(v, () => {}, undefined, (text) => {
-          const path = fieldLinkPath(text);
-          if (!path) return setOther(true);
           if (done) return;
+          if (isSetupText(text) && onKey) {
+            done = true;
+            return onKey(text);
+          }
+          const path = want === 'link' ? fieldLinkPath(text) : null;
+          if (!path || !onLink) return setOther(true);
           done = true;
           onLink(path);
         });
@@ -279,7 +425,13 @@ function CodeScanner({ onLink }: { onLink: (path: string) => void }) {
     <Stack gap="xs">
       <video ref={video} muted playsInline style={{ width: '100%', borderRadius: 8, background: '#000' }} />
       <Text size="sm" c={other ? 'orange' : 'dimmed'}>
-        {other ? 'That code isn’t an EnviroDB field code – try the site’s or the project’s code.' : 'Point the camera at a project’s or a site’s printed code.'}
+        {want === 'key'
+          ? other
+            ? 'That isn’t the team key – scan the code the computer shows under Set up a phone.'
+            : 'Point the camera at the team key on the computer’s screen.'
+          : other
+            ? 'That code isn’t an EnviroDB field code – try the site’s or the project’s code.'
+            : 'Point the camera at a project’s or a site’s printed code.'}
       </Text>
     </Stack>
   );
@@ -792,6 +944,9 @@ function SendPage() {
   const visits = useLiveQuery(() => fieldDb.visits.where('sheetId').equals(sheetId).toArray(), [sheetId]);
   const [by, setBy] = useState<string | null>(null);
   useEffect(() => void getPref('name').then(setBy), []);
+  const keys = useLiveQuery(() => teamKeys(), []);
+  // a sheet that came locked goes back locked, with the same key
+  const lockKey = stored?.lockedWith ? keys?.find((k) => k.id === stored.lockedWith) ?? null : null;
   const results = useMemo(() => (stored && visits ? resultsOf(stored.sheet, visits.map((x) => x.visit), by ?? '') : null), [stored, visits, by]);
   if (stored === null) return <Navigate to="/field" />;
   if (!stored || !visits || by === null || !results) return <Loader />;
@@ -799,7 +954,9 @@ function SendPage() {
   const missing = sheet.sites.filter((s) => !results.visits.some((v) => v.siteId === s.id && (v.done || v.notSampled)));
   const send = async () => {
     await setPref('name', by);
-    const text = JSON.stringify(results);
+    // read again here: the keys may not have loaded on screen yet
+    const k = stored.lockedWith ? (await teamKeys()).find((x) => x.id === stored.lockedWith) : undefined;
+    const text = JSON.stringify(k ? await lockFile(results, k) : results);
     const file = new File([text], resultsFileName(sheet), { type: 'application/json' });
     const share = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
     try {
@@ -885,6 +1042,7 @@ function SendPage() {
       <Text size="xs" c="dimmed">
         Choose OneDrive and the team’s <b>Inbox</b> folder (EnviroDB on the computer picks it up there), or email it to yourself and drop it on the Import page. Needs a signal; the records stay on this phone until you remove the
         sheet.
+        {lockKey ? ' Locked with the team key, as the sheet came: only the team’s computers can open it.' : ''}
       </Text>
       {stored.sentAt && (
         <Text size="xs" c="teal">
@@ -934,6 +1092,7 @@ export default function FieldApp() {
             <Route path="/field" element={<Home offline={offline} />} />
             <Route path="/field/open" element={<OpenLink />} />
             <Route path="/field/code" element={<OpenCode />} />
+            <Route path="/field/team" element={<TeamPage />} />
             <Route path="/field/s/:sheetId" element={<SheetPage />} />
             <Route path="/field/s/:sheetId/send" element={<SendPage />} />
             <Route path="/field/s/:sheetId/link" element={<LinkRoute />} />

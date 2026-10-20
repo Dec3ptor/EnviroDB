@@ -61,11 +61,20 @@ async function restoreMeta(meta: MetaRecord[] | undefined, mode: 'replace' | 'me
   if (mode === 'replace') {
     // as saved – but this browser's last backup date stays its own
     for (const k of new Set([...Object.keys(cur), ...Object.keys(from)])) if (k !== 'lastBackupAt') patch[k] = from[k] ?? (DEFAULT_SETTINGS as unknown as Record<string, unknown>)[k];
+    // team keys are never lost to an older backup: without them, what phones locked with them wouldn't open
+    patch.teamKey = keepTeamKeys(cur.teamKey as Settings['teamKey'], from.teamKey as Settings['teamKey']);
   } else {
     const blank = (v: unknown) => v === undefined || v === null || v === '';
     for (const [k, v] of Object.entries(from)) if (blank(cur[k]) && !blank(v)) patch[k] = v;
   }
   await saveSettings(patch as Partial<Settings>);
+}
+
+/** The team key as a backup had it (on or off), keeping every key this workspace has as well. */
+export function keepTeamKeys(cur: Settings['teamKey'], from: Settings['teamKey']): Settings['teamKey'] {
+  const keys = [...(from?.keys ?? [])];
+  for (const k of cur?.keys ?? []) if (!keys.some((x) => x.id === k.id)) keys.push(k);
+  return keys.length ? { on: !!from?.on && !!from.keys.length, keys } : undefined;
 }
 
 export function downloadBlob(blob: Blob, fileName: string) {

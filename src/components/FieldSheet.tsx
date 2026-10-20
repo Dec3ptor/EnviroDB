@@ -5,13 +5,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Badge, Button, Checkbox, CopyButton, Grid, Group, Modal, Stack, Switch, Table, Text, TextInput } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconCheck, IconCopy, IconDeviceMobile, IconDownload, IconFolder, IconPlus } from '@tabler/icons-react';
-import qrcode from 'qrcode-generator';
 import { useProject } from '../hooks/useProjectData';
 import { useSettings } from '../hooks/useSettings';
 import { ReportSites } from './report/ReportSites';
 import { PopupPicker, type PickerData } from './PopupPicker';
 import { commitField, defaultMeasures, makeSheet, planField } from '../db/field';
-import { encodeSheet, type FieldResults } from '../field/model';
+import { lockFile, sheetLink, type FieldResults } from '../field/model';
+import { QrCode } from './QrCode';
+import { LockedBadge, lockKey } from './TeamKey';
 import { currentWorkspaceFolder } from '../sync/workspace';
 import { downloadBlob, safeFileName } from '../db/backup';
 import { formatDate, todayStr } from '../lib/dates';
@@ -21,25 +22,6 @@ import { fmtNum } from '../lib/values';
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 /** Room in a QR code a phone's camera reads easily (from a screen). */
 const QR_MAX = 2300;
-
-/** A QR code, drawn as squares (no HTML from the library). */
-function QrCode({ text, size = 260 }: { text: string; size?: number }) {
-  const cells = useMemo(() => {
-    const qr = qrcode(0, 'L');
-    qr.addData(text, 'Byte');
-    qr.make();
-    const n = qr.getModuleCount();
-    const dark: Array<[number, number]> = [];
-    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) dark.push([r, c]);
-    return { n, dark };
-  }, [text]);
-  const q = 4; // the quiet margin
-  return (
-    <svg viewBox={`0 0 ${cells.n + 2 * q} ${cells.n + 2 * q}`} width={size} height={size} role="img" aria-label="QR code of the field sheet" shapeRendering="crispEdges" style={{ background: '#fff', borderRadius: 6 }}>
-      <path d={cells.dark.map(([r, c]) => `M${c + q} ${r + q}h1v1h-1z`).join('')} fill="#000" />
-    </svg>
-  );
-}
 
 export function FieldSheetModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const data = useProject();
@@ -66,14 +48,18 @@ export function FieldSheetModal({ opened, onClose }: { opened: boolean; onClose:
     () => (opened ? makeSheet(data, { round, date, siteIds: siteIds ?? data.sites.map((s) => s.id), measureIds, observe, withLast, by: settings.author }) : null),
     [opened, data, round, date, siteIds, measureIds, observe, withLast, settings.author],
   );
+  // locked with the team key when the team has it on
+  const key = lockKey(settings);
   useEffect(() => {
     if (!sheet) return;
     let live = true;
-    void encodeSheet(sheet).then((s) => live && setLink(`${location.origin}${location.pathname}#/field/open?s=${s}`));
+    setLink('');
+    void sheetLink(`${location.origin}${location.pathname}`, sheet, key).then((l) => live && setLink(l));
     return () => {
       live = false;
     };
-  }, [sheet]);
+  }, [sheet, key]);
+  const fileText = async () => JSON.stringify(sheet && key ? await lockFile(sheet, key) : sheet);
   const paramData: PickerData = useMemo(() => {
     const groups = new Map<string, PickerData[number]['items']>();
     for (const p of data.params) groups.set(p.group, [...(groups.get(p.group) ?? []), { value: p.id, label: p.name, hint: unitLabel(p.unit) }]);
@@ -85,7 +71,7 @@ export function FieldSheetModal({ opened, onClose }: { opened: boolean; onClose:
     const folder = currentWorkspaceFolder();
     if (!folder || !sheet) return;
     try {
-      await folder.write(`Field sheets/${fileName}`, JSON.stringify(sheet));
+      await folder.write(`Field sheets/${fileName}`, await fileText());
       notifications.show({ color: 'teal', message: `Saved to the shared folder: Field sheets/${fileName}. On the phone, open it from OneDrive in EnviroDB field.` });
     } catch (e) {
       notifications.show({ color: 'red', message: (e as Error).message });
@@ -143,12 +129,13 @@ export function FieldSheetModal({ opened, onClose }: { opened: boolean; onClose:
                   Save to the shared folder (Field sheets)
                 </Button>
               )}
-              <Button size="xs" variant="subtle" fullWidth leftSection={<IconDownload size={14} />} onClick={() => downloadBlob(new Blob([JSON.stringify(sheet)], { type: 'application/json' }), fileName)}>
+              <Button size="xs" variant="subtle" fullWidth leftSection={<IconDownload size={14} />} onClick={() => void fileText().then((t) => downloadBlob(new Blob([t], { type: 'application/json' }), fileName))}>
                 Download the sheet file
               </Button>
               <Text size="xs" c="dimmed" ta="center">
                 {sheet.sites.length} sites · {sheet.measures.length} readings each
               </Text>
+              <LockedBadge k={key} />
             </Stack>
           </Grid.Col>
         </Grid>

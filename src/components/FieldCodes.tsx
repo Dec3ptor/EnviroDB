@@ -10,7 +10,8 @@ import { useSettings } from '../hooks/useSettings';
 import { ReportSites } from './report/ReportSites';
 import { PopupPicker, type PickerData } from './PopupPicker';
 import { defaultMeasures, makeCodes } from '../db/field';
-import { encodeCode, type FieldCode } from '../field/model';
+import { codeLink, type FieldCode } from '../field/model';
+import { LockedBadge, lockKey } from './TeamKey';
 import { CODE_LAYOUTS, downloadFieldCodes, fieldCodesPdfBytes, fitsQr, type CodeLayout, type CodesPdfInput } from '../reports/fieldCodes';
 import { PdfPreview } from '../reports/PdfPreview';
 import { safeFileName } from '../db/backup';
@@ -53,16 +54,19 @@ export function FieldCodesModal({ opened, onClose }: { opened: boolean; onClose:
   // when the codes themselves change
   const madeKey = made ? JSON.stringify(made) : '';
   const codes = useMemo(() => made, [madeKey]);
+  // locked with the team key when the team has it on
+  const key = lockKey(settings);
   useEffect(() => {
     if (!codes) return;
     let live = true;
+    setLinks(null);
     const base = `${location.origin}${location.pathname}`;
-    const link = async (c: FieldCode) => `${base}#/field/code?k=${await encodeCode(c)}`;
+    const link = (c: FieldCode) => codeLink(base, c, key);
     void Promise.all([link(codes.project), ...codes.sites.map(link)]).then(([p, ...s]) => live && setLinks({ project: p, sites: s }));
     return () => {
       live = false;
     };
-  }, [codes]);
+  }, [codes, key]);
   const projectFits = !!links && fitsQr(links.project);
   // the PDF, a moment after the last change (each one makes it again)
   useEffect(() => {
@@ -78,11 +82,12 @@ export function FieldCodesModal({ opened, onClose }: { opened: boolean; onClose:
           fill,
           printed: todayStr(),
           dateFormat: settings.dateFormat,
+          lockedWith: key?.id,
         }),
       250,
     );
     return () => window.clearTimeout(t);
-  }, [codes, links, what, layout, show, withLocation, withNotes, fill, projectFits, settings.dateFormat]);
+  }, [codes, links, what, layout, show, withLocation, withNotes, fill, projectFits, settings.dateFormat, key]);
   const nothing = !input || (!input.projectCode && !input.siteCodes.length);
   const load = useMemo(() => (input && !nothing ? () => fieldCodesPdfBytes(input) : null), [input, nothing]);
 
@@ -154,7 +159,11 @@ export function FieldCodesModal({ opened, onClose }: { opened: boolean; onClose:
                 />
                 <Checkbox
                   label="Sites’ directions and notes"
-                  description="Anyone who scans a code can read what it holds – leave this off if the notes have gate codes or keys and the codes are left at the sites."
+                  description={
+                    key
+                      ? 'Locked with the team key: only the team’s phones can read them.'
+                      : 'Anyone who scans a code can read what it holds – leave this off if the notes have gate codes or keys and the codes are left at the sites (or lock the codes with the team key, in Settings).'
+                  }
                   checked={withNotes}
                   onChange={(e) => setWithNotes(e.currentTarget.checked)}
                 />
@@ -175,8 +184,9 @@ export function FieldCodesModal({ opened, onClose }: { opened: boolean; onClose:
                 <Text size="xs">Too many sites for the project’s code ({n}) – it’s left out. Print a code for each site, or choose fewer sites.</Text>
               </Alert>
             )}
+            <LockedBadge k={key} />
             <Text size="xs" c="dimmed">
-              <IconQrcode size={13} style={{ verticalAlign: -2 }} /> Test one first: scan a code in the preview with a phone. Print again after adding sites or changing the readings.
+              <IconQrcode size={13} style={{ verticalAlign: -2 }} /> Test one first: scan a code in the preview with a phone. Print again after adding sites or changing the readings{key ? ', or after a new team key' : ''}.
             </Text>
           </Stack>
         </Grid.Col>

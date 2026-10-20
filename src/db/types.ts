@@ -2,6 +2,8 @@
 // Dates are stored as local "floating" ISO strings: 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:mm'
 // (no timezone), so a sample taken at 10:30 am in NZ is always 10:30 am.
 
+import type { TeamKey } from '../field/lock';
+
 export type ID = string;
 
 export type NdHandling = 'dl' | 'half' | 'zero';
@@ -1116,6 +1118,12 @@ export interface Settings {
   qaOutlierZ?: number;
   /** The app's colour (hex) – this person's own; unset = deep teal. */
   appColour?: string;
+  /**
+   * Field mode: the team's key, locking field sheets, printed field codes and phones' results files so that only the
+   * team's phones and computers can read them. The team's; off unless turned on. Keys newest first – the older ones
+   * still open what was locked with them.
+   */
+  teamKey?: { on: boolean; keys: TeamKey[] };
 }
 
 /** Something in a letterhead's header or footer: a line of text ({page} = page number) or a picture. */
