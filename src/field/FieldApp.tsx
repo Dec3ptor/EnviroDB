@@ -7,9 +7,11 @@ import { ActionIcon, Alert, Anchor, AppShell, Badge, Button, Card, Center, Chip,
 import { notifications } from '@mantine/notifications';
 import { HashRouter, Route, Routes, useLocation, useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { IconArrowLeft, IconCamera, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconDeviceDesktop, IconFileImport, IconMapPin, IconQrcode, IconSend, IconTrash, IconWifiOff } from '@tabler/icons-react';
-import { addFromCode, addSheet, deleteSheet, fieldDb, getPref, resultsFileName, resultsOf, saveVisit, setPref } from './db';
-import { APPEARANCE, checkSheet, decodeCode, decodeSheet, distanceM, fieldLinkPath, FLOW, NOT_SAMPLED, readingWarning, WEATHER, type FieldCodeFill, type FieldSheet, type FieldVisit } from './model';
+import { IconArrowLeft, IconCamera, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconDeviceDesktop, IconFileImport, IconList, IconMap, IconMapPin, IconPlus, IconQrcode, IconSend, IconTrash, IconWifiOff } from '@tabler/icons-react';
+import { addFromCode, addSheet, addSite, deleteSheet, fieldDb, getPref, resultsFileName, resultsOf, saveVisit, setPref, updateSite } from './db';
+import { currentPosition, LocationPicker, NavigateMenu, SheetMap, type Placed, type SiteStatus } from './FieldMap';
+import { SITE_TYPES } from '../db/types';
+import { APPEARANCE, checkSheet, decodeCode, decodeSheet, distanceM, fieldLinkPath, FLOW, newFieldSiteId, NOT_SAMPLED, readingWarning, WEATHER, type FieldCodeFill, type FieldSheet, type FieldSite, type FieldVisit } from './model';
 import { openCamera, scanVideo, stopCamera } from './link/scan';
 import { keepOffline, type OfflineState } from './offline';
 import { LinkPage } from './LinkPage';
@@ -285,17 +287,141 @@ function CodeScanner({ onLink }: { onLink: (path: string) => void }) {
 
 // ------------------------------------------------------------ a sheet: its sites
 
+/** Readings taken only in bores. */
+const BORE_ONLY = /^(swl|gw-level|water-level-bgl)$/;
+
+/** A new monitoring point, added on the phone: it goes back to the computer with the results. */
+function AddSiteModal({ opened, sheet, onClose, onAdded }: { opened: boolean; sheet: FieldSheet; onClose: () => void; onAdded: (id: string) => void }) {
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [type, setType] = useState<string>('Surface water');
+  const [note, setNote] = useState('');
+  const [place, setPlace] = useState<Placed | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [locating, setLocating] = useState(false);
+  useEffect(() => {
+    if (!opened) return;
+    setCode('');
+    setName('');
+    setNote('');
+    setPlace(null);
+    // the kind most of the sheet's sites are, to start with
+    const kinds = sheet.sites.map((s) => s.type).filter(Boolean) as string[];
+    setType(kinds[0] ?? 'Surface water');
+  }, [opened]);
+  const taken = sheet.sites.some((s) => s.code.trim().toLowerCase() === code.trim().toLowerCase());
+  const here = () => {
+    setLocating(true);
+    currentPosition().then(
+      (p) => {
+        setLocating(false);
+        setPlace({ ...p, how: 'gps' });
+      },
+      (e: Error) => {
+        setLocating(false);
+        notifications.show({ color: 'orange', message: e.message });
+      },
+    );
+  };
+  const save = async () => {
+    // a bore's readings (water level) aren't asked for at a stream, and the other way round
+    const own = sheet.measures.filter((m) => type === 'Groundwater' || !BORE_ONLY.test(m.id)).map((m) => m.id);
+    const site: FieldSite = {
+      id: newFieldSiteId(),
+      code: code.trim(),
+      name: name.trim() || undefined,
+      type,
+      note: note.trim() || undefined,
+      ...(own.length < sheet.measures.length ? { measures: own } : {}),
+      added: true,
+      ...(place ? { lat: place.lat, lng: place.lng, located: { at: new Date().toISOString(), how: place.how, acc: place.acc } } : {}),
+    };
+    await addSite(sheet.id, site);
+    onAdded(site.id);
+  };
+  return (
+    <Modal opened={opened} onClose={onClose} title="Add a monitoring point" centered>
+      <Stack gap="sm">
+        <TextInput size="md" label="Site code" placeholder="e.g. SW4" value={code} onChange={(e) => setCode(e.currentTarget.value)} error={taken ? 'The sheet already has a site with this code' : undefined} data-autofocus />
+        <TextInput size="md" label="Name" placeholder="e.g. Kōwhai Stream at the ford" value={name} onChange={(e) => setName(e.currentTarget.value)} />
+        <Select size="md" label="Kind" data={SITE_TYPES.filter((t) => t !== 'Quality control')} value={type} onChange={(x) => x && setType(x)} allowDeselect={false} />
+        <Textarea size="md" label="Directions and notes" autosize minRows={2} placeholder="How to get there, what to watch for" value={note} onChange={(e) => setNote(e.currentTarget.value)} />
+        <div>
+          <Text size="sm" fw={500} mb={4}>
+            Location
+          </Text>
+          <Group gap="xs">
+            <Button variant="default" leftSection={<IconCurrentLocation size={16} />} loading={locating} onClick={here}>
+              Where I am
+            </Button>
+            <Button variant="default" leftSection={<IconMap size={16} />} onClick={() => setPicking(true)}>
+              On the map
+            </Button>
+          </Group>
+          <Text size="xs" c="dimmed" mt={4}>
+            {place ? `${place.lat.toFixed(5)}, ${place.lng.toFixed(5)} · ${place.how === 'gps' ? `by GPS${place.acc ? ` ±${place.acc} m` : ''}` : 'placed on the map'}` : 'Not set yet – it can be set later, from the site.'}
+          </Text>
+        </div>
+        <Text size="xs" c="dimmed">
+          The new site goes to the computer with the results, to be added to the project there.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button disabled={!code.trim() || taken} onClick={() => void save()}>
+            Add the site
+          </Button>
+        </Group>
+      </Stack>
+      <LocationPicker
+        opened={picking}
+        title={`Location of ${code.trim() || 'the new site'}`}
+        initial={place}
+        others={sheet.sites}
+        onClose={() => setPicking(false)}
+        onSave={(p) => {
+          setPlace(p);
+          setPicking(false);
+        }}
+      />
+    </Modal>
+  );
+}
+
 function SheetPage() {
   const { sheetId = '' } = useParams();
   const stored = useLiveQuery(async () => (await fieldDb.sheets.get(sheetId)) ?? null, [sheetId]);
   const visits = useLiveQuery(() => fieldDb.visits.where('sheetId').equals(sheetId).toArray(), [sheetId]);
   const navigate = useNavigate();
   const [removing, setRemoving] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [view, setView] = useState<'list' | 'map'>(() => {
+    try {
+      return sessionStorage.getItem('edb.field.view') === 'map' ? 'map' : 'list';
+    } catch {
+      return 'list';
+    }
+  });
+  const show = (v: 'list' | 'map') => {
+    setView(v);
+    try {
+      sessionStorage.setItem('edb.field.view', v);
+    } catch {
+      /* not remembered */
+    }
+  };
   if (stored === undefined || visits === undefined) return <Loader />;
   if (!stored) return <Navigate to="/field" />;
   const sheet = stored.sheet;
   const byId = new Map(visits.map((v) => [v.visit.siteId, v.visit]));
   const done = sheet.sites.filter((s) => byId.get(s.id)?.done || byId.get(s.id)?.notSampled).length;
+  const statusOf = (id: string): SiteStatus => {
+    const v = byId.get(id);
+    return v?.notSampled ? 'notSampled' : v?.done ? 'done' : v && Object.keys(v.values).length ? 'started' : 'todo';
+  };
+  const siteLink = (id: string) => `/field/s/${encodeURIComponent(sheet.id)}/${encodeURIComponent(id)}`;
+  const changed = sheet.sites.some((s) => s.added || s.located);
   return (
     <Stack gap="sm">
       <Header title={sheet.project.name} back="/field" />
@@ -303,10 +429,22 @@ function SheetPage() {
         {sheet.round} · {showDate(sheet.date)}
       </Text>
       <Progress value={(done / Math.max(1, sheet.sites.length)) * 100} color="teal" size="sm" />
-      <Text size="xs" c="dimmed">
-        {done} of {sheet.sites.length} sites done
-      </Text>
-      {sheet.sites.map((s) => {
+      <Group justify="space-between">
+        <Text size="xs" c="dimmed">
+          {done} of {sheet.sites.length} sites done
+        </Text>
+        <SegmentedControl
+          size="xs"
+          value={view}
+          onChange={(v) => show(v as 'list' | 'map')}
+          data={[
+            { value: 'list', label: <Group gap={4} wrap="nowrap"><IconList size={14} /> List</Group> },
+            { value: 'map', label: <Group gap={4} wrap="nowrap"><IconMap size={14} /> Map</Group> },
+          ]}
+        />
+      </Group>
+      {view === 'map' && <SheetMap sites={sheet.sites} statusOf={statusOf} onOpen={(id) => navigate(siteLink(id))} />}
+      {view === 'list' && sheet.sites.map((s) => {
         const v = byId.get(s.id);
         const status = v?.notSampled ? `Not sampled – ${v.notSampled}` : v?.done ? 'Done' : v && Object.keys(v.values).length ? 'Started' : 'To do';
         return (
@@ -329,16 +467,37 @@ function SheetPage() {
                     </Text>
                   )}
                 </div>
-                <Badge color={status === 'Done' ? 'teal' : status.startsWith('Not') ? 'gray' : status === 'Started' ? 'yellow' : 'blue'} variant={status === 'To do' ? 'outline' : 'light'} style={{ flexShrink: 0 }}>
-                  {status.startsWith('Not') ? 'Not sampled' : status}
-                </Badge>
+                <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
+                  {s.added && (
+                    <Badge color="violet" variant="light">
+                      New
+                    </Badge>
+                  )}
+                  <Badge color={status === 'Done' ? 'teal' : status.startsWith('Not') ? 'gray' : status === 'Started' ? 'yellow' : 'blue'} variant={status === 'To do' ? 'outline' : 'light'}>
+                    {status.startsWith('Not') ? 'Not sampled' : status}
+                  </Badge>
+                </Group>
               </Group>
             </Card>
           </UnstyledButton>
         );
       })}
-      <ScanCodeButton size="sm" />
-      <Button size="md" mt="sm" leftSection={<IconSend size={18} />} onClick={() => navigate(`/field/s/${encodeURIComponent(sheet.id)}/send`)} disabled={!visits.length}>
+      <Stack gap="xs">
+        <Button variant="default" size="sm" leftSection={<IconPlus size={15} />} onClick={() => setAdding(true)}>
+          Add a monitoring point
+        </Button>
+        <ScanCodeButton size="sm" />
+      </Stack>
+      <AddSiteModal
+        opened={adding}
+        sheet={sheet}
+        onClose={() => setAdding(false)}
+        onAdded={(id) => {
+          setAdding(false);
+          navigate(siteLink(id));
+        }}
+      />
+      <Button size="md" mt="sm" leftSection={<IconSend size={18} />} onClick={() => navigate(`/field/s/${encodeURIComponent(sheet.id)}/send`)} disabled={!visits.length && !changed}>
         Send the results
       </Button>
       <Button variant="subtle" color="red" size="xs" leftSection={<IconTrash size={14} />} onClick={() => setRemoving(true)}>
@@ -413,6 +572,7 @@ function SitePage() {
   const [locating, setLocating] = useState(false);
   /** Opened by scanning the site's printed code: what it fills in, and what it did. */
   const [scanned, setScanned] = useState<{ fill: FieldCodeFill; did: string[] } | null>(null);
+  const [placing, setPlacing] = useState(false);
   // the site's record (a new one when there's none yet); the next site starts from its own
   useEffect(() => {
     if (saved === undefined || (saved && saved.visit.siteId !== siteId) || v?.siteId === siteId) return;
@@ -428,18 +588,16 @@ function SitePage() {
     });
   };
   const locate = () => {
-    if (!navigator.geolocation) return notifications.show({ color: 'orange', message: 'This phone can’t give its location here.' });
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
+    currentPosition().then(
       (p) => {
         setLocating(false);
-        update({ gps: { lat: Number(p.coords.latitude.toFixed(6)), lng: Number(p.coords.longitude.toFixed(6)), acc: Math.round(p.coords.accuracy) } });
+        update({ gps: p });
       },
-      () => {
+      (e: Error) => {
         setLocating(false);
-        notifications.show({ color: 'orange', message: 'The location couldn’t be found (is location allowed for the browser?).' });
+        notifications.show({ color: 'orange', message: e.message });
       },
-      { enableHighAccuracy: true, timeout: 20000 },
     );
   };
   // a site's printed code, scanned here: the time and the location filled in (unless already recorded)
@@ -466,6 +624,11 @@ function SitePage() {
   const idx = sheet.sites.indexOf(site);
   const next = sheet.sites[idx + 1];
   const back = `/field/s/${encodeURIComponent(sheetId)}`;
+  /** The site's location, set here: kept on the phone, and sent to the computer with the results. */
+  const place = async (p: Placed) => {
+    await updateSite(sheetId, site.id, { lat: p.lat, lng: p.lng, located: { at: new Date().toISOString(), how: p.how, acc: p.acc } });
+    notifications.show({ color: 'teal', message: `${site.code}’s location saved – it goes to the computer with the results.` });
+  };
   const finish = () => {
     update({ done: true });
     navigate(next ? `${back}/${encodeURIComponent(next.id)}` : back);
@@ -473,16 +636,50 @@ function SitePage() {
   return (
     <Stack gap="sm">
       <Header title={`${site.code}${site.name ? ` – ${site.name}` : ''}`} back={back} right={<Text size="xs" c="dimmed">{idx + 1}/{sheet.sites.length}</Text>} />
-      {(site.note || (site.lat !== undefined && site.lng !== undefined)) && (
-        <Card withBorder padding="xs">
-          {site.note && <Text size="sm">{site.note}</Text>}
-          {site.lat !== undefined && site.lng !== undefined && (
-            <Anchor size="sm" href={`https://www.google.com/maps/search/?api=1&query=${site.lat},${site.lng}`} target="_blank" rel="noreferrer">
-              <IconMapPin size={14} style={{ verticalAlign: -2 }} /> Directions ({site.lat.toFixed(5)}, {site.lng.toFixed(5)})
-            </Anchor>
-          )}
-        </Card>
-      )}
+      <Card withBorder padding="xs">
+        {site.note && (
+          <Text size="sm" mb={6}>
+            {site.note}
+          </Text>
+        )}
+        {site.lat !== undefined && site.lng !== undefined ? (
+          <Group gap="xs" wrap="wrap">
+            <NavigateMenu lat={site.lat} lng={site.lng} label={site.code} size="xs" />
+            <Button size="xs" variant="default" leftSection={<IconMapPin size={14} />} onClick={() => setPlacing(true)}>
+              Move
+            </Button>
+            <Text size="xs" c="dimmed">
+              {site.lat.toFixed(5)}, {site.lng.toFixed(5)}
+              {site.located ? ' · set on this phone' : ''}
+            </Text>
+          </Group>
+        ) : (
+          <Group gap="xs" wrap="wrap">
+            <Text size="sm" c="dimmed">
+              No location yet.
+            </Text>
+            <Button size="xs" variant="default" leftSection={<IconMapPin size={14} />} onClick={() => setPlacing(true)}>
+              Set the location
+            </Button>
+            {v.gps && (
+              <Button size="xs" variant="light" onClick={() => void place({ lat: v.gps!.lat, lng: v.gps!.lng, acc: v.gps!.acc, how: 'gps' })}>
+                Use the location recorded here
+              </Button>
+            )}
+          </Group>
+        )}
+      </Card>
+      <LocationPicker
+        opened={placing}
+        title={`Location of ${site.code}`}
+        initial={site.lat !== undefined && site.lng !== undefined ? { lat: site.lat, lng: site.lng } : v.gps ?? null}
+        others={sheet.sites.filter((x) => x.id !== site.id)}
+        onClose={() => setPlacing(false)}
+        onSave={(p) => {
+          setPlacing(false);
+          void place(p);
+        }}
+      />
       {scanned && (
         <Alert color="teal" variant="light" p="xs" icon={<IconQrcode size={16} />}>
           <Text size="sm">Scanned at {site.code}{scanned.did.length ? ` – ${scanned.did.join(' and ')} filled in` : ''}{locating ? ' (finding the location…)' : ''}.</Text>
@@ -648,6 +845,20 @@ function SendPage() {
           );
         })}
       </Card>
+      {(results.newSites?.length || results.located?.length) && (
+        <Card withBorder padding="sm">
+          {results.newSites?.map((n) => (
+            <Text size="sm" key={n.id}>
+              <b>{n.code}</b> new monitoring point{n.lat !== undefined ? '' : ' (no location yet)'}
+            </Text>
+          ))}
+          {results.located?.map((l) => (
+            <Text size="sm" key={l.siteId}>
+              <b>{sheet.sites.find((x) => x.id === l.siteId)?.code ?? '?'}</b> location set {l.how === 'gps' ? `by GPS${l.acc ? ` (±${l.acc} m)` : ''}` : 'on the map'}
+            </Text>
+          ))}
+        </Card>
+      ) || null}
       {missing.length > 0 && (
         <Alert color="orange" variant="light" p="xs">
           <Text size="sm">

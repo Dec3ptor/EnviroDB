@@ -11,6 +11,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.17.0',
+    date: '2026-10-21',
+    title: 'Maps in field mode',
+    items: [
+      'On the phone, a field sheet has List | Map: the sites on a map, coloured to do, started, done or not sampled, with where you are. Tap a site for how far it is and which way (“320 m east of you”, with a line to it), then Open it or Navigate.',
+      'Navigate opens directions in the phone’s map app – Apple Maps or Google Maps on an iPhone, Google Maps or another map app on Android – from the map or from a site.',
+      'Set a site’s location in the field – Set the location, or Move: tap the map, or use where you are (GPS). A location already recorded at the site can be used in one tap.',
+      'Add a monitoring point on the phone: code, name, kind, directions and notes, and its place by GPS or on the map; take readings there like at any other site.',
+      'New sites and locations go back with the results (as a file or straight to the computer). On the computer they’re listed first, each to tick: a new site joins the project with its place, a moved site shows how far it moves, and the same results added twice don’t add a site twice.',
+      'Map pictures need a signal; with none, the sites and where you are still show. Dialogs opened over a map now show above it (on the computer too).',
+    ],
+  },
+  {
     version: '1.16.0',
     date: '2026-10-20',
     title: 'Printable field codes',

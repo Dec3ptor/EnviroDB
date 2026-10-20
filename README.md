@@ -399,11 +399,22 @@ there as they work and show up for the others within seconds.
      everything on the phone as you go, and once opened works with **no signal**.
   3. At each site: the time (*Now*), the readings – a likely slip of the thumb, or a big change from last time, is
      pointed out – weather, flow, appearance, notes, the location (GPS) and photos; or *Not sampled* and why.
+     **The map** (*List | Map* on the sheet) shows the sites – coloured to do, started, done or not sampled – and
+     where you are; tap a site for how far it is and which way ("320 m east of you", with a line to it), then *Open*
+     or **Navigate** for directions in the phone's map app (Apple Maps or Google Maps on an iPhone; Google Maps or
+     any other map app on Android). Each site has *Navigate* too. A site with no location, or the wrong one, can be
+     **placed** – *Set the location* / *Move*: tap the map, or *Use my location* – and **new monitoring points**
+     added (*Add a monitoring point*: code, name, kind, directions, and its place by GPS or on the map), with
+     readings taken there like any other site. Map pictures need a signal; with none, the sites and where you are
+     still show, and the phone's map app finds the way.
   4. *Send the results* makes a results file: save it to the team's **Inbox** folder in OneDrive (or email it to
      yourself and drop it on the Import page). EnviroDB on the computer lists it in the lab inbox; adding it puts
      each site's readings in the day's sample (the lab's results for that day join the same sample), what was seen
      in the sample's notes, the photos in the shared folder (*Field photos*), and marks the round sampled on the
-     monitoring calendar. Sent again, it replaces what it added.
+     monitoring calendar. Sent again, it replaces what it added. **New sites and locations set in the field** are
+     listed first, each to tick: added, a new site joins the project (with its kind, directions and place) and a
+     moved site shows how far it moves; a new site with a code the project already has goes to that site instead,
+     and the same file added twice doesn't add a site twice.
   5. Or, with no file at all: on the computer, *Receive from a phone* (project ⋯ menu) shows a code and turns on
      the webcam; on the phone, *Send the results → Send to the computer*, scan the code, then hold the phone up to
      the webcam. Where the phone and computer can reach each other over Wi-Fi, everything goes straight across in
@@ -588,7 +599,10 @@ EnviroDB has no server and never uploads anything. The only things that cross th
   anything else from your projects. Coordinates typed into *Find a place* are handled in the app.
 - **Field mode** on a phone loads EnviroDB from GitHub Pages like the rest of it (and keeps a copy of the app's
   files for use with no signal); a field sheet travels in the link's "#" part, which browsers never send. What's
-  recorded stays on the phone until you send the results file yourself. *Directions* opens the phone's maps.
+  recorded stays on the phone until you send the results file yourself. *Navigate* opens the phone's map app.
+  The field map draws its pictures from the same map services as the Map tab (LINZ aerial photos, CARTO place
+  names, OpenStreetMap), which see the area being looked at and the phone's internet address – not site names or
+  anything else. Where you are stays on the phone (and in the results, for a site placed by GPS).
   A **printed field code** holds the project's and sites' names, the readings to take and – if you choose – the
   sites' locations and directions; never results. Anyone who scans one can read that, so leave the directions out
   if they mention gate codes or keys and the codes are left at the sites. The phone checks what a code holds

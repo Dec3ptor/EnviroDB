@@ -534,6 +534,10 @@ body {
 .edb-map-wrap {
   width: 100%;
   height: 100%;
+  /* the map's own layers (z-index 400–1000) stay inside it: a dialog opened over the map shows above it */
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
 }
 .edb-map {
   width: 100%;

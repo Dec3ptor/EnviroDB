@@ -30,6 +30,11 @@ export interface FieldSite {
   last?: { date: string; values: Record<string, number> };
   /** The readings taken here, when not all of them (a bore's water level isn't taken at a stream). */
   measures?: string[];
+  /** A site added on the phone: a new monitoring point, with its kind (Surface water, Groundwater …). */
+  added?: boolean;
+  type?: string;
+  /** Its location was set on the phone – by GPS (with how close) or on the map – and goes back with the results. */
+  located?: { at: string; how: 'gps' | 'map'; acc?: number };
 }
 
 export interface FieldSheet {
@@ -73,6 +78,30 @@ export interface FieldVisit {
   done?: boolean;
 }
 
+/** A monitoring point added on the phone. */
+export interface FieldNewSite {
+  /** The phone's id for it (its visits use it). */
+  id: string;
+  code: string;
+  name?: string;
+  type?: string;
+  lat?: number;
+  lng?: number;
+  acc?: number;
+  how?: 'gps' | 'map';
+  note?: string;
+}
+
+/** A site's location, set on the phone. */
+export interface FieldLocated {
+  siteId: string;
+  lat: number;
+  lng: number;
+  acc?: number;
+  how: 'gps' | 'map';
+  at: string;
+}
+
 export interface FieldResults {
   app: typeof FIELD_APP;
   kind: 'field-results';
@@ -82,6 +111,10 @@ export interface FieldResults {
   by?: string;
   sent: string;
   visits: FieldVisit[];
+  /** Monitoring points added on the phone. */
+  newSites?: FieldNewSite[];
+  /** Locations set on the phone for the sheet's sites. */
+  located?: FieldLocated[];
 }
 
 /** Usual ranges for the common field readings, to warn of a likely slip (not to judge the water). */
@@ -187,6 +220,20 @@ export function checkResults(x: unknown): FieldResults {
       done: !!v.done,
     };
   });
+  const place = (o: Record<string, unknown>) => {
+    const lat = num(o.lat), lng = num(o.lng);
+    return lat !== undefined && lng !== undefined && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng, acc: num(o.acc) } : null;
+  };
+  const how = (h: unknown) => (h === 'gps' || h === 'map' ? h : undefined);
+  const newSites = (Array.isArray(x.newSites) ? x.newSites : []).filter(isObj).slice(0, 100).map((n): FieldNewSite => {
+    const at = place(n);
+    return { id: str(n.id, 80) ?? '', code: (str(n.code, 40) ?? '').trim(), name: str(n.name, 120), type: str(n.type, 40), ...(at ? { ...at, how: how(n.how) } : {}), note: str(n.note, 1000) };
+  });
+  const located = (Array.isArray(x.located) ? x.located : []).filter(isObj).slice(0, 200).flatMap((l): FieldLocated[] => {
+    const at = place(l);
+    const siteId = str(l.siteId, 80);
+    return at && siteId ? [{ siteId, ...at, how: how(l.how) ?? 'map', at: str(l.at, 40) ?? '' }] : [];
+  });
   return {
     app: FIELD_APP,
     kind: 'field-results',
@@ -195,6 +242,8 @@ export function checkResults(x: unknown): FieldResults {
     by: str(x.by, 120),
     sent: str(x.sent, 40) ?? '',
     visits: visits.filter((v) => v.siteId),
+    ...(newSites.some((n) => n.id && n.code) ? { newSites: newSites.filter((n) => n.id && n.code) } : {}),
+    ...(located.length ? { located } : {}),
   };
 }
 
@@ -395,6 +444,10 @@ export function mergeSheets(old: FieldSheet, add: FieldSheet, lead: 'old' | 'add
     const mine = measures.filter((m) => wanted.get(id)!.has(m.id)).map((m) => m.id);
     const site = { ...defined(b ?? ({} as FieldSite)), ...defined(a ?? ({} as FieldSite)) } as FieldSite;
     delete site.measures;
+    // what was set on this phone stays: a location placed here, a site added here
+    const here = old.sites.find((x) => x.id === id);
+    if (here?.located) Object.assign(site, { lat: here.lat, lng: here.lng, located: here.located });
+    if (here?.added) Object.assign(site, { added: true, type: here.type });
     return mine.length < measures.length ? { ...site, measures: mine } : site;
   });
   const or = (k: keyof FieldSheet['observe']) => (lead === 'add' ? add.observe[k] : old.observe[k] || add.observe[k]);
@@ -415,3 +468,23 @@ export function fieldLinkPath(text: string): string | null {
   const m = /#\/field\/(open\?s|code\?k)=([A-Za-z0-9_-]+)\s*$/.exec(text.trim());
   return m ? `/field/${m[1]}=${m[2]}` : null;
 }
+
+/** The direction from one place to another, in degrees from north. */
+export function bearingDeg(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const rad = Math.PI / 180;
+  const y = Math.sin((b.lng - a.lng) * rad) * Math.cos(b.lat * rad);
+  const x = Math.cos(a.lat * rad) * Math.sin(b.lat * rad) - Math.sin(a.lat * rad) * Math.cos(b.lat * rad) * Math.cos((b.lng - a.lng) * rad);
+  return ((Math.atan2(y, x) / rad) % 360 + 360) % 360;
+}
+
+const POINTS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+
+/** "340 m north-east": how far and which way a site is from the phone. */
+export function wayTo(from: { lat: number; lng: number }, to: { lat: number; lng: number }): string {
+  const d = distanceM(from, to);
+  const far = d >= 1000 ? `${(d / 1000).toFixed(d >= 10000 ? 0 : 1)} km` : `${Math.round(d)} m`;
+  return d < 5 ? 'here' : `${far} ${POINTS[Math.round(bearingDeg(from, to) / 45) % 8]}`;
+}
+
+/** An id for a site added on the phone. */
+export const newFieldSiteId = () => `new-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;

@@ -3,11 +3,11 @@
 // notes, photos to the shared folder, and the round marked sampled.
 
 import { db, getSettings } from './db';
-import type { ImportBatch, Parameter, Result, Sample, Site } from './types';
+import { SITE_TYPES, type ImportBatch, type Parameter, type Result, type Sample, type Site, type SiteType } from './types';
 import type { ProjectBundle } from '../lib/analysis';
-import { FIELD_APP, readingWarning, type FieldCode, type FieldCodeFill, type FieldMeasure, type FieldResults, type FieldSheet, type FieldVisit } from '../field/model';
+import { distanceM, FIELD_APP, readingWarning, type FieldCode, type FieldCodeFill, type FieldMeasure, type FieldNewSite, type FieldResults, type FieldSheet, type FieldVisit } from '../field/model';
 import { stableId, uid } from '../lib/ids';
-import { siteLatLng } from '../lib/nztm';
+import { roundedNztm, siteLatLng } from '../lib/nztm';
 import { convert, unitLabel } from '../lib/units';
 import { APP_VERSION } from '../lib/version';
 import { fromBase64 } from '../lib/issued';
@@ -131,16 +131,50 @@ export interface FieldPlan {
   /** Sites and readings this project doesn't have (another project's sheet?). */
   unknownSites: string[];
   unknownParams: string[];
+  /**
+   * Monitoring points added on the phone: the site to add – or, when the project has a site with the same code (or
+   * the file was added before), that site, which their readings go to.
+   */
+  newSites: Array<{ field: FieldNewSite; site: Site; existing: boolean }>;
+  /** Locations set on the phone: where, and how far that moves the site (null: it had no location). */
+  located: Array<{ site: Site; lat: number; lng: number; acc?: number; how: 'gps' | 'map'; movedM: number | null }>;
 }
 
 /** What adding a results file would do. */
-export function planField(b: Pick<ProjectBundle, 'siteMap' | 'paramMap'>, results: FieldResults): FieldPlan {
+export function planField(b: Pick<ProjectBundle, 'siteMap' | 'paramMap' | 'project' | 'sites'>, results: FieldResults): FieldPlan {
   const rows: FieldRow[] = [];
   const notSampled: FieldPlan['notSampled'] = [];
   const unknownSites: string[] = [];
   const unknownParams = new Set<string>();
+  const byCode = new Map(b.sites.map((s) => [s.code.trim().toLowerCase(), s]));
+  const order = Math.max(0, ...b.sites.map((s) => s.order ?? 0));
+  const located: FieldPlan['located'] = [];
+  const moved = (site: Site, p: { lat: number; lng: number }) => {
+    const was = siteLatLng(site);
+    return was ? distanceM(was, p) : null;
+  };
+  const newSites: FieldPlan['newSites'] = (results.newSites ?? []).map((n, i) => {
+    // named after the phone's id, so the same file added again doesn't add the site twice
+    const id = stableId('site', b.project.id, n.id);
+    const already = b.siteMap.get(id) ?? byCode.get(n.code.trim().toLowerCase());
+    if (already) {
+      if (n.lat !== undefined && n.lng !== undefined && !siteLatLng(already)) located.push({ site: already, lat: n.lat, lng: n.lng, acc: n.acc, how: n.how ?? 'map', movedM: null });
+      return { field: n, site: already, existing: true };
+    }
+    const nz = n.lat !== undefined && n.lng !== undefined ? roundedNztm(n.lat, n.lng) : null;
+    const type: SiteType = (SITE_TYPES as readonly string[]).includes(n.type ?? '') ? (n.type as SiteType) : 'Other';
+    const site: Site = { id, projectId: b.project.id, code: n.code, name: n.name, type, role: '', aliases: [], active: true, order: order + 1 + i, description: n.note, ...(nz ? nz : {}) };
+    return { field: n, site, existing: false };
+  });
+  for (const l of results.located ?? []) {
+    const site = b.siteMap.get(l.siteId);
+    if (!site) continue;
+    const d = moved(site, l);
+    if (d === null || d >= 1) located.push({ site, lat: l.lat, lng: l.lng, acc: l.acc, how: l.how, movedM: d });
+  }
+  const siteOf = (id: string) => b.siteMap.get(id) ?? newSites.find((n) => n.field.id === id)?.site;
   for (const v of results.visits) {
-    const site = b.siteMap.get(v.siteId);
+    const site = siteOf(v.siteId);
     if (!site) {
       unknownSites.push(v.siteId);
       continue;
@@ -161,7 +195,15 @@ export function planField(b: Pick<ProjectBundle, 'siteMap' | 'paramMap'>, result
     const date = v.time && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v.time) ? v.time.slice(0, 16) : results.sheet.date;
     if (values.length || v.notes || v.weather || v.flow || v.appearance || v.photos?.length) rows.push({ visit: v, site, date, values });
   }
-  return { results, rows, notSampled, unknownSites, unknownParams: [...unknownParams] };
+  return { results, rows, notSampled, unknownSites, unknownParams: [...unknownParams], newSites, located };
+}
+
+/** Which of the phone's new sites and locations to take (all, unless said). */
+export interface FieldChoices {
+  /** The phone's ids of the new sites to add. */
+  newSites?: Set<string>;
+  /** The sites whose location to set. */
+  located?: Set<string>;
 }
 
 const FIELD_LINE = /^(Field( photos| location)?): /;
@@ -178,8 +220,13 @@ function fieldNotes(v: FieldVisit, by: string | undefined, photos: string[]): st
 const safe = (s: string) => s.normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
 
 /** Add a phone's results: readings to each site's sample for the day, notes, photos, and the round marked sampled. */
-export async function commitField(projectId: string, plan: FieldPlan, fileName: string): Promise<{ batch: ImportBatch; samples: number; results: number; photos: number; photoError?: string }> {
+export async function commitField(projectId: string, plan: FieldPlan, fileName: string, choices: FieldChoices = {}): Promise<{ batch: ImportBatch; samples: number; results: number; photos: number; photoError?: string; sitesAdded: number; located: number }> {
   const { results } = plan;
+  // new sites left out: so are their readings
+  const addSites = plan.newSites.filter((n) => !n.existing && (!choices.newSites || choices.newSites.has(n.field.id)));
+  const leftOut = new Set(plan.newSites.filter((n) => !n.existing && !addSites.includes(n)).map((n) => n.site.id));
+  const setPlaces = plan.located.filter((l) => !choices.located || choices.located.has(l.site.id));
+  plan = { ...plan, rows: plan.rows.filter((r) => !leftOut.has(r.site.id)), notSampled: plan.notSampled.filter((n) => !leftOut.has(n.site.id)) };
   const by = results.by || (await getSettings()).author || undefined;
   // photos first, into the shared folder (the database keeps where they are, not the pictures)
   const folder = currentWorkspaceFolder();
@@ -220,9 +267,22 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
     results: 0,
     skipped: 0,
     replaced: 0,
-    notes: [`Field results${by ? ` from ${by}` : ''}${results.sent ? `, sent ${results.sent.slice(0, 10)}` : ''}.`, plan.notSampled.length ? `Not sampled: ${plan.notSampled.map((n) => `${n.site.code} (${n.reason})`).join(', ')}.` : ''].filter(Boolean).join(' '),
+    notes: [
+      `Field results${by ? ` from ${by}` : ''}${results.sent ? `, sent ${results.sent.slice(0, 10)}` : ''}.`,
+      plan.notSampled.length ? `Not sampled: ${plan.notSampled.map((n) => `${n.site.code} (${n.reason})`).join(', ')}.` : '',
+      addSites.length ? `Sites added in the field: ${addSites.map((n) => n.site.code).join(', ')}.` : '',
+      setPlaces.length ? `Locations set in the field: ${setPlaces.map((l) => l.site.code).join(', ')}.` : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
   };
   await db.transaction('rw', [db.samples, db.results, db.imports, db.projects, db.sites], async () => {
+    // the sites added in the field, and the locations set there
+    for (const n of addSites) if (!(await db.sites.get(n.site.id))) await db.sites.put(n.site);
+    for (const l of setPlaces) {
+      const { easting, northing } = roundedNztm(l.lat, l.lng);
+      await db.sites.update(l.site.id, { easting, northing });
+    }
     const qcSites = new Set((await db.sites.where('projectId').equals(projectId).toArray()).filter((s) => isQcSite(s)).map((s) => s.id));
     const existing = await db.samples.where('projectId').equals(projectId).toArray();
     const resultsToPut: Result[] = [];
@@ -261,5 +321,5 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
     const mark = await db.calendarMarks.get(`${row.id}|${month}`);
     if (!mark?.sampledOn) await recordRound(row.id, month, { sampledOn: day }).catch(() => undefined);
   }
-  return { batch, samples: batch.samples, results: batch.results, photos, photoError };
+  return { batch, samples: batch.samples, results: batch.results, photos, photoError, sitesAdded: addSites.length, located: setPlaces.length };
 }

@@ -2,7 +2,7 @@
 // apart from the team's data – the phone isn't connected to the shared folder – until the results are sent.
 
 import Dexie, { type Table } from 'dexie';
-import { codeSheet, FIELD_APP, mergeSheets, type FieldCode, type FieldResults, type FieldSheet, type FieldVisit } from './model';
+import { codeSheet, FIELD_APP, mergeSheets, type FieldCode, type FieldResults, type FieldSheet, type FieldSite, type FieldVisit } from './model';
 
 export interface StoredSheet {
   id: string;
@@ -42,7 +42,8 @@ export async function addSheet(sheet: FieldSheet): Promise<void> {
   let next = sheet;
   if (cur) {
     const recorded = new Set((await fieldDb.visits.where('sheetId').equals(sheet.id).toArray()).map((v) => v.visit.siteId));
-    const kept = { ...cur.sheet, sites: cur.sheet.sites.filter((s) => recorded.has(s.id) || sheet.sites.some((x) => x.id === s.id)) };
+    // sites recorded here, added here or placed here stay; others the computer's sheet leaves out go
+    const kept = { ...cur.sheet, sites: cur.sheet.sites.filter((s) => recorded.has(s.id) || s.added || s.located || sheet.sites.some((x) => x.id === s.id)) };
     next = mergeSheets(kept, sheet, 'add');
   }
   await fieldDb.sheets.put({ id: sheet.id, sheet: next, addedAt: cur?.addedAt ?? new Date().toISOString(), sentAt: cur?.sentAt });
@@ -87,9 +88,11 @@ export async function setPref(key: string, value: string): Promise<void> {
   await fieldDb.prefs.put({ key, value });
 }
 
-/** What was recorded on a sheet, as the file to send back. */
+/** What was recorded on a sheet, as the file to send back: the visits, sites added here, locations set here. */
 export function resultsOf(sheet: FieldSheet, visits: FieldVisit[], by: string): FieldResults {
   const order = new Map(sheet.sites.map((s, i) => [s.id, i]));
+  const added = sheet.sites.filter((s) => s.added);
+  const located = sheet.sites.filter((s) => s.located && !s.added && s.lat !== undefined && s.lng !== undefined);
   return {
     app: FIELD_APP,
     kind: 'field-results',
@@ -98,7 +101,27 @@ export function resultsOf(sheet: FieldSheet, visits: FieldVisit[], by: string): 
     by: by.trim() || undefined,
     sent: new Date().toISOString(),
     visits: visits.filter((v) => order.has(v.siteId) && (v.done || v.notSampled || Object.keys(v.values).length || v.notes)).sort((a, b) => order.get(a.siteId)! - order.get(b.siteId)!),
+    ...(added.length ? { newSites: added.map((s) => ({ id: s.id, code: s.code, name: s.name, type: s.type, lat: s.lat, lng: s.lng, acc: s.located?.acc, how: s.located?.how, note: s.note })) } : {}),
+    ...(located.length ? { located: located.map((s) => ({ siteId: s.id, lat: s.lat!, lng: s.lng!, acc: s.located!.acc, how: s.located!.how, at: s.located!.at })) } : {}),
   };
+}
+
+/** Changes a site on a sheet kept on the phone (its location, say). */
+export async function updateSite(sheetId: string, siteId: string, patch: Partial<FieldSite>): Promise<void> {
+  await fieldDb.transaction('rw', fieldDb.sheets, async () => {
+    const cur = await fieldDb.sheets.get(sheetId);
+    if (!cur) return;
+    await fieldDb.sheets.put({ ...cur, sheet: { ...cur.sheet, sites: cur.sheet.sites.map((s) => (s.id === siteId ? { ...s, ...patch } : s)) } });
+  });
+}
+
+/** A new monitoring point, added to the sheet (at the end). */
+export async function addSite(sheetId: string, site: FieldSite): Promise<void> {
+  await fieldDb.transaction('rw', fieldDb.sheets, async () => {
+    const cur = await fieldDb.sheets.get(sheetId);
+    if (!cur) return;
+    await fieldDb.sheets.put({ ...cur, sheet: { ...cur.sheet, sites: [...cur.sheet.sites.filter((s) => s.id !== site.id), site] } });
+  });
 }
 
 export const resultsFileName = (sheet: FieldSheet) =>

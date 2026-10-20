@@ -28,6 +28,8 @@ export interface SiteMapHandle {
   fitBounds(south: number, west: number, north: number, east: number): void;
   /** Fit all the sites in view. */
   fitSites(): void;
+  /** Fit these points in view (the sites and where you are, say). */
+  fitPoints(points: Array<{ lat: number; lng: number }>): void;
 }
 
 interface Props {
@@ -41,6 +43,10 @@ interface Props {
   onSiteClick?: (id: string) => void;
   onSiteMove?: (id: string, lat: number, lng: number) => void;
   onMapClick?: (lat: number, lng: number) => void;
+  /** Where the phone is: a blue dot, with how sure (metres) as a circle. */
+  me?: { lat: number; lng: number; acc?: number } | null;
+  /** A dashed line, e.g. from where you are to the site you're heading for. */
+  line?: [{ lat: number; lng: number }, { lat: number; lng: number }] | null;
 }
 
 function baseLayers(): Record<string, L.Layer> {
@@ -104,6 +110,12 @@ export const SiteMap = forwardRef<SiteMapHandle, Props>(function SiteMap(props, 
       ], { maxZoom: 17 });
     },
     fitSites,
+    fitPoints(points) {
+      const map = mapRef.current;
+      if (!map || !points.length) return;
+      if (points.length === 1) map.setView([points[0].lat, points[0].lng], Math.max(map.getZoom(), 16));
+      else map.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lng] as L.LatLngTuple)), { padding: [48, 48], maxZoom: 18 });
+    },
   }));
 
   // the map, once
@@ -166,6 +178,31 @@ export const SiteMap = forwardRef<SiteMapHandle, Props>(function SiteMap(props, 
     pickRef.current?.remove();
     pickRef.current = props.pick ? L.marker([props.pick.lat, props.pick.lng], { icon: pickIcon, interactive: false, keyboard: false }).addTo(map) : null;
   }, [props.pick?.lat, props.pick?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // where you are
+  const meRef = useRef<L.LayerGroup | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    meRef.current?.remove();
+    meRef.current = null;
+    const me = props.me;
+    if (!me) return;
+    const group = L.layerGroup();
+    if (me.acc && me.acc > 3) group.addLayer(L.circle([me.lat, me.lng], { radius: me.acc, color: '#1c6fd1', weight: 1, opacity: 0.5, fillColor: '#1c6fd1', fillOpacity: 0.12, interactive: false }));
+    group.addLayer(L.circleMarker([me.lat, me.lng], { radius: 7, color: '#ffffff', weight: 3, fillColor: '#1c6fd1', fillOpacity: 1, interactive: false }));
+    meRef.current = group.addTo(map);
+  }, [props.me?.lat, props.me?.lng, props.me?.acc]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // a line between two points
+  const lineRef = useRef<L.Polyline | null>(null);
+  const lineKey = props.line ? props.line.map((p) => `${p.lat},${p.lng}`).join('|') : '';
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    lineRef.current?.remove();
+    lineRef.current = props.line ? L.polyline(props.line.map((p) => [p.lat, p.lng] as L.LatLngTuple), { color: '#1c6fd1', weight: 3, dashArray: '6 8', opacity: 0.85, interactive: false }).addTo(map) : null;
+  }, [lineKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Leaflet adds its own classes to the map's element, so the class React sets lives on a wrapper
   return (

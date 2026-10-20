@@ -162,16 +162,40 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded }: { res
   const data = useProject();
   const plan = useMemo(() => (results ? planField(data, results) : null), [data, results]);
   const [busy, setBusy] = useState(false);
+  // the phone's new sites and the locations set there: all taken unless unticked
+  const [skipNew, setSkipNew] = useState<Set<string>>(new Set());
+  const [skipLoc, setSkipLoc] = useState<Set<string>>(new Set());
   if (!results || !plan) return null;
+  const toggle = (set: Set<string>, id: string, on: boolean) => {
+    const next = new Set(set);
+    if (on) next.delete(id);
+    else next.add(id);
+    return next;
+  };
+  const newOnes = plan.newSites.filter((n) => !n.existing);
+  const chosenNew = new Set(newOnes.filter((n) => !skipNew.has(n.field.id)).map((n) => n.field.id));
+  const chosenLoc = new Set(plan.located.filter((l) => !skipLoc.has(l.site.id)).map((l) => l.site.id));
+  const leftOut = new Set(newOnes.filter((n) => !chosenNew.has(n.field.id)).map((n) => n.site.id));
+  const rows = plan.rows.filter((r) => !leftOut.has(r.site.id));
+  const where = (lat?: number, lng?: number) => (lat !== undefined && lng !== undefined ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : 'no location');
+  const away = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
   const other = results.sheet.project.id && results.sheet.project.id !== data.project.id;
   const add = async () => {
     setBusy(true);
     try {
-      const res = await commitField(data.project.id, plan, fileName);
+      const res = await commitField(data.project.id, plan, fileName, { newSites: chosenNew, located: chosenLoc });
       notifications.show({
         color: res.photoError ? 'orange' : 'teal',
         title: `Field results added: ${res.samples} sites, ${res.results} readings`,
-        message: [res.photos ? `${res.photos} photos saved to the shared folder (Field photos).` : '', res.photoError ?? ''].filter(Boolean).join(' ') || 'They join the lab’s results for the same day.',
+        message:
+          [
+            res.sitesAdded ? `${res.sitesAdded} new site${res.sitesAdded === 1 ? '' : 's'} added.` : '',
+            res.located ? `${res.located} location${res.located === 1 ? '' : 's'} set.` : '',
+            res.photos ? `${res.photos} photos saved to the shared folder (Field photos).` : '',
+            res.photoError ?? '',
+          ]
+            .filter(Boolean)
+            .join(' ') || 'They join the lab’s results for the same day.',
       });
       onAdded?.(res.batch.id);
       onClose();
@@ -181,8 +205,8 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded }: { res
       setBusy(false);
     }
   };
-  const params = [...new Map(plan.rows.flatMap((r) => r.values.map((v) => [v.param.id, v.param]))).values()];
-  const warnings = plan.rows.flatMap((r) => r.values.filter((v) => v.warning).map((v) => `${r.site.code} ${v.param.name}: ${fmtNum(v.value)} – ${v.warning}`));
+  const params = [...new Map(rows.flatMap((r) => r.values.map((v) => [v.param.id, v.param]))).values()];
+  const warnings = rows.flatMap((r) => r.values.filter((v) => v.warning).map((v) => `${r.site.code} ${v.param.name}: ${fmtNum(v.value)} – ${v.warning}`));
   return (
     <Modal opened onClose={onClose} title="Field results from a phone" size="xl">
       <Stack gap="sm">
@@ -196,7 +220,48 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded }: { res
             <Text size="sm">This sheet was made for another project ({results.sheet.project.name}). Only the sites this project has are added.</Text>
           </Alert>
         )}
-        {plan.rows.length ? (
+        {plan.newSites.length > 0 && (
+          <div>
+            <Text size="sm" fw={600} mb={4}>
+              New monitoring points from the field
+            </Text>
+            <Stack gap={4}>
+              {plan.newSites.map((n) =>
+                n.existing ? (
+                  <Text size="sm" key={n.field.id} c="dimmed">
+                    {n.field.code} – the project has this site already: its readings go to it.
+                  </Text>
+                ) : (
+                  <Checkbox
+                    key={n.field.id}
+                    checked={chosenNew.has(n.field.id)}
+                    onChange={(e) => setSkipNew(toggle(skipNew, n.field.id, e.currentTarget.checked))}
+                    label={`${n.field.code}${n.field.name ? ` – ${n.field.name}` : ''} · ${n.site.type} · ${where(n.field.lat, n.field.lng)}${n.field.acc ? ` (±${n.field.acc} m)` : ''}`}
+                    description={n.field.note}
+                  />
+                ),
+              )}
+            </Stack>
+          </div>
+        )}
+        {plan.located.length > 0 && (
+          <div>
+            <Text size="sm" fw={600} mb={4}>
+              Locations set in the field
+            </Text>
+            <Stack gap={4}>
+              {plan.located.map((l) => (
+                <Checkbox
+                  key={l.site.id}
+                  checked={chosenLoc.has(l.site.id)}
+                  onChange={(e) => setSkipLoc(toggle(skipLoc, l.site.id, e.currentTarget.checked))}
+                  label={`${l.site.code}: ${l.movedM === null ? `had no location – now ${where(l.lat, l.lng)}` : `moved ${away(l.movedM)}, to ${where(l.lat, l.lng)}`} · ${l.how === 'gps' ? `by GPS${l.acc ? ` ±${l.acc} m` : ''}` : 'placed on the map'}`}
+                />
+              ))}
+            </Stack>
+          </div>
+        )}
+        {rows.length ? (
           <Table.ScrollContainer minWidth={520}>
             <Table fz="sm" striped>
               <Table.Thead>
@@ -212,7 +277,7 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded }: { res
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {plan.rows.map((r) => (
+                {rows.map((r) => (
                   <Table.Tr key={r.site.id}>
                     <Table.Td fw={600}>{r.site.code}</Table.Td>
                     <Table.Td style={{ whiteSpace: 'nowrap' }}>{formatDate(r.date, { time: true })}</Table.Td>
@@ -263,8 +328,8 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded }: { res
           <Button variant="default" onClick={onClose}>
             Cancel
           </Button>
-          <Button leftSection={<IconPlus size={16} />} loading={busy} disabled={!plan.rows.length} onClick={() => void add()}>
-            Add {plan.rows.length} sites’ results
+          <Button leftSection={<IconPlus size={16} />} loading={busy} disabled={!rows.length && !chosenNew.size && !chosenLoc.size} onClick={() => void add()}>
+            {rows.length ? `Add ${rows.length} sites’ results` : 'Add'}
           </Button>
         </Group>
         <Badge variant="light" color="gray" style={{ alignSelf: 'flex-start' }}>
