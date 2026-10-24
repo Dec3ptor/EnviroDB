@@ -40,6 +40,7 @@ import { checkResults, unlockFile, type FieldResults } from '../field/model';
 import { LockedError, showKeyId } from '../field/lock';
 import { teamKeysOf } from '../components/TeamKey';
 import { FieldResultsModal } from '../components/FieldSheet';
+import { IMPORTING, SectionNav } from '../components/Shell';
 
 const ACCEPT = {
   'application/pdf': ['.pdf'],
@@ -515,7 +516,8 @@ export function ImportWizard(_props: { projectId: string }) {
   // QA/QC findings in the samples just imported
   const settings = useSettings();
   const importQa = useMemo(() => {
-    if (!summary) return null;
+    // only for a project with the QA/QC checks on
+    if (!summary || !data.project.qa) return null;
     const mine = new Set([...data.index.allBySample.values()].flat().filter((r) => r.importId === summary.id).map((r) => r.sampleId));
     if (!mine.size) return null;
     return projectQa(data, 'all', settings).findings.filter((f) => !f.record && f.sampleIds.some((id) => mine.has(id)));
@@ -1148,7 +1150,7 @@ export function ImportWizard(_props: { projectId: string }) {
                         </Text>
                       )}
                       <Anchor size="sm" mt={4} onClick={() => navigate(`/projects/${project.id}/qa`)}>
-                        Look at them on the QA/QC tab
+                        Look at them under Data → QA/QC
                       </Anchor>
                     </Stack>
                   </Alert>
@@ -1199,6 +1201,7 @@ export function ImportPage() {
     );
   return (
     <Stack>
+      <SectionNav items={IMPORTING} />
       <PageHeader title="Import data" description="Lab results (e.g. Hill Labs Excel), monitoring master spreadsheets or long tables." />
       {!projects.length ? (
         <EmptyState title="Create a project first" action={<NewProjectButton />}>

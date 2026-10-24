@@ -7,7 +7,7 @@ import { IconFileImport, IconFlask, IconPlus, IconSearch } from '@tabler/icons-r
 import { db } from '../db/db';
 import { newProject, saveProject } from '../db/repo';
 import type { Project } from '../db/types';
-import { EmptyState, GuidelinePicker, PageHeader } from '../components/common';
+import { EmptyState, GuidelinePicker, MoreOptions, PageHeader } from '../components/common';
 import { createDemoProject } from '../db/demo';
 import { importProjectPackage, readJsonFile } from '../db/backup';
 import { MONTH_LONG, formatDate } from '../lib/dates';
@@ -26,17 +26,27 @@ export function ProjectForm({ value, onChange, letters }: { value: Project; onCh
         <TextInput label="Regulator" value={value.regulator ?? ''} onChange={(e) => set('regulator', e.currentTarget.value)} placeholder="e.g. Waikato Regional Council" />
       </SimpleGrid>
       <TextInput label="Location" value={value.location ?? ''} onChange={(e) => set('location', e.currentTarget.value)} />
-      <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <TextInput label="Purchase order" value={value.purchaseOrder ?? ''} onChange={(e) => set('purchaseOrder', e.currentTarget.value || undefined)} />
-        <TextInput label="Project folder" description="A SharePoint link, or a path to copy (G:\CLIENTS\…)" value={value.folder ?? ''} onChange={(e) => set('folder', e.currentTarget.value || undefined)} />
-      </SimpleGrid>
-      <Textarea label="Description" autosize minRows={2} value={value.description ?? ''} onChange={(e) => set('description', e.currentTarget.value)} />
-      {letters && (
-        <SimpleGrid cols={{ base: 1, sm: 2 }}>
-          <Textarea label="Letters go to" description="Name, position, organisation and address – a line each" placeholder={'Name\nPosition\nOrganisation\nAddress'} autosize minRows={2} maxRows={6} value={value.recipient ?? ''} onChange={(e) => set('recipient', e.currentTarget.value || undefined)} />
-          <TextInput label="Letter greeting" placeholder="Dear Sir / Madam," value={value.salutation ?? ''} onChange={(e) => set('salutation', e.currentTarget.value || undefined)} />
-        </SimpleGrid>
-      )}
+      <MoreOptions
+        label="More details"
+        summary={
+          [value.purchaseOrder && 'purchase order', value.folder && 'project folder', value.description && 'description', letters && value.recipient && 'letters go to', letters && value.salutation && 'greeting'].filter(Boolean).join(', ') ||
+          (letters ? 'Purchase order, project folder, description, who letters go to' : 'Purchase order, project folder, description')
+        }
+      >
+        <Stack gap="sm">
+          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+            <TextInput label="Purchase order" value={value.purchaseOrder ?? ''} onChange={(e) => set('purchaseOrder', e.currentTarget.value || undefined)} />
+            <TextInput label="Project folder" description="A SharePoint link, or a path to copy (G:\CLIENTS\…)" value={value.folder ?? ''} onChange={(e) => set('folder', e.currentTarget.value || undefined)} />
+          </SimpleGrid>
+          <Textarea label="Description" autosize minRows={2} value={value.description ?? ''} onChange={(e) => set('description', e.currentTarget.value)} />
+          {letters && (
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <Textarea label="Letters go to" description="Name, position, organisation and address – a line each" placeholder={'Name\nPosition\nOrganisation\nAddress'} autosize minRows={2} maxRows={6} value={value.recipient ?? ''} onChange={(e) => set('recipient', e.currentTarget.value || undefined)} />
+              <TextInput label="Letter greeting" placeholder="Dear Sir / Madam," value={value.salutation ?? ''} onChange={(e) => set('salutation', e.currentTarget.value || undefined)} />
+            </SimpleGrid>
+          )}
+        </Stack>
+      </MoreOptions>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
         <Select
           label="Reporting year starts"

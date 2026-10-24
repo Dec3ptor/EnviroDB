@@ -11,6 +11,20 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.19.0',
+    date: '2026-10-24',
+    title: 'Less to take in: the essentials first',
+    items: [
+      'Features for the team (Settings → Team → Features): EnviroDB starts with the essentials – projects, importing, data, graphs, maps, compliance, reports and the monitoring calendar. Field mode, NPS-FM bands, continuous data and rainfall, client data packs and the AI helpers are off until the team switches them on (one at a time, or Everything). Switched off, they’re hidden and their data is kept.',
+      'QA/QC checks are off for every project until turned on for it – in its Setup (What this project shows), or with the button under Data → QA/QC. Off, there’s no QA/QC view, dashboard action or after-import panel for the project.',
+      'A project has seven tabs instead of twelve: Overview (with Sampling & reporting), Data (with QA/QC), Graphs (with Trends), Map, Compliance (with NPS-FM), Reports (with the client data pack) and Setup. A tab with more than one view has a switch under the tabs; links to the old tabs still work.',
+      'Views show once they have something to show: Trends after two years of results, NPS-FM for projects with surface water sites. Setup lists each, on or off and why.',
+      'The sidebar is shorter: Library holds Guidelines, Report templates and Parameters (as tabs), and the Quick check is a tab of Import data.',
+      'The project ⋯ menu has one Field work… entry for the field sheet, printable codes and receiving from a phone. Settings has three tabs: You, Team and Advanced.',
+      'A new project’s tabs say what goes in them, with the button to get there. Less-used options fold away under More details (a project) and More options (the field sheet and field codes windows).',
+    ],
+  },
+  {
     version: '1.18.0',
     date: '2026-10-21',
     title: 'A team key for field codes',

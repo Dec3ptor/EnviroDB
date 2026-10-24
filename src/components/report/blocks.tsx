@@ -945,7 +945,7 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
       return (
         <Stack gap="xs">
           <Text size="xs" c="dimmed">
-            {block.type === 'programmeTable' ? 'From the project’s sampling schedules (Schedule tab): sites, frequency, parameters and notes.' : 'From the project’s reporting obligations (Schedule tab): frequency, when the next one is due and who it goes to.'}
+            {block.type === 'programmeTable' ? 'From the project’s sampling schedules (Overview → Sampling & reporting): sites, frequency, parameters and notes.' : 'From the project’s reporting obligations (Overview → Sampling & reporting): frequency, when the next one is due and who it goes to.'}
           </Text>
         </Stack>
       );
@@ -980,7 +980,7 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
             />
           </Group>
           <Text size="xs" c="dimmed">
-            Up to the report’s end. Mann-Kendall (seasonal Kendall when results vary with the season) with Sen’s slope, as on the Trends tab; a note under the table says how.
+            Up to the report’s end. Mann-Kendall (seasonal Kendall when results vary with the season) with Sen’s slope, as under Graphs → Trends; a note under the table says how.
           </Text>
         </Stack>
       );
@@ -1013,7 +1013,7 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
           />
           <Switch label="A second table with the statistics behind each band" checked={!!block.detail} onChange={(e) => set({ detail: e.currentTarget.checked })} />
           <Text size="xs" c="dimmed">
-            Up to the report’s end. How each site is graded (river or lake, sediment class …) is set on the project’s NPS-FM tab.
+            Up to the report’s end. How each site is graded (river or lake, sediment class …) is set under the project’s Compliance → NPS-FM.
           </Text>
         </Stack>
       );
@@ -1037,7 +1037,7 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
           </div>
           <Switch label="Table of the decisions made (results left out, samples swapped, findings accepted)" checked={block.decisions !== false} onChange={(e) => set({ decisions: e.currentTarget.checked })} />
           <Text size="xs" c="dimmed">
-            From the project’s QA/QC tab, for the report’s period. Also says how many checks were still to be looked at.
+            From the project’s QA/QC checks (Data → QA/QC), for the report’s period. Also says how many checks were still to be looked at.
           </Text>
         </Stack>
       );

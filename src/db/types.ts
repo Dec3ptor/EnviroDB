@@ -47,6 +47,8 @@ export interface Project {
   calendarNotes?: string;
   /** How the client data pack is set up, and the last one made. */
   pack?: PackSettings;
+  /** QA/QC checks (duplicates, outliers, swapped bottles) for this project: off unless turned on. */
+  qa?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -1124,6 +1126,8 @@ export interface Settings {
    * still open what was locked with them.
    */
   teamKey?: { on: boolean; keys: TeamKey[] };
+  /** The features the team uses (Settings → Team → Features); unset = the essentials. */
+  features?: Partial<Record<'calendar' | 'field' | 'npsfm' | 'continuous' | 'packs' | 'ai', boolean>>;
 }
 
 /** Something in a letterhead's header or footer: a line of text ({page} = page number) or a picture. */

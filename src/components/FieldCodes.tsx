@@ -12,6 +12,8 @@ import { PopupPicker, type PickerData } from './PopupPicker';
 import { defaultMeasures, makeCodes } from '../db/field';
 import { codeLink, type FieldCode } from '../field/model';
 import { LockedBadge, lockKey } from './TeamKey';
+import { MoreOptions } from './common';
+import { noted } from './FieldSheet';
 import { CODE_LAYOUTS, downloadFieldCodes, fieldCodesPdfBytes, fitsQr, type CodeLayout, type CodesPdfInput } from '../reports/fieldCodes';
 import { PdfPreview } from '../reports/PdfPreview';
 import { safeFileName } from '../db/backup';
@@ -137,48 +139,52 @@ export function FieldCodesModal({ opened, onClose }: { opened: boolean; onClose:
               </div>
             )}
             <PopupPicker label="Readings to take" data={paramData} value={measureIds} onChange={setMeasureIds} placeholder="None – notes only" noun="readings" />
-            <Group gap="lg">
-              <Checkbox label="Weather" checked={observe.weather} onChange={(e) => setObserve({ ...observe, weather: e.currentTarget.checked })} />
-              <Checkbox label="Flow" checked={observe.flow} onChange={(e) => setObserve({ ...observe, flow: e.currentTarget.checked })} />
-              <Checkbox label="Appearance" checked={observe.appearance} onChange={(e) => setObserve({ ...observe, appearance: e.currentTarget.checked })} />
-              <Checkbox label="Photos" checked={observe.photos} onChange={(e) => setObserve({ ...observe, photos: e.currentTarget.checked })} />
-            </Group>
-            <div>
-              <Text size="sm" fw={500} mb={4}>
-                When a site’s code is scanned
-              </Text>
-              <Stack gap={6}>
-                <Checkbox label="Fill in the time sampled" checked={fill.time} onChange={(e) => setFill({ ...fill, time: e.currentTarget.checked })} />
-                <Checkbox label="Record the phone’s location (GPS)" checked={fill.gps} onChange={(e) => setFill({ ...fill, gps: e.currentTarget.checked })} />
-                <Checkbox
-                  label="Sites’ locations"
-                  description={located ? 'For directions on the phone, and to say when the phone is far from the site (the wrong site?)' : 'None of the sites has a location yet (Setup → Sites)'}
-                  checked={withLocation && located}
-                  disabled={!located}
-                  onChange={(e) => setWithLocation(e.currentTarget.checked)}
-                />
-                <Checkbox
-                  label="Sites’ directions and notes"
-                  description={
-                    key
-                      ? 'Locked with the team key: only the team’s phones can read them.'
-                      : 'Anyone who scans a code can read what it holds – leave this off if the notes have gate codes or keys and the codes are left at the sites (or lock the codes with the team key, in Settings).'
-                  }
-                  checked={withNotes}
-                  onChange={(e) => setWithNotes(e.currentTarget.checked)}
-                />
+            <MoreOptions label="More options" summary={[...noted(observe), fill.time && 'time filled in', fill.gps && 'GPS', withLocation && located && 'locations', withNotes && 'notes'].filter(Boolean).join(', ')}>
+              <Stack gap="sm">
+                <Group gap="lg">
+                  <Checkbox label="Weather" checked={observe.weather} onChange={(e) => setObserve({ ...observe, weather: e.currentTarget.checked })} />
+                  <Checkbox label="Flow" checked={observe.flow} onChange={(e) => setObserve({ ...observe, flow: e.currentTarget.checked })} />
+                  <Checkbox label="Appearance" checked={observe.appearance} onChange={(e) => setObserve({ ...observe, appearance: e.currentTarget.checked })} />
+                  <Checkbox label="Photos" checked={observe.photos} onChange={(e) => setObserve({ ...observe, photos: e.currentTarget.checked })} />
+                </Group>
+                <div>
+                  <Text size="sm" fw={500} mb={4}>
+                    When a site’s code is scanned
+                  </Text>
+                  <Stack gap={6}>
+                    <Checkbox label="Fill in the time sampled" checked={fill.time} onChange={(e) => setFill({ ...fill, time: e.currentTarget.checked })} />
+                    <Checkbox label="Record the phone’s location (GPS)" checked={fill.gps} onChange={(e) => setFill({ ...fill, gps: e.currentTarget.checked })} />
+                    <Checkbox
+                      label="Sites’ locations"
+                      description={located ? 'For directions on the phone, and to say when the phone is far from the site (the wrong site?)' : 'None of the sites has a location yet (Setup → Sites)'}
+                      checked={withLocation && located}
+                      disabled={!located}
+                      onChange={(e) => setWithLocation(e.currentTarget.checked)}
+                    />
+                    <Checkbox
+                      label="Sites’ directions and notes"
+                      description={
+                        key
+                          ? 'Locked with the team key: only the team’s phones can read them.'
+                          : 'Anyone who scans a code can read what it holds – leave this off if the notes have gate codes or keys and the codes are left at the sites (or lock the codes with the team key, in Settings).'
+                      }
+                      checked={withNotes}
+                      onChange={(e) => setWithNotes(e.currentTarget.checked)}
+                    />
+                  </Stack>
+                </div>
+                <div>
+                  <Text size="sm" fw={500} mb={4}>
+                    Printed beside each code
+                  </Text>
+                  <Group gap="lg">
+                    <Checkbox label="Site name" checked={show.name} onChange={(e) => setShow({ ...show, name: e.currentTarget.checked })} />
+                    <Checkbox label="Project" checked={show.project} onChange={(e) => setShow({ ...show, project: e.currentTarget.checked })} />
+                    <Checkbox label="Readings" checked={show.readings} onChange={(e) => setShow({ ...show, readings: e.currentTarget.checked })} />
+                  </Group>
+                </div>
               </Stack>
-            </div>
-            <div>
-              <Text size="sm" fw={500} mb={4}>
-                Printed beside each code
-              </Text>
-              <Group gap="lg">
-                <Checkbox label="Site name" checked={show.name} onChange={(e) => setShow({ ...show, name: e.currentTarget.checked })} />
-                <Checkbox label="Project" checked={show.project} onChange={(e) => setShow({ ...show, project: e.currentTarget.checked })} />
-                <Checkbox label="Readings" checked={show.readings} onChange={(e) => setShow({ ...show, readings: e.currentTarget.checked })} />
-              </Group>
-            </div>
+            </MoreOptions>
             {links && what.includes('project') && !projectFits && (
               <Alert color="orange" variant="light" p="xs">
                 <Text size="xs">Too many sites for the project’s code ({n}) – it’s left out. Print a code for each site, or choose fewer sites.</Text>

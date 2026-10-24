@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActionIcon, Anchor, Autocomplete, Box, Button, Card, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Table, TagsInput, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
+import { ActionIcon, Anchor, Autocomplete, Badge, Box, Button, Card, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Table, TagsInput, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { Link, useNavigate } from 'react-router-dom';
@@ -17,6 +17,9 @@ import { compareParams } from '../../data/parameters';
 import { SaveButton, SaveIcon, UnsavedBadge } from '../../components/Unsaved';
 import { confirmDeleteParameter } from '../../components/DeleteParameter';
 import { ContinuousCard } from '../../components/ContinuousCard';
+import { useSettings } from '../../hooks/useSettings';
+import { useFeatures } from '../../hooks/useFeatures';
+import { FEATURES, featureOn, viewOff } from '../../lib/features';
 
 function SiteRow({ site, index, count, onMove }: { site: Site; index: number; count: number; onMove: (dir: -1 | 1) => void }) {
   const [s, setS, { dirty, reset }] = useEditable(site);
@@ -195,6 +198,58 @@ function ParametersCard() {
   );
 }
 
+/** What the project shows: QA/QC (this project's choice), and the team's features, each on or why not. */
+function ViewsCard() {
+  const { project, sites, samples } = useProject();
+  const settings = useSettings();
+  const facts = { project, sites, sampleDates: samples.map((x) => x.date) };
+  const trends = viewOff('trends', facts, settings);
+  const npsfm = viewOff('npsfm', facts, settings);
+  const rows: Array<{ label: string; on: boolean; note: string }> = [
+    { label: 'Trends', on: !trends, note: trends ?? 'Graphs → Trends.' },
+    { label: 'NPS-FM attribute bands', on: !npsfm, note: npsfm ?? 'Compliance → NPS-FM.' },
+    ...(['packs', 'continuous', 'field', 'ai'] as const).map((k) => {
+      const f = FEATURES.find((x) => x.key === k)!;
+      return { label: f.label, on: featureOn(settings, k), note: featureOn(settings, k) ? f.description : 'Switched off for the team.' };
+    }),
+  ];
+  return (
+    <Card>
+      <Title order={4}>What this project shows</Title>
+      <Text size="sm" c="dimmed" mb="sm">
+        Views show once they have something to show. QA/QC is chosen for each project; the rest are switched on for the whole team in{' '}
+        <Anchor component={Link} to="/settings?tab=team">
+          Settings → Team
+        </Anchor>
+        .
+      </Text>
+      <Switch
+        label="QA/QC checks for this project"
+        description="Duplicates that disagree, unusual results and bottles that may have been swapped – under Data → QA/QC, on the dashboard and after each import."
+        checked={!!project.qa}
+        onChange={(e) => void db.projects.update(project.id, { qa: e.currentTarget.checked, updatedAt: new Date().toISOString() })}
+      />
+      <MoreOptions label="Other views and features" summary={rows.map((r) => `${r.label} ${r.on ? 'on' : 'off'}`).join(' · ')}>
+        <Stack gap={6}>
+          {rows.map((r) => (
+            <Group key={r.label} gap="xs" wrap="nowrap" align="flex-start">
+              <Badge size="sm" variant="light" color={r.on ? 'teal' : 'gray'} w={44} style={{ flexShrink: 0 }}>
+                {r.on ? 'On' : 'Off'}
+              </Badge>
+              <Text size="sm">
+                <b>{r.label}</b>{' '}
+                <Text span c="dimmed" size="sm">
+                  {r.note}
+                </Text>
+              </Text>
+            </Group>
+          ))}
+        </Stack>
+      </MoreOptions>
+    </Card>
+  );
+}
+
 export function SetupTab() {
   const data = useProject();
   const { project, sites: monitoring, qc, rules } = data;
@@ -209,6 +264,7 @@ export function SetupTab() {
   const [p, setP, { dirty, reset }] = useEditable<Project>(project);
   const [bulk, setBulk] = useState(false);
   const navigate = useNavigate();
+  const on = useFeatures();
   const move = async (i: number, dir: -1 | 1) => {
     const list = [...sites];
     const j = i + dir;
@@ -218,7 +274,7 @@ export function SetupTab() {
   return (
     <Stack gap="lg">
       {/* a new project's quickest start; once there are rules it is under Compliance › Add rule */}
-      {!rules.length && (
+      {!rules.length && on('ai') && (
         <Card style={{ borderColor: 'var(--mantine-primary-color-4)' }}>
           <Group justify="space-between" align="center" wrap="wrap" gap="sm">
             <div style={{ flex: '1 1 320px' }}>
@@ -340,7 +396,9 @@ export function SetupTab() {
         )}
       </Card>
 
-      <ContinuousCard projectId={project.id} series={data.continuous.series} dayCounts={dayCounts} />
+      <ViewsCard />
+
+      {on('continuous') && <ContinuousCard projectId={project.id} series={data.continuous.series} dayCounts={dayCounts} />}
 
       <ParametersCard />
 

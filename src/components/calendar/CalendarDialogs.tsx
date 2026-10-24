@@ -94,7 +94,7 @@ function PlanPicker({
   if (!active.length)
     return (
       <Text size="sm" c="dimmed">
-        The project has no sampling schedules or reporting obligations yet – add them on its Schedule tab.
+        The project has no sampling schedules or reporting obligations yet – add them under its Overview → Sampling & reporting.
       </Text>
     );
   return (

@@ -23,7 +23,9 @@ import { actionsToTake, inboxActions, qaActions } from '../lib/actions';
 import { projectQa } from '../hooks/useQa';
 import { useInbox } from '../sync/inbox';
 import { useSettings } from '../hooks/useSettings';
-import { autoScale, GRID, readLayout, WIDGET_MAP, WIDGETS, type DashboardData, type PlacedWidget, type WidgetCtx, type WidgetId } from './dashboard/widgets';
+import { autoScale, CALENDAR_WIDGETS, GRID, readLayout, WIDGET_MAP, WIDGETS, type DashboardData, type PlacedWidget, type WidgetCtx, type WidgetId } from './dashboard/widgets';
+import { featureOn } from '../lib/features';
+import { EssentialsNote } from '../components/FeaturesCard';
 import type { Deadline } from './dashboard/widgets';
 import type { RuleEvaluation } from '../lib/compliance';
 
@@ -153,23 +155,34 @@ function Welcome() {
   );
 }
 
+/** This browser has seen (and closed) the note about starting with the essentials. */
+const NOTE_KEY = 'edb.essentialsNote';
+
 export function DashboardPage() {
   const { bundles, loading } = useAllBundles();
   const dash = useDashboard(bundles);
   const today = todayStr();
   const sheet = useCalendarSheet(Number(today.slice(0, 4)));
   const settings = useSettings();
+  const calendarOn = featureOn(settings, 'calendar');
   const inbox = useInbox();
   const actions = useMemo(() => {
     const projects = new Map(bundles.map((b) => [b.project.id, b.project]));
-    // QA/QC findings in the last three months' results
-    const qa = qaActions(bundles.filter((b) => b.project.status === 'active').map((b) => ({ project: b.project, findings: projectQa(b, '12m', settings, today).findings.filter((f) => f.date >= addDays(today, -92)) })));
-    const all = [...inboxActions(inbox.files, projects), ...qa, ...actionsToTake(bundles, sheet, today, { labDays: settings.labTurnaroundDays, sendDays: settings.sendResultsDays })];
+    // QA/QC findings in the last three months' results, for projects with the checks on
+    const qa = qaActions(bundles.filter((b) => b.project.status === 'active' && b.project.qa).map((b) => ({ project: b.project, findings: projectQa(b, '12m', settings, today).findings.filter((f) => f.date >= addDays(today, -92)) })));
+    const all = [...inboxActions(inbox.files, projects), ...qa, ...actionsToTake(bundles, calendarOn ? sheet : null, today, { labDays: settings.labTurnaroundDays, sendDays: settings.sendResultsDays })];
     return all.sort((a, b) => a.urgency - b.urgency || a.date.localeCompare(b.date));
-  }, [bundles, sheet, today, settings, inbox.files]);
+  }, [bundles, sheet, today, settings, inbox.files, calendarOn]);
   const saved = useLiveQuery(() => db.meta.get(DASHBOARD_KEY), [], null);
   const [editing, setEditing] = useState(false);
   const [narrow, setNarrow] = useState(false);
+  const [noteGone, setNoteGone] = useState(() => {
+    try {
+      return localStorage.getItem(NOTE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
   if (loading || saved === null)
     return (
       <Center h={300}>
@@ -178,11 +191,14 @@ export function DashboardPage() {
     );
   if (!bundles.length) return <Welcome />;
   const active = bundles.filter((b) => b.project.status === 'active');
-  const placed = readLayout(saved?.value);
+  // the calendar's widgets are kept, but not shown, while the team has the calendar off
+  const off = new Set<WidgetId>(calendarOn ? [] : CALENDAR_WIDGETS);
+  const all = readLayout(saved?.value);
+  const placed = all.filter((p) => !off.has(p.i));
   // packed: widgets move up to fill the gaps; otherwise they stay where they're put
   const packed = (saved?.value as { packed?: boolean } | undefined)?.packed !== false;
-  const save = (items: PlacedWidget[], pack = packed) => db.meta.put({ key: DASHBOARD_KEY, value: { version: GRID.version, items, packed: pack } });
-  const unused = WIDGETS.filter((w) => !placed.some((p) => p.i === w.id));
+  const save = (items: PlacedWidget[], pack = packed) => db.meta.put({ key: DASHBOARD_KEY, value: { version: GRID.version, items: [...items, ...all.filter((p) => off.has(p.i))], packed: pack } });
+  const unused = WIDGETS.filter((w) => !off.has(w.id) && !placed.some((p) => p.i === w.id));
   const ctx: WidgetCtx = { bundles, dash, sheet, actions, today };
   const remove = (id: WidgetId) => save(placed.filter((p) => p.i !== id));
   const add = (id: WidgetId) => {
@@ -262,6 +278,18 @@ export function DashboardPage() {
           )
         }
       />
+      {!settings.features && !noteGone && (
+        <EssentialsNote
+          onDismiss={() => {
+            try {
+              localStorage.setItem(NOTE_KEY, '1');
+            } catch {
+              /* private window: it shows again next time */
+            }
+            setNoteGone(true);
+          }}
+        />
+      )}
       {editing && (
         <Alert variant="light" py={8}>
           <Group justify="space-between" gap="sm" wrap="wrap">

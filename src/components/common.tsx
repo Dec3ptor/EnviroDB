@@ -2,7 +2,8 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { Badge, Box, Button, Collapse, Group, Input, InputBase, Modal, SegmentedControl, SimpleGrid, Stack, Text, Title, Tooltip, Paper, ThemeIcon, UnstyledButton, type StyleProp } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { DatePickerInput, type DatePickerInputProps } from '@mantine/dates';
-import { IconAlertTriangle, IconCalendar, IconChevronRight, IconCircleCheck, IconCircleX, IconHelpCircle, IconMinus, IconSelector } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCalendar, IconChevronRight, IconCircleCheck, IconCircleX, IconHelpCircle, IconMinus, IconSelector, IconUpload } from '@tabler/icons-react';
+import { Link } from 'react-router-dom';
 import type { GuidelineSet, Parameter, Site } from '../db/types';
 import { STATUS_META, LEVEL_COLORS, type RuleStatus } from '../lib/compliance';
 import { addMonths, formatDate, makeDate, periodPresets, recentReportingYears, todayStr, type PeriodChoice } from '../lib/dates';
@@ -76,6 +77,22 @@ export function LevelBadge({ level }: { level: string }) {
     <Badge color={LEVEL_COLORS[level] ?? 'gray'} variant="outline" size="sm">
       {level}
     </Badge>
+  );
+}
+
+/** A project view with nothing to show until results are in: what it will show, and the way to get them in. */
+export function NoResultsYet({ projectId, shows }: { projectId: string; shows: string }) {
+  return (
+    <EmptyState
+      title="No results yet"
+      action={
+        <Button component={Link} to={`/projects/${projectId}/import`} leftSection={<IconUpload size={16} />}>
+          Import results
+        </Button>
+      }
+    >
+      {shows} once results are in – drop in a lab’s file (Hill Labs, ALS, Linnaeus …) or your master spreadsheet.
+    </EmptyState>
   );
 }
 

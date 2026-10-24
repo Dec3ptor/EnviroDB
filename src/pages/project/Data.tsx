@@ -30,6 +30,7 @@ import { applyView, DEFAULT_SORT, describeFilter, FILTER_OPS, SHOW_ROWS, sortLab
 import type { Parameter } from '../../db/types';
 import { SaveButton } from '../../components/Unsaved';
 import { same } from '../../sync/model';
+import { useFeature } from '../../hooks/useFeatures';
 
 function Legend({ guidelineNames, hardness }: { guidelineNames: string[]; hardness?: boolean }) {
   return (
@@ -583,6 +584,7 @@ export function DataTab() {
   const settings = useSettings();
   const [wordBusy, setWordBusy] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const ai = useFeature('ai');
   const exportWord = async () => {
     setWordBusy(true);
     try {
@@ -701,10 +703,14 @@ export function DataTab() {
                 <Menu.Item leftSection={<IconDownload size={16} />} onClick={() => exportPivotCsv(exportArgs)}>
                   CSV
                 </Menu.Item>
-                <Menu.Divider />
-                <Menu.Item leftSection={<IconSparkles size={16} />} onClick={() => setAiOpen(true)}>
-                  Copy for AI input (this period, sites and parameters)
-                </Menu.Item>
+                {ai && (
+                  <>
+                    <Menu.Divider />
+                    <Menu.Item leftSection={<IconSparkles size={16} />} onClick={() => setAiOpen(true)}>
+                      Copy for AI input (this period, sites and parameters)
+                    </Menu.Item>
+                  </>
+                )}
               </Menu.Dropdown>
             </Menu>
           </Group>
@@ -752,7 +758,7 @@ export function DataTab() {
             </Button>
           }
         >
-          {consent[consentView === 'all' ? 'consent' : consentView].size ? 'Try another period or sites.' : 'Add the consent conditions on the Compliance tab, and the parameters each sampling schedule requires on the Schedule tab.'}
+          {consent[consentView === 'all' ? 'consent' : consentView].size ? 'Try another period or sites.' : 'Add the consent conditions on the Compliance tab, and the parameters each sampling schedule requires under Overview → Sampling & reporting.'}
         </EmptyState>
       ) : view.length ? (
         layout === 'samplesAsRows' ? <SamplesAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} head={head} /> : <ParamsAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} />

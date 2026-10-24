@@ -21,6 +21,7 @@ import type { Exceedance, RuleEvaluation } from '../../lib/compliance';
 import { RuleEditor } from './RuleEditor';
 import { LimitsView } from './LimitsView';
 import { uid } from '../../lib/ids';
+import { useFeature } from '../../hooks/useFeatures';
 
 type Preset = { label: string; description: string; make: (projectId: string) => Rule[] };
 
@@ -169,6 +170,7 @@ function ExceedanceTable({ ev }: { ev: RuleEvaluation }) {
 export function ComplianceTab() {
   const data = useProject();
   const { project, rules } = data;
+  const ai = useFeature('ai');
   const [period, setPeriod] = useViewState<PeriodValue>(`${project.id}:compliance.period`, () => defaultPeriod(project.yearStartMonth, 'thisRy'), revivePeriod(project.yearStartMonth));
   const [editing, setEditing] = useState<Rule | null>(null);
   // the rules one by one, or the limits and triggers as a table
@@ -280,15 +282,19 @@ export function ComplianceTab() {
               <Button leftSection={<IconPlus size={16} />}>Add rule</Button>
             </Menu.Target>
             <Menu.Dropdown mah="min(70vh, 640px)" style={{ overflowY: 'auto' }}>
-              <Menu.Item leftSection={<IconSparkles size={16} />} component={Link} to={`/projects/${project.id}/consent-setup`}>
-                <Text size="sm" fw={500}>
-                  From consent documents (with AI)
-                </Text>
-                <Text size="xs" c="dimmed">
-                  Have an AI tool read the consent and set up all the rules
-                </Text>
-              </Menu.Item>
-              <Menu.Divider />
+              {ai && (
+                <>
+                  <Menu.Item leftSection={<IconSparkles size={16} />} component={Link} to={`/projects/${project.id}/consent-setup`}>
+                    <Text size="sm" fw={500}>
+                      From consent documents (with AI)
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      Have an AI tool read the consent and set up all the rules
+                    </Text>
+                  </Menu.Item>
+                  <Menu.Divider />
+                </>
+              )}
               {PRESETS.map((p) => (
                 <Menu.Item key={p.label} onClick={() => addPreset(p)}>
                   <Text size="sm" fw={500}>

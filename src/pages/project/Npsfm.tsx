@@ -6,7 +6,7 @@ import { Alert, Badge, Card, Group, SegmentedControl, Select, Stack, Switch, Tab
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { useViewState } from '../../hooks/useViewState';
-import { EmptyState, MoreOptions } from '../../components/common';
+import { MoreOptions, NoResultsYet } from '../../components/common';
 import { BAND_COLOR, NPSFM_ATTRIBUTES, NPSFM_NOT_GRADED, NPSFM_SOURCE } from '../../data/npsfm';
 import { projectNpsfm, siteClass, type AttributeGrade, type SiteClass } from '../../lib/npsfm';
 import { latestDate, trendRange, type TrendSpan } from '../../lib/projectTrends';
@@ -59,7 +59,7 @@ export function NpsfmTab() {
   const picked = pick ? withGrades.find((s) => s.site.id === pick.siteId)?.grades.find((g) => g.attribute.id === pick.attrId) : undefined;
   const below = withGrades.flatMap((s) => s.grades.filter((g) => g.meetsBottomLine === false).map((g) => ({ s, g })));
 
-  if (!data.samples.length) return <EmptyState title="No results yet">Import some results first.</EmptyState>;
+  if (!data.samples.length) return <NoResultsYet projectId={data.project.id} shows="Each freshwater site’s NPS-FM attribute bands show here" />;
 
   return (
     <Stack gap="md">

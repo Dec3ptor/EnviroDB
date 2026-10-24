@@ -3,7 +3,7 @@ import { ActionIcon, Button, Card, Group, Select, SimpleGrid, Stack, Switch, Tex
 import { notifications } from '@mantine/notifications';
 import { IconCloudRain, IconCopy, IconDownload, IconFileTypeDocx, IconPhoto } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
-import { EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, consentPresets, defaultPeriod, type PeriodValue } from '../../components/common';
+import { EmptyState, GuidelinePicker, NoResultsYet, ParamPicker, PeriodPicker, SitePicker, consentPresets, defaultPeriod, type PeriodValue } from '../../components/common';
 import { buildChartSpec, chartOption, chartOverlay, type ChartSpec } from '../../charts/timeSeries';
 import { KIND_TEXT } from '../../lib/continuous';
 import { Link } from 'react-router-dom';
@@ -16,6 +16,7 @@ import { expandRules } from '../../lib/compliance';
 import { downloadBlob, safeFileName } from '../../db/backup';
 import { dataUrlToBlob } from '../../charts/render';
 import { formatDate } from '../../lib/dates';
+import { useFeature } from '../../hooks/useFeatures';
 
 export const SIZE_PRESETS: Record<string, { label: string; w: number; h: number }> = {
   half: { label: 'Word – half page (16 × 8 cm)', w: 16, h: 8 },
@@ -67,6 +68,7 @@ function ChartCard({ spec, size, title, onTitle, dark }: { spec: ChartSpec; size
 
 export function ChartsTab() {
   const data = useProject();
+  const continuous = useFeature('continuous');
   const { project, sites, params, guidelineSets, index, rules, setMap } = data;
   const scheme = useComputedColorScheme('light');
   // the graphs as set up last time on this project (kept when going to another tab, and for next time)
@@ -82,7 +84,7 @@ export function ChartsTab() {
   const [titles, setTitles] = useViewState<Record<string, string>>(k('titles'), {});
   // rainfall, flow or level behind the graphs
   const [overlayId, setOverlayId] = useViewState<string | null>(k('overlay'), null, (v) => (v === null || data.continuous.series.some((x) => x.id === v) ? v : undefined));
-  const overlaySeries = data.continuous.series.find((x) => x.id === overlayId);
+  const overlaySeries = continuous ? data.continuous.series.find((x) => x.id === overlayId) : undefined;
   const [busy, setBusy] = useState(false);
   const withData = useMemo(() => new Set(index.paramIdsWithData), [index]);
   const presets = useMemo(() => consentPresets(data, withData), [data, withData]);
@@ -122,7 +124,7 @@ export function ChartsTab() {
     }
   };
 
-  if (!data.samples.length) return <EmptyState title="No data to graph yet">Import some results first.</EmptyState>;
+  if (!data.samples.length) return <NoResultsYet projectId={project.id} shows="Graphs of each analyte over time, with the consent limits and guideline values, appear here" />;
 
   return (
     <Stack gap="md">
@@ -137,10 +139,10 @@ export function ChartsTab() {
           <Group align="center" gap="lg" wrap="wrap">
             <Switch label="Consent limits / triggers" checked={showRules} onChange={(e) => setShowRules(e.currentTarget.checked)} />
             <Switch label="Log scale" checked={log} onChange={(e) => setLog(e.currentTarget.checked)} />
-            <Tooltip label="Each site’s Sen’s slope over the dates shown, where there are enough results (see the Trends tab)">
+            <Tooltip label="Each site’s Sen’s slope over the dates shown, where there are enough results (see Graphs → Trends)">
               <Switch label="Trend lines" checked={trendLines} onChange={(e) => setTrendLines(e.currentTarget.checked)} />
             </Tooltip>
-            {data.continuous.series.length ? (
+            {continuous && data.continuous.series.length ? (
               <Select
                 aria-label="Rainfall or flow behind the graphs"
                 placeholder="No rainfall or flow"

@@ -16,6 +16,7 @@ import { recordRound, setCalendarStatus } from '../../db/repo';
 import { LevelBadge, StatTile } from '../../components/common';
 import { CalendarSheet } from '../../components/calendar/CalendarSheet';
 import { NewProjectButton } from '../Projects';
+import { useFeature } from '../../hooks/useFeatures';
 
 // The dashboard's widgets: each is a card that can be placed, moved and resized on the dashboard.
 
@@ -242,7 +243,7 @@ function Deadlines({ dash, today }: WidgetCtx) {
   if (!dash.deadlines.length)
     return (
       <Text c="dimmed" size="sm">
-        Nothing due. Add reporting obligations and sampling schedules on each project's Schedule tab.
+        Nothing due. Add reporting obligations and sampling schedules under each project's Overview → Sampling & reporting.
       </Text>
     );
   return (
@@ -496,9 +497,10 @@ function MyNotes() {
 }
 
 function QuickLinks() {
+  const calendar = useFeature('calendar');
   const links: Array<[string, string, typeof IconUpload]> = [
     ['/import', 'Import results', IconUpload],
-    ['/calendar', 'Monitoring calendar', IconCalendarMonth],
+    ...(calendar ? [['/calendar', 'Monitoring calendar', IconCalendarMonth] as [string, string, typeof IconUpload]] : []),
     ['/guidelines', 'Guidelines', IconBook2],
     ['/settings', 'Settings & backup', IconSettings],
   ];
@@ -557,6 +559,9 @@ export const WIDGETS: WidgetDef[] = [
 ];
 
 export const WIDGET_MAP = new Map(WIDGETS.map((w) => [w.id, w]));
+
+/** The widgets that show the monitoring calendar (hidden while the team has it off). */
+export const CALENDAR_WIDGETS: WidgetId[] = ['thisMonth', 'calendar'];
 
 export interface PlacedWidget {
   i: WidgetId;

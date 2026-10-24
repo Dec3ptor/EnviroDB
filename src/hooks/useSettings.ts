@@ -13,3 +13,9 @@ export function useSettings(): Settings {
     return s;
   }, [recs]);
 }
+
+/** The settings, or null until they've been read (so nothing shows as "off" for a moment). */
+export function useSettingsReady(): Settings | null {
+  const recs = useLiveQuery(() => Promise.all([db.meta.get('settings'), db.meta.get(MY_SETTINGS)]), []);
+  return useMemo(() => (recs ? combineSettings(recs[0]?.value, recs[1]?.value) : null), [recs]);
+}

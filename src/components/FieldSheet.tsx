@@ -12,6 +12,7 @@ import { PopupPicker, type PickerData } from './PopupPicker';
 import { commitField, defaultMeasures, makeSheet, planField } from '../db/field';
 import { lockFile, sheetLink, type FieldResults } from '../field/model';
 import { QrCode } from './QrCode';
+import { MoreOptions } from './common';
 import { LockedBadge, lockKey } from './TeamKey';
 import { currentWorkspaceFolder } from '../sync/workspace';
 import { downloadBlob, safeFileName } from '../db/backup';
@@ -22,6 +23,10 @@ import { fmtNum } from '../lib/values';
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 /** Room in a QR code a phone's camera reads easily (from a screen). */
 const QR_MAX = 2300;
+
+/** What the phone asks to note at each site, in a few words. */
+export const noted = (o: { weather: boolean; flow: boolean; appearance: boolean; photos: boolean }) =>
+  [o.weather && 'weather', o.flow && 'flow', o.appearance && 'appearance', o.photos && 'photos'].filter((x): x is string => !!x);
 
 export function FieldSheetModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const data = useProject();
@@ -90,13 +95,17 @@ export function FieldSheetModal({ opened, onClose }: { opened: boolean; onClose:
               </Group>
               <ReportSites sites={data.sites} chosen={siteIds} onChange={(ids) => setSiteIds(ids.length >= data.sites.length ? null : ids)} rememberedFor="this sheet" />
               <PopupPicker label="Readings to take" data={paramData} value={measureIds} onChange={setMeasureIds} placeholder="None – notes only" noun="readings" />
-              <Group gap="lg">
-                <Checkbox label="Weather" checked={observe.weather} onChange={(e) => setObserve({ ...observe, weather: e.currentTarget.checked })} />
-                <Checkbox label="Flow" checked={observe.flow} onChange={(e) => setObserve({ ...observe, flow: e.currentTarget.checked })} />
-                <Checkbox label="Appearance" checked={observe.appearance} onChange={(e) => setObserve({ ...observe, appearance: e.currentTarget.checked })} />
-                <Checkbox label="Photos" checked={observe.photos} onChange={(e) => setObserve({ ...observe, photos: e.currentTarget.checked })} />
-              </Group>
-              <Switch label="Last time’s readings, to compare with on site" checked={withLast} onChange={(e) => setWithLast(e.currentTarget.checked)} />
+              <MoreOptions label="More options" summary={[...noted(observe), withLast ? 'last time’s readings' : ''].filter(Boolean).join(', ') || 'Readings only'}>
+                <Stack gap="sm">
+                  <Group gap="lg">
+                    <Checkbox label="Weather" checked={observe.weather} onChange={(e) => setObserve({ ...observe, weather: e.currentTarget.checked })} />
+                    <Checkbox label="Flow" checked={observe.flow} onChange={(e) => setObserve({ ...observe, flow: e.currentTarget.checked })} />
+                    <Checkbox label="Appearance" checked={observe.appearance} onChange={(e) => setObserve({ ...observe, appearance: e.currentTarget.checked })} />
+                    <Checkbox label="Photos" checked={observe.photos} onChange={(e) => setObserve({ ...observe, photos: e.currentTarget.checked })} />
+                  </Group>
+                  <Switch label="Last time’s readings, to compare with on site" checked={withLast} onChange={(e) => setWithLast(e.currentTarget.checked)} />
+                </Stack>
+              </MoreOptions>
               <Text size="xs" c="dimmed">
                 The phone keeps the sheet and what’s recorded on it, and works with no signal. It sends the results back as a file – save it to the team’s <b>Inbox</b> folder in OneDrive and EnviroDB picks it up, or drop it on the
                 Import page. Made again for the same day, the phone keeps what it has recorded.

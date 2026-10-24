@@ -11,6 +11,7 @@ import { PageHeader } from '../components/common';
 import { useEditable } from '../hooks/useEditable';
 import { SaveIcon } from '../components/Unsaved';
 import { confirmDeleteParameter } from '../components/DeleteParameter';
+import { LIBRARY, SectionNav } from '../components/Shell';
 
 // The analyte dictionary: every parameter's name, group, unit and the other names it goes by in lab files.
 
@@ -71,6 +72,7 @@ export function ParametersPage() {
   };
   return (
     <>
+      <SectionNav items={LIBRARY} />
       <PageHeader
         title="Parameters"
         description="The analyte dictionary shared by all projects. Aliases are the names used in lab files and spreadsheets; new ones you match during import are added automatically."

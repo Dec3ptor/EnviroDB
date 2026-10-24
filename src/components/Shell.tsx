@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
-import { AppShell, Badge, Burger, Group, NavLink, Text, ActionIcon, useMantineColorScheme, Divider, ScrollArea, Box } from '@mantine/core';
+import { AppShell, Badge, Burger, Group, NavLink, Tabs, Text, ActionIcon, useMantineColorScheme, Divider, ScrollArea, Box } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IconLayoutDashboard,
@@ -21,6 +21,38 @@ import { db } from '../db/db';
 import { WorkspaceBadge } from './workspace/Workspace';
 import { VersionFooter } from './Version';
 import { startInboxWatch, useInbox } from '../sync/inbox';
+import { useFeature } from '../hooks/useFeatures';
+
+/** The Library's pages: reference data shared by every project. */
+export const LIBRARY = [
+  { to: '/guidelines', label: 'Guidelines', icon: IconBook2 },
+  { to: '/templates', label: 'Report templates', icon: IconTemplate },
+  { to: '/parameters', label: 'Parameters', icon: IconFlask },
+];
+
+/** Importing and the Quick check: both start from a lab file. */
+export const IMPORTING = [
+  { to: '/import', label: 'Import data', icon: IconUpload },
+  { to: '/quick-check', label: 'Quick check (no project)', icon: IconTestPipe },
+];
+
+/** Pages that go together, as tabs at the top of each: the Library's, or importing and the Quick check. */
+export function SectionNav({ items }: { items: Array<{ to: string; label: string; icon: typeof IconBook2 }> }) {
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const current = items.find((i) => pathname.startsWith(i.to))?.to ?? items[0].to;
+  return (
+    <Tabs value={current} onChange={(v) => v && navigate(v)} mb="md">
+      <Tabs.List style={{ flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none' }}>
+        {items.map((i) => (
+          <Tabs.Tab key={i.to} value={i.to} leftSection={<i.icon size={16} />}>
+            {i.label}
+          </Tabs.Tab>
+        ))}
+      </Tabs.List>
+    </Tabs>
+  );
+}
 
 export function Shell() {
   const [opened, { toggle, close }] = useDisclosure();
@@ -32,18 +64,15 @@ export function Shell() {
   const inboxCount = useInbox().files.length;
 
   const path = location.pathname;
+  const calendar = useFeature('calendar');
   const nav = [
     { to: '/', label: 'Dashboard', icon: IconLayoutDashboard, active: path === '/' },
     { to: '/projects', label: 'Projects', icon: IconFolders, active: path === '/projects' },
-    { to: '/calendar', label: 'Monitoring calendar', icon: IconCalendarMonth, active: path.startsWith('/calendar') },
-    { to: '/import', label: 'Import data', icon: IconUpload, active: path.startsWith('/import'), badge: inboxCount },
-    { to: '/quick-check', label: 'Quick check', icon: IconTestPipe, active: path.startsWith('/quick-check') },
-  ];
-  // reference data shared by every project
-  const library = [
-    { to: '/guidelines', label: 'Guidelines', icon: IconBook2, active: path.startsWith('/guidelines') },
-    { to: '/templates', label: 'Report templates', icon: IconTemplate, active: path.startsWith('/templates') },
-    { to: '/parameters', label: 'Parameters', icon: IconFlask, active: path.startsWith('/parameters') },
+    ...(calendar ? [{ to: '/calendar', label: 'Monitoring calendar', icon: IconCalendarMonth, active: path.startsWith('/calendar') }] : []),
+    // the Quick check is with importing: both start from a lab file
+    { to: '/import', label: 'Import data', icon: IconUpload, active: path.startsWith('/import') || path.startsWith('/quick-check'), badge: inboxCount },
+    // reference data shared by every project: guidelines, report templates and parameters
+    { to: '/guidelines', label: 'Library', icon: IconBook2, active: LIBRARY.some((l) => path.startsWith(l.to)) },
   ];
   const recent = [...(projects ?? [])].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, 8);
 
@@ -87,10 +116,6 @@ export function Shell() {
               variant="light"
               style={{ borderRadius: 8 }}
             />
-          ))}
-          <Divider my={6} label="Library" labelPosition="left" />
-          {library.map((n) => (
-            <NavLink key={n.to} component={Link} to={n.to} label={n.label} leftSection={<n.icon size={18} stroke={1.6} />} active={n.active} variant="light" style={{ borderRadius: 8 }} />
           ))}
         </AppShell.Section>
         <Divider my={6} label="Recent projects" labelPosition="left" />

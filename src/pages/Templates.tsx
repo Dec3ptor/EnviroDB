@@ -29,6 +29,7 @@ import { hasMixedPages, samePages } from '../components/report/sections';
 import { cmToPx, renderChartPng } from '../charts/render';
 import { exportReport, type ExportKind } from '../reports/export';
 import { SaveButton } from '../components/Unsaved';
+import { LIBRARY, SectionNav } from '../components/Shell';
 
 function Preview({ template, fill, onDoc, onProject }: { template: ReportTemplate; fill?: boolean; onDoc?: (d: ReportDoc) => void; onProject?: (p: ReportProject) => void }) {
   const data = useProject();
@@ -376,6 +377,7 @@ export function TemplatesPage() {
   const groups = REPORT_KINDS.map((k) => ({ ...k, list: (templates ?? []).filter((t) => kindOf(t) === k.kind).sort((a, b) => Number(!!a.builtIn) - Number(!!b.builtIn) || a.name.localeCompare(b.name)) })).filter((g) => g.list.length);
   return (
     <Stack>
+      <SectionNav items={LIBRARY} />
       <PageHeader
         title="Report templates"
         description="What goes in each kind of report, and how it looks. Make your own from a starter, from a document you’ve written before, or by duplicating one here – and delete the ones you don’t use. Share them with people outside your workspace as a file, and import theirs."

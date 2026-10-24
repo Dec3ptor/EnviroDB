@@ -748,3 +748,15 @@ body {
   text-decoration: line-through;
   opacity: 0.65;
 }
+
+/* a choice to click: a bordered row (Field work, and the like) */
+.edb-choice {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+}
+.edb-choice:hover {
+  background: var(--mantine-color-default-hover);
+}

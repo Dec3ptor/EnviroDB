@@ -4,9 +4,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { IconArrowRight, IconCalendarDue, IconFlask, IconShieldCheck } from '@tabler/icons-react';
 import { revivePeriod, useViewState } from '../../hooks/useViewState';
 import { useProject } from '../../hooks/useProjectData';
+import { useFeature } from '../../hooks/useFeatures';
 import { latestDate, projectTrends, trendRange } from '../../lib/projectTrends';
 import { CATEGORY_TEXT, categoryTone } from '../../lib/trends';
-import { ConsentViewControl, defaultPeriod, LevelBadge, PeriodPicker, RuleStatusBadge, StatTile, type PeriodValue } from '../../components/common';
+import { ConsentViewControl, defaultPeriod, LevelBadge, NoResultsYet, PeriodPicker, RuleStatusBadge, StatTile, type PeriodValue } from '../../components/common';
 import { cellClass } from '../../lib/highlight';
 import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResults, keyParameters, type CellFlag, type ConsentView } from '../../lib/analysis';
 import { reviewCell, reviewLines, samplingRounds, type ReviewCell } from '../../lib/latest';
@@ -26,8 +27,9 @@ function GettingStarted() {
     { done: rules.length > 0, label: 'Add consent limits / trigger levels', to: `${base}/compliance` },
     { done: schedules.length > 0 || obligations.length > 0, label: 'Add sampling frequency and reporting dates', to: `${base}/schedule` },
   ];
+  const ai = useFeature('ai');
   if (steps.every((s) => s.done)) return null;
-  const needsRules = !rules.length || (!schedules.length && !obligations.length);
+  const needsRules = ai && (!rules.length || (!schedules.length && !obligations.length));
   return (
     <Card>
       <Title order={4} mb="xs">
@@ -320,6 +322,14 @@ export function OverviewTab() {
     .filter((x) => x.n)
     .sort((a, b) => byDueDate(a.n!, b.n!) || a.o.name.localeCompare(b.o.name))[0];
 
+  // a new project: what's left to set up, and where its results go
+  if (!samples.length)
+    return (
+      <Stack gap="lg">
+        <GettingStarted />
+        <NoResultsYet projectId={project.id} shows="The latest results, how they compare with the consent, and the trends at each site show here" />
+      </Stack>
+    );
   return (
     <Stack gap="lg">
       <GettingStarted />

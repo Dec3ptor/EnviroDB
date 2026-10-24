@@ -237,7 +237,7 @@ there as they work and show up for the others within seconds.
   *Excel* downloads the calendar in the same layout. A row linked to a project shows the project's job
   code, PO, consents and folder (changing them on the calendar changes the project's), dots the months its
   results came in, lists its reports due, and can be filled in from the project's sampling schedules
-  (a schedule's mark and sampling window are set when editing it). Each project's *Schedule* tab shows its
+  (a schedule's mark and sampling window are set when editing it). Each project's *Overview → Sampling & reporting* shows its
   rows.
 - **Sampling rounds, from bottle to sent.** Select a month on the calendar and click *Round* (or Alt+R) to
   record how the round is going:
@@ -255,7 +255,7 @@ there as they work and show up for the others within seconds.
   - a planned month gone by and not sampled.
 
   The times are in *Settings → Sampling rounds*, for the whole team. *Sampling rounds in progress* lists
-  what each round needs next, on the calendar and each project's *Schedule* tab. *Actions to take* on the
+  what each round needs next, on the calendar and each project's *Overview → Sampling & reporting*. *Actions to take* on the
   dashboard includes them, with a button to tick the results sent. An import long after the sampling
   (old results brought in later) isn't taken as when the results came back.
 - **Lab inbox.** Lab files waiting to be imported are listed on the *Import data* page, the menu shows
@@ -276,7 +276,7 @@ there as they work and show up for the others within seconds.
   not listed again – unless the file changes (a lab's amended report), when it's back, marked *changed
   since imported*. EnviroDB looks every ten minutes while open, and when you come back to it. The files
   are read on your computer like any other import; nothing is uploaded.
-- **QA/QC checks.** Each project's *QA/QC* tab checks the results (the latest round, the last 12 months or
+- **QA/QC checks** (off until turned on for a project, in its Setup). A project's *Data → QA/QC* checks the results (the latest round, the last 12 months or
   everything) and lists what to look at – the tab shows how many, the import summary lists what a new file
   raised, and the dashboard's actions include it:
   - **Possible bottle swaps.** Two samples from the same round that each look like the other site's usual
@@ -307,7 +307,7 @@ there as they work and show up for the others within seconds.
   alike the results are – confirm it, or choose another. The report section **QA/QC** sums up the duplicates
   (with an RPD table), the blanks, the checks run and the decisions made, and says how many checks were still
   to be looked at.
-- **Trends.** Each project's *Trends* tab tests every site and analyte (the consent analytes unless you
+- **Trends.** A project's *Graphs → Trends* (once it has two years of results) tests every site and analyte (the consent analytes unless you
   choose) over the last 5 or 10 years or all the results, the way NZ's national water quality reporting does
   it (LAWA; Snelder & Fraser 2021):
   - Results are reduced to one value per month or quarter (the median), by how often the site is sampled.
@@ -329,7 +329,7 @@ there as they work and show up for the others within seconds.
   line**, the *Overview* lists the likely and very likely trends, and *Copy for AI input* includes the trend
   and upstream–downstream results. Report sections: **Trends** (a table up to the report's end, with a note on
   the method) and **Upstream vs downstream** (over the report's period, or the last 3 or 5 years).
-- **NPS-FM attribute bands.** Each project's *NPS-FM* tab grades its sites against the National Objectives
+- **NPS-FM attribute bands** (a feature to switch on). A project's *Compliance → NPS-FM* grades its sites against the National Objectives
   Framework bands of the NPS-FM 2020 (as amended) over the last 12 months, 3 or 5 years or all results:
   - Rivers: E. coli (all four statistics, the band the worst of them), nitrate and ammonia toxicity (ammonia
     adjusted to pH 8 with each sample's pH), periphyton (92nd or 83rd percentile), suspended fine sediment
@@ -391,7 +391,8 @@ there as they work and show up for the others within seconds.
     EnviroDB contacts nothing but its own address and the map services. Download the CSV and add it.
 - **Field mode for phones.** The phone isn't connected to the team's shared folder, so field work goes by a
   sheet out and a file back:
-  1. On the computer, *Field sheet for a phone* (in the project's ⋯ menu) makes the round's sheet: the sites (with
+  1. On the computer, *Field sheet for a phone* (the project's ⋯ menu → *Field work…*; field mode is switched
+     on in *Settings → Team → Features*) makes the round's sheet: the sites (with
      their locations, for directions), the readings to take (the project's field parameters to start with), last
      time's readings to compare with, and weather, flow, appearance and photos to note.
   2. Scan its **QR code** with the phone's camera – or send yourself the link, or save the sheet to the shared
@@ -415,14 +416,14 @@ there as they work and show up for the others within seconds.
      listed first, each to tick: added, a new site joins the project (with its kind, directions and place) and a
      moved site shows how far it moves; a new site with a code the project already has goes to that site instead,
      and the same file added twice doesn't add a site twice.
-  5. Or, with no file at all: on the computer, *Receive from a phone* (project ⋯ menu) shows a code and turns on
+  5. Or, with no file at all: on the computer, *Receive from a phone* (project ⋯ → *Field work…*) shows a code and turns on
      the webcam; on the phone, *Send the results → Send to the computer*, scan the code, then hold the phone up to
      the webcam. Where the phone and computer can reach each other over Wi-Fi, everything goes straight across in
      a second or two, photos at full size. Where the network keeps devices apart (as office networks often do),
      the phone flashes the results as a stream of QR codes the webcam reads instead: the readings in a second or
      two, then the photos (made smaller, about 60 KB each – a few seconds a photo). The phone remembers a network
      where Wi-Fi didn't work and goes to the flashing code sooner. Then the same review and *Add* as a file.
-  6. **Printable field codes** (project ⋯ menu) make a PDF of QR codes to take into the field instead of the
+  6. **Printable field codes** (project ⋯ → *Field work…*) make a PDF of QR codes to take into the field instead of the
      computer's screen: the **project's code** (a cover page, with how to use them and the sites) and a **code for
      each site** – as cards (4 a page, to laminate), labels (8 a page, for a post or the site folder) or a page
      each. They hold no dates, so they serve every round. Scanned with the phone's camera, or with *Scan a printed
@@ -442,7 +443,7 @@ there as they work and show up for the others within seconds.
      once set up, it opens straight after. *Make a new key* (after a phone is lost, say) locks new sheets and
      codes with the new one – set the phones up again and print the codes again; older keys are kept so what was
      locked with them still opens. Turned off, sheets and codes are plain again and the key is kept.
-- **Client data packs.** A project's *Data pack* tab makes one HTML file with its data for the client –
+- **Client data packs** (a feature to switch on). A project's *Reports → Client data pack* makes one HTML file with its data for the client –
   set up the way you want them to see it, and previewed as they will (on a computer or a phone):
   - **Sections** in the order you choose, each switched on or off and named as you like: a summary, the sites
     on a map (with a LINZ aerial photo taken when the pack is made), graphs (one at a time from a list, or every
@@ -483,13 +484,30 @@ there as they work and show up for the others within seconds.
 
 ## Finding your way around
 
+**EnviroDB starts with the essentials** and shows the rest as it's needed:
+
+- **Features the team uses** (*Settings → Team → Features*): the essentials – projects, importing, data,
+  graphs, maps, compliance, reports and the monitoring calendar – are on; field mode for phones, NPS-FM bands,
+  continuous data and rainfall, client data packs and the AI helpers are off until the team switches them on
+  (one at a time, or *Everything*). Switched off, a feature's menus, tabs and cards are hidden and its data is
+  kept; switched back on, it's all there again. Until the team chooses, the dashboard says where they went.
+- **QA/QC checks** are off for every project until turned on for it (its *Setup → What this project shows*, or
+  the button on *Data → QA/QC*). With them off, a project has no QA/QC view, no QA/QC actions on the dashboard
+  and no QA/QC panel after an import; the quality control sites and samples themselves are kept as before.
+- **Views show once they have something to show**: *Trends* after two years of results and eight sampling
+  days, *NPS-FM* in projects with surface water sites. *Setup → What this project shows* lists each one, on or
+  off and why. A new project's tabs say what goes in them, with the button to get there (*Import results*,
+  *Add your first rule* …).
+
 - **Dashboard** – your own arrangement of widgets: actions to take, this month's monitoring, deadlines,
-  exceedances, projects and more. **Monitoring calendar** – the team's monitoring schedule spreadsheet, linked to the projects.
-  **Import data** brings in lab results for any project.
-- **A project** has tabs for each job: *Overview* (latest results at a glance), *Data*, *Graphs*,
-  *Map*, *Compliance*, *Schedule* (reporting dates and sampling rounds), *Reports* and *Setup*. Its main
-  action, *Import results*, is top right; less common ones (*Copy for AI input* on a phone,
-  *Download project file*) are under ⋯.
+  exceedances, projects and more. **Monitoring calendar** – the team's monitoring schedule spreadsheet, linked to
+  the projects. **Import data** brings in lab results for any project; its *Quick check* tab checks a lab file
+  against guidelines with no project at all.
+- **A project** has seven tabs: *Overview* (latest results at a glance; *Sampling & reporting* for the sampling
+  schedules, reporting dates and rounds), *Data* (with *QA/QC* when it's on), *Graphs* (with *Trends*), *Map*,
+  *Compliance* (with *NPS-FM*), *Reports* (with the *Client data pack*) and *Setup*. A tab with more than one view
+  has a switch under the tabs. Its main action, *Import results*, is top right; less common ones (*Field work…*,
+  *Copy for AI input* on a phone, *Download project file*) are under ⋯. Links to the old tabs still work.
 - **Library** – reference data shared by every project: *Guidelines*, *Report templates* and
   *Parameters* (the analyte dictionary: names, units and the aliases used in lab files). A parameter
   can be deleted from the library, or removed from one project in its Setup tab (▸ *Display units or
@@ -504,16 +522,18 @@ there as they work and show up for the others within seconds.
   your projects are cleared, so the sections use the report's own. People's signature pictures are left out unless
   you tick to include them. A file from someone else is checked before anything is added – only what a template
   has, and pictures only as PNG or JPEG.
-- **Settings & backup** – your name, company, signature and letterhead, the app's colour (yours – pick
-  any colour for buttons, links and highlights), the workspace (who's connected) and backups. The **Saved** badge top right shows when your changes are in the folder and who else is
+- **Settings & backup** has three tabs. *You*: your name, signature, date format and the app's colour (yours –
+  pick any colour for buttons, links and highlights). *Team*: the features the team uses, the company, the
+  letterhead, the workspace (who's connected) and backups. *Advanced*: what counts as an overdue round, the
+  QA/QC limits, the field codes' team key and refreshing the built-in reference data. The **Saved** badge top right shows when your changes are in the folder and who else is
   connected.
 
 **Unsaved changes stand out.** A row or card you've changed but not saved turns yellow and its save
 button turns orange and pulses until you click it; closing the page with unsaved changes asks first.
 
 Everyday controls are on show. Settings most people leave alone are folded away with a summary of
-what they're set to (▸ *Assessment settings* and ▸ *Display units* in Setup, ▸ *Placeholders* in the
-template editor), and rarely used actions sit in ⋯ menus. Filters stay on one line: a picker shows
+what they're set to (▸ *More details* for a project, ▸ *Assessment settings* and ▸ *Display units* in Setup,
+▸ *More options* in the field sheet and field codes windows, ▸ *Placeholders* in the template editor), and rarely used actions sit in ⋯ menus. Filters stay on one line: a picker shows
 "US1, DP1" or "5 parameters" and opens a popup with every choice laid out in groups (field, physical,
 dissolved metals…; sites by type; guideline sets by family) – tick a whole group at once, search by
 any words ("zinc", "dissolved metals"; Enter ticks the first match), or use a quick pick such as

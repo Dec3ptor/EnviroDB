@@ -6,7 +6,7 @@ import { Anchor, Badge, Card, Group, Select, SegmentedControl, Stack, Table, Tex
 import { IconArrowDownRight, IconArrowUpRight, IconArrowRight } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { useViewState, reviveIds } from '../../hooks/useViewState';
-import { EmptyState, MoreOptions, ParamPicker, SitePicker, consentPresets } from '../../components/common';
+import { MoreOptions, NoResultsYet, ParamPicker, SitePicker, consentPresets } from '../../components/common';
 import { keyParameters } from '../../lib/analysis';
 import { compareSites, defaultPairs, latestDate, projectTrends, trendRange, TREND_SPANS, type SitePair, type TrendRow, type TrendSpan } from '../../lib/projectTrends';
 import { CATEGORY_TEXT, categoryTone, likelihood, likelihoodPct, likelihoodText, trendLinePoints, type SeasonChoice, type TrendResult } from '../../lib/trends';
@@ -51,7 +51,7 @@ export function TrendsTab() {
   const count = (tone: string) => assessed.filter((r) => categoryTone(r.result.category) === tone).length;
   const current = rows.find((r) => `${r.siteId}|${r.parameterId}` === picked) ?? assessed[0] ?? rows[0];
 
-  if (!data.samples.length) return <EmptyState title="No results yet">Import some results first.</EmptyState>;
+  if (!data.samples.length) return <NoResultsYet projectId={data.project.id} shows="Whether each analyte is rising or falling at each site shows here" />;
 
   return (
     <Stack gap="md">
