@@ -440,7 +440,7 @@ function CodeScanner({ want = 'link', onLink, onKey }: { want?: 'link' | 'key'; 
 // ------------------------------------------------------------ a sheet: its sites
 
 /** Readings taken only in bores. */
-const BORE_ONLY = /^(swl|gw-level|water-level-bgl|dtw|purge-vol)$/;
+const BORE_ONLY = /^(swl|gw-level|water-level-bgl|stick-up|bore-depth|dtw-bgl|gwl-rl|water-column|purge-vol)$/;
 
 /** A new monitoring point, added on the phone: it goes back to the computer with the results. */
 function AddSiteModal({ opened, sheet, onClose, onAdded }: { opened: boolean; sheet: FieldSheet; onClose: () => void; onAdded: (id: string) => void }) {
@@ -728,8 +728,10 @@ function SitePage() {
   // the site's record (a new one when there's none yet); the next site starts from its own
   useEffect(() => {
     if (saved === undefined || (saved && saved.visit.siteId !== siteId) || v?.siteId === siteId) return;
-    setV(saved?.visit ?? { siteId, values: {} });
-  }, [saved, siteId]);
+    // a new record starts from what the sheet filled in (a bore's stick-up and depth)
+    const preset = stored?.sheet.sites.find((s) => s.id === siteId)?.preset;
+    setV(saved?.visit ?? { siteId, values: { ...(preset ?? {}) } });
+  }, [saved, siteId, stored]);
   // every change is kept on the phone at once
   const update = (patch: Partial<FieldVisit>) => {
     setV((cur) => {
@@ -859,7 +861,7 @@ function SitePage() {
                 key={m.id}
                 size="md"
                 label={`${m.name}${m.unit ? ` · ${m.unit}` : ''}`}
-                description={last !== undefined ? `Last time ${last}${site.last?.date ? ` (${showDate(site.last.date)})` : ''}` : undefined}
+                description={[m.optional ? (site.preset?.[m.id] !== undefined ? 'Optional – from the bore’s details; change it if measured today' : 'Optional – if measured') : '', last !== undefined ? `Last time ${last}${site.last?.date ? ` (${showDate(site.last.date)})` : ''}` : ''].filter(Boolean).join(' · ') || undefined}
                 error={warn ?? undefined}
                 value={val ?? ''}
                 inputMode="decimal"

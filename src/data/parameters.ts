@@ -18,8 +18,13 @@ const field: P[] = [
   { id: 'salinity', name: 'Salinity', group: 'Field', unit: 'ppt', aliases: ['salinity'] },
   { id: 'clarity', name: 'Visual Clarity', group: 'Field', unit: 'm', aliases: ['visual clarity', 'clarity', 'black disc', 'black disc clarity', 'water clarity'] },
   { id: 'flow', name: 'Flow', group: 'Field', unit: 'L/s', aliases: ['flow', 'flow rate', 'discharge rate', 'discharge volume rate'] },
-  { id: 'swl', name: 'Groundwater Level', short: 'SWL', group: 'Field', unit: 'm', aliases: ['swl', 'static water level', 'groundwater level', 'water level', 'groundwater level (rl)', 'water level (rl)', 'swl (rl)', 'water level rl', 'reduced water level'], decimals: 2 },
-  { id: 'dtw', name: 'Depth to Water', short: 'DTW', group: 'Field', unit: 'm', aliases: ['depth to water', 'dtw', 'depth to groundwater', 'depth to water (toc)', 'depth to water below toc', 'dtw (m btoc)', 'depth to water (m btoc)', 'water level (m btoc)', 'm btoc', 'depth to water table', 'dtw (m)'], decimals: 2 },
+  // a bore: the static water level is what's measured (down from the top of the casing); the rest follows from it
+  { id: 'swl', name: 'Static Water Level', short: 'SWL', group: 'Field', unit: 'm', aliases: ['swl', 'static water level', 'groundwater level', 'water level', 'depth to water', 'dtw', 'depth to groundwater', 'depth to water (toc)', 'depth to water below toc', 'dtw (m btoc)', 'depth to water (m btoc)', 'water level (m btoc)', 'swl (m btoc)', 'm btoc', 'depth to water table', 'dtw (m)', 'swl (m)'], decimals: 2 },
+  { id: 'stick-up', name: 'Casing Stick-up', group: 'Field', unit: 'm', aliases: ['stick-up', 'stickup', 'stick up', 'upstand', 'upstand height', 'casing height', 'casing stick-up', 'toc above ground', 'casing above ground'], decimals: 2 },
+  { id: 'bore-depth', name: 'Bore Depth (measured)', group: 'Field', unit: 'm', aliases: ['bore depth', 'well depth', 'total depth', 'depth to bottom', 'measured depth', 'bore depth (measured)', 'depth of bore'], decimals: 2 },
+  { id: 'dtw-bgl', name: 'Depth to Water (below ground)', short: 'DTW (bgl)', group: 'Field', unit: 'm', aliases: ['depth to water (bgl)', 'depth to water (m bgl)', 'water level (bgl)', 'water level (m bgl)', 'swl (m bgl)', 'm bgl', 'depth to water below ground', 'dtw bgl', 'depth below ground'], decimals: 2 },
+  { id: 'gwl-rl', name: 'Groundwater Level (RL)', short: 'GWL (RL)', group: 'Field', unit: 'm', aliases: ['groundwater level (rl)', 'water level (rl)', 'swl (rl)', 'water level rl', 'reduced water level', 'gwl (m rl)', 'groundwater level (m rl)', 'groundwater rl', 'water level elevation', 'piezometric level'], decimals: 2 },
+  { id: 'water-column', name: 'Water Column', group: 'Field', unit: 'm', aliases: ['water column', 'water column height', 'saturated thickness', 'height of water column'], decimals: 2 },
   { id: 'purge-vol', name: 'Purge Volume', group: 'Field', unit: 'L', aliases: ['purge volume', 'volume purged', 'purged volume', 'purge vol', 'purge (l)', 'volume purged (l)'], decimals: 1 },
 ];
 
@@ -119,6 +124,14 @@ export const RETIRED_ALIASES: Record<string, string[]> = {};
 
 /** Short names built-in parameters had before, put right in existing libraries ("As (AS)" read as arsenic twice). */
 export const RETIRED_SHORT: Record<string, string> = {};
+
+/** Names built-in parameters had before, put right in existing libraries (the static water level was "Groundwater Level"). */
+export const RETIRED_NAMES: Record<string, string[]> = { swl: ['Groundwater Level'] };
+// the level's RL names went with it before 1.27; they belong to the groundwater level (RL)
+RETIRED_ALIASES.swl = ['groundwater level (rl)', 'water level (rl)', 'swl (rl)', 'water level rl', 'reduced water level'];
+
+/** Built-in parameters that no longer exist: taken out of a library when nothing uses them (1.24–1.26 had a separate "Depth to Water"). */
+export const RETIRED_PARAMETERS = ['dtw'];
 
 function metalParams(): P[] {
   const out: P[] = [];

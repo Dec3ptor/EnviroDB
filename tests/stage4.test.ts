@@ -5,7 +5,8 @@ import { createDemoProject } from '../src/db/demo';
 import { memoryFolder } from '../src/sync/folder';
 import { addSamplePhotos, photoDir, photoUrl, removeSamplePhoto, samplePhotoPaths, withPhotoPaths } from '../src/lib/photos';
 import { boreSummary, depthWarning, levelFromDepth } from '../src/lib/bore';
-import { planField } from '../src/db/field';
+import { commitField, makeSheet, planField } from '../src/db/field';
+import { checkSheet } from '../src/field/model';
 import type { FieldResults } from '../src/field/model';
 import { plansChanged, rememberLayouts, sheetFingerprint, withRememberedLayouts } from '../src/importers/layouts';
 import type { SheetGrid } from '../src/importers/workbook';
@@ -73,18 +74,46 @@ describe('stage 4: bores', () => {
     expect(boreSummary(bore)).toBe('TOC 123.46 m RL · stick-up 0.6 m · depth 12 m · screen 8–11 m');
   });
 
-  it('depth to water and purge volume are parameters of their own; a lab’s "depth to water" no longer means the level', () => {
+  it('the static water level is the reading; the level (RL), depth below ground, stick-up and depth are parameters of their own', () => {
     const index = buildParamIndex(BUILT_IN_PARAMETERS);
-    expect(matchParameter('Depth to water', index).parameterId).toBe('dtw');
-    expect(matchParameter('DTW (m bTOC)', index).parameterId).toBe('dtw');
-    expect(matchParameter('Purge volume', index).parameterId).toBe('purge-vol');
-    expect(matchParameter('Groundwater level', index).parameterId).toBe('swl');
+    expect(matchParameter('Depth to water', index).parameterId).toBe('swl');
+    expect(matchParameter('DTW (m bTOC)', index).parameterId).toBe('swl');
     expect(matchParameter('SWL', index).parameterId).toBe('swl');
+    expect(matchParameter('Groundwater level', index).parameterId).toBe('swl');
+    expect(matchParameter('Groundwater level (RL)', index).parameterId).toBe('gwl-rl');
+    expect(matchParameter('Depth to water below ground', index).parameterId).toBe('dtw-bgl');
+    expect(matchParameter('Upstand', index).parameterId).toBe('stick-up');
+    expect(matchParameter('Bore depth', index).parameterId).toBe('bore-depth');
+    expect(matchParameter('Purge volume', index).parameterId).toBe('purge-vol');
+    expect(BUILT_IN_PARAMETERS.some((p) => p.id === 'dtw')).toBe(false);
   });
 
-  it('field readings at a bore with a top-of-casing level bring the groundwater level with them', async () => {
+  it('the field sheet pre-fills a bore’s stick-up and depth as optional readings beside the SWL', async () => {
     const gw = (await db.sites.where('projectId').equals(projectId).filter((s) => s.code === 'GW1').first())!;
-    await db.sites.update(gw.id, { bore: { tocRl: 50, depth: 10 } });
+    await db.sites.update(gw.id, { bore: { tocRl: 50, stickUp: 0.6, depth: 10 } });
+    const b = await loadBundle(projectId);
+    const sheet = makeSheet(b, { round: 'Oct', date: '2026-10-25', siteIds: b.sites.map((s) => s.id), measureIds: ['temp', 'swl'], observe: { weather: true, flow: false, appearance: false, photos: false }, withLast: false });
+    expect(sheet.measures.map((m) => m.id)).toEqual(['temp', 'swl', 'stick-up', 'bore-depth']);
+    expect(sheet.measures.find((m) => m.id === 'stick-up')?.optional).toBe(true);
+    expect(sheet.measures.find((m) => m.id === 'swl')?.optional).toBeUndefined();
+    const bore = sheet.sites.find((s) => s.code === 'GW1')!;
+    expect(bore.preset).toEqual({ 'stick-up': 0.6, 'bore-depth': 10 });
+    expect(bore.note).toContain('Bore: TOC 50 m RL');
+    const stream = sheet.sites.find((s) => s.code === 'US1')!;
+    expect(stream.preset).toBeUndefined();
+    expect(stream.measures).toEqual(['temp']);
+    // the sheet survives its checks with them
+    const back = checkSheet(JSON.parse(JSON.stringify(sheet)));
+    expect(back.sites.find((s) => s.code === 'GW1')!.preset).toEqual({ 'stick-up': 0.6, 'bore-depth': 10 });
+    expect(back.measures.find((m) => m.id === 'bore-depth')!.optional).toBe(true);
+    // without the SWL, nothing of the bore's is asked for
+    const plain = makeSheet(b, { round: 'Oct', date: '2026-10-25', siteIds: [gw.id], measureIds: ['temp'], observe: { weather: true, flow: false, appearance: false, photos: false }, withLast: false });
+    expect(plain.measures.map((m) => m.id)).toEqual(['temp']);
+  });
+
+  it('an SWL from the field brings the depth below ground, the level and the water column with it', async () => {
+    const gw = (await db.sites.where('projectId').equals(projectId).filter((s) => s.code === 'GW1').first())!;
+    await db.sites.update(gw.id, { bore: { tocRl: 50, depth: 10 } }); // no stick-up on the site yet
     const b = await loadBundle(projectId);
     const results: FieldResults = {
       app: 'EnviroDB',
@@ -93,21 +122,48 @@ describe('stage 4: bores', () => {
       sheet: { id: `${projectId}:2026-10-25`, project: { id: projectId, name: 'Demo' }, round: 'Oct', date: '2026-10-25' },
       sent: '2026-10-25T10:00',
       visits: [
-        { siteId: gw.id, values: { dtw: 3.25, 'purge-vol': 12 }, done: true },
+        { siteId: gw.id, values: { swl: 3.25, 'stick-up': 0.75, 'purge-vol': 12 }, done: true },
         { siteId: b.sites.find((s) => s.code === 'US1')!.id, values: { temp: 14.2 }, done: true },
       ],
     } as FieldResults;
     const plan = planField(b, results);
     const row = plan.rows.find((r) => r.site.id === gw.id)!;
-    const swl = row.values.find((v) => v.param.id === 'swl');
-    expect(swl?.value).toBe(46.75);
-    expect(swl?.derived).toMatch(/from 3.25 m below TOC 50 m RL/);
-    expect(row.values.find((v) => v.param.id === 'purge-vol')?.value).toBe(12);
+    const of = (id: string) => row.values.find((v) => v.param.id === id);
+    expect(of('gwl-rl')?.value).toBe(46.75);
+    expect(of('gwl-rl')?.derived).toMatch(/TOC 50 m RL less SWL 3.25 m/);
+    expect(of('dtw-bgl')?.value).toBe(2.5); // the phone's stick-up
+    expect(of('water-column')?.value).toBe(6.75); // the site's depth
+    expect(of('purge-vol')?.value).toBe(12);
+    expect(of('swl')?.derived).toBeUndefined();
     // too deep: warned, not stopped
-    const deep = planField(b, { ...results, visits: [{ siteId: gw.id, values: { dtw: 11 }, done: true }] } as FieldResults);
-    expect(deep.rows[0].values.find((v) => v.param.id === 'dtw')?.warning).toMatch(/Deeper than the well/);
-    // no level at a stream
+    const deep = planField(b, { ...results, visits: [{ siteId: gw.id, values: { swl: 11 }, done: true }] } as FieldResults);
+    expect(deep.rows[0].values.find((v) => v.param.id === 'swl')?.warning).toMatch(/Deeper than the well/);
+    // nothing of the bore's at a stream
     expect(plan.rows.find((r) => r.site.code === 'US1')!.values.map((v) => v.param.id)).toEqual(['temp']);
+    // without a top-of-casing level: no RL, the rest still
+    await db.sites.update(gw.id, { bore: { depth: 10 } });
+    const noToc = planField(await loadBundle(projectId), results);
+    const ids = noToc.rows.find((r) => r.site.id === gw.id)!.values.map((v) => v.param.id);
+    expect(ids).toContain('dtw-bgl');
+    expect(ids).toContain('water-column');
+    expect(ids).not.toContain('gwl-rl');
+    // adding the results: the site learns the stick-up it didn't have; the worked-out results carry a note
+    const res = await commitField(projectId, noToc, 'phone.json');
+    expect(res.results).toBeGreaterThanOrEqual(5);
+    expect((await db.sites.get(gw.id))!.bore).toEqual({ depth: 10, stickUp: 0.75 });
+    const derived = await db.results.where('projectId').equals(projectId).filter((r) => r.parameterId === 'dtw-bgl' && r.siteId === gw.id).first();
+    expect(derived?.comment).toMatch(/^Worked out from SWL 3.25 m less the stick-up 0.75 m/);
+    await db.sites.update(gw.id, { bore: { tocRl: 50, stickUp: 0.6, depth: 10 } });
+  });
+
+  it('a library that had the separate "Depth to Water" loses it when unused, and the level’s old name is put right', async () => {
+    await db.parameters.put({ id: 'dtw', name: 'Depth to Water', group: 'Field', unit: 'm', aliases: ['depth to water'], builtIn: true });
+    await db.parameters.update('swl', { name: 'Groundwater Level' });
+    await ensureBuiltIns();
+    expect(await db.parameters.get('dtw')).toBeUndefined();
+    expect((await db.parameters.get('swl'))!.name).toBe('Static Water Level');
+    expect((await db.parameters.get('swl'))!.aliases).not.toContain('reduced water level');
+    expect((await db.parameters.get('gwl-rl'))!.aliases).toContain('reduced water level');
   });
 });
 

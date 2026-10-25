@@ -26,7 +26,7 @@ import type {
   AuditEntry,
   ImportLayout,
 } from './types';
-import { BUILT_IN_PARAMETERS, splitPhysicalAndField, RETIRED_ALIASES, RETIRED_SHORT } from '../data/parameters';
+import { BUILT_IN_PARAMETERS, splitPhysicalAndField, RETIRED_ALIASES, RETIRED_SHORT, RETIRED_NAMES, RETIRED_PARAMETERS } from '../data/parameters';
 import { BUILT_IN_GUIDELINES } from '../data/guidelines';
 import { BUILT_IN_TEMPLATES, QUICK_CHECK_TEMPLATE, QUICK_CHECK_TEMPLATE_ID } from '../data/templates';
 import { captureMiddleware, markUncaptured } from '../sync/capture';
@@ -149,7 +149,7 @@ const LEGACY_FIELD_GROUP = 'Physical & field';
 export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<void> {
   await migrateSettings(database);
   await forgetUnsharedSync(database);
-  await database.transaction('rw', [database.parameters, database.guidelineSets, database.templates, database.syncState], async (tx) => {
+  await database.transaction('rw', [database.parameters, database.guidelineSets, database.templates, database.syncState, database.results], async (tx) => {
     markUncaptured(tx.idbtrans); // the same in every browser: not a change to share
     const existing = new Map((await database.parameters.toArray()).map((p) => [p.id, p]));
     // built-in parameters someone deleted (here or in the workspace) stay deleted
@@ -167,8 +167,9 @@ export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<voi
         // the user's names, units and groups are kept; the old combined group is split, and the built-in order followed
         const group = cur.group === LEGACY_FIELD_GROUP ? p.group : cur.group;
         const short = RETIRED_SHORT[p.id] && cur.short === RETIRED_SHORT[p.id] ? p.short : cur.short;
-        if (short !== cur.short || aliases.join('\u0001') !== cur.aliases.join('\u0001') || cur.hardnessExponent !== p.hardnessExponent || !cur.builtIn || group !== cur.group || cur.order !== p.order) {
-          toPut.push({ ...cur, short, aliases, hardnessExponent: p.hardnessExponent, builtIn: true, group, order: p.order });
+        const name = RETIRED_NAMES[p.id]?.includes(cur.name) ? p.name : cur.name;
+        if (name !== cur.name || short !== cur.short || aliases.join('\u0001') !== cur.aliases.join('\u0001') || cur.hardnessExponent !== p.hardnessExponent || !cur.builtIn || group !== cur.group || cur.order !== p.order) {
+          toPut.push({ ...cur, name, short, aliases, hardnessExponent: p.hardnessExponent, builtIn: true, group, order: p.order });
         }
       }
       existing.delete(p.id);
@@ -176,6 +177,11 @@ export async function ensureBuiltIns(database: EnviroDatabase = db): Promise<voi
     // the user's own parameters in the old "Physical & field" group go to Field or Physical
     for (const cur of existing.values()) if (cur.group === LEGACY_FIELD_GROUP) toPut.push({ ...cur, group: splitPhysicalAndField(cur) });
     if (toPut.length) await database.parameters.bulkPut(toPut);
+    // a built-in that no longer exists goes, unless results use it (then it stays as the user's own)
+    for (const id of RETIRED_PARAMETERS) {
+      const cur = existing.get(id);
+      if (cur?.builtIn && !(await database.results.filter((r) => r.parameterId === id).count())) await database.parameters.delete(id);
+    }
     await database.guidelineSets.bulkPut(BUILT_IN_GUIDELINES);
     // built-in templates someone took off the list stay off it (until put back)
     const tplStates = await database.syncState.bulkGet(BUILT_IN_TEMPLATES.map((t) => rowKey('templates', t.id)));

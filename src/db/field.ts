@@ -15,7 +15,7 @@ import { recordRound, touchProject } from './repo';
 import { currentWorkspaceFolder } from '../sync/workspace';
 import { isQcSite } from '../lib/qc';
 import { logAudit } from './audit';
-import { boreSummary, depthWarning, hasBore, levelFromDepth } from '../lib/bore';
+import { boreSummary, depthBelowGround, depthWarning, hasBore, levelFromDepth, waterColumn } from '../lib/bore';
 import { safeName } from '../lib/photos';
 
 /** Field readings usually taken: the project's field parameters with results, or the common four. */
@@ -26,7 +26,9 @@ export function defaultMeasures(b: Pick<ProjectBundle, 'params' | 'index'>): str
 }
 
 /** Readings taken only in bores. */
-const GROUNDWATER_ONLY = new Set(['swl', 'gw-level', 'water-level-bgl', 'dtw', 'purge-vol']);
+const GROUNDWATER_ONLY = new Set(['swl', 'gw-level', 'water-level-bgl', 'stick-up', 'bore-depth', 'dtw-bgl', 'gwl-rl', 'water-column', 'purge-vol']);
+/** Readings that go with the static water level at a bore: optional, filled in from the bore's details, kept when measured. */
+const WITH_SWL = ['stick-up', 'bore-depth'] as const;
 
 export interface SheetChoices {
   round: string;
@@ -41,8 +43,12 @@ export interface SheetChoices {
 
 /** A round's field sheet: the same sheet (by project and day) when made again, so a phone keeps what it recorded. */
 export function makeSheet(b: ProjectBundle, c: SheetChoices): FieldSheet {
-  const params = c.measureIds.map((id) => b.paramMap.get(id)).filter((p): p is Parameter => !!p);
-  const measures: FieldMeasure[] = params.map((p) => ({ id: p.id, name: p.name, unit: unitLabel(p.unit), dp: p.decimals }));
+  const ids = [...c.measureIds];
+  // a static water level brings the stick-up and bore depth with it (optional on the phone, pre-filled from the bore)
+  if (ids.includes('swl')) for (const id of WITH_SWL) if (!ids.includes(id) && b.paramMap.has(id)) ids.push(id);
+  const params = ids.map((id) => b.paramMap.get(id)).filter((p): p is Parameter => !!p);
+  const optional = new Set<string>(ids.includes('swl') ? WITH_SWL : []);
+  const measures: FieldMeasure[] = params.map((p) => ({ id: p.id, name: p.name, unit: unitLabel(p.unit), dp: p.decimals, ...(optional.has(p.id) ? { optional: true } : {}) }));
   const sites = c.siteIds.map((id) => b.siteMap.get(id)).filter((s): s is Site => !!s);
   return {
     app: FIELD_APP,
@@ -82,7 +88,13 @@ export function makeSheet(b: ProjectBundle, c: SheetChoices): FieldSheet {
       const measures = mine.length < params.length ? mine.map((p) => p.id) : undefined;
       // a bore's particulars go with its directions: what the depth is measured from, how deep the well is
       const note = [s.description, hasBore(s.bore) ? `Bore: ${boreSummary(s.bore)}` : ''].filter(Boolean).join('\n') || undefined;
-      return { id: s.id, code: s.code, name: s.name || undefined, ...(ll ? { lat: Number(ll.lat.toFixed(6)), lng: Number(ll.lng.toFixed(6)) } : {}), note, last, ...(measures ? { measures } : {}) };
+      // the bore's stick-up and depth, filled in on the phone to be checked or changed
+      const preset: Record<string, number> = {};
+      if (s.type === 'Groundwater' && ids.includes('swl')) {
+        if (s.bore?.stickUp !== undefined && b.paramMap.has('stick-up')) preset['stick-up'] = s.bore.stickUp;
+        if (s.bore?.depth !== undefined && b.paramMap.has('bore-depth')) preset['bore-depth'] = s.bore.depth;
+      }
+      return { id: s.id, code: s.code, name: s.name || undefined, ...(ll ? { lat: Number(ll.lat.toFixed(6)), lng: Number(ll.lng.toFixed(6)) } : {}), note, last, ...(measures ? { measures } : {}), ...(Object.keys(preset).length ? { preset } : {}) };
     }),
     measures,
     observe: c.observe,
@@ -190,20 +202,26 @@ export function planField(b: Pick<ProjectBundle, 'siteMap' | 'paramMap' | 'proje
       continue;
     }
     const values: FieldRow['values'] = [];
+    // the bore as measured today: the phone's stick-up and depth over the site's
+    const bore = { ...(site.bore ?? {}), ...(v.values['stick-up'] !== undefined ? { stickUp: v.values['stick-up'] } : {}), ...(v.values['bore-depth'] !== undefined ? { depth: v.values['bore-depth'] } : {}) };
     for (const [pid, value] of Object.entries(v.values)) {
       const param = b.paramMap.get(pid);
       if (!param) {
         unknownParams.add(pid);
         continue;
       }
-      values.push({ param, value, warning: (pid === 'dtw' ? depthWarning(site.bore, value) : null) ?? readingWarning({ id: pid, name: param.name, unit: param.unit }, value) });
+      values.push({ param, value, warning: (pid === 'swl' ? depthWarning(bore, value) : null) ?? readingWarning({ id: pid, name: param.name, unit: param.unit }, value) });
     }
-    // a depth to water at a bore with a top-of-casing level: the groundwater level too
-    const dtw = values.find((x) => x.param.id === 'dtw');
-    const swl = b.paramMap.get('swl');
-    if (dtw && swl && !values.some((x) => x.param.id === 'swl')) {
-      const level = levelFromDepth(site.bore, dtw.value);
-      if (level !== null) values.push({ param: swl, value: level, warning: null, derived: `from ${dtw.value} m below TOC ${site.bore!.tocRl} m RL` });
+    // from the static water level: depth below ground (with the stick-up), the level (with the top of casing), the water column (with the depth)
+    const swl = values.find((x) => x.param.id === 'swl');
+    if (swl) {
+      const add = (id: string, value: number | null, how: string) => {
+        const param = b.paramMap.get(id);
+        if (param && value !== null && !values.some((x) => x.param.id === id)) values.push({ param, value, warning: null, derived: how });
+      };
+      add('dtw-bgl', depthBelowGround(bore, swl.value), `from SWL ${swl.value} m less the stick-up ${bore.stickUp} m`);
+      add('gwl-rl', levelFromDepth(bore, swl.value), `from TOC ${bore.tocRl} m RL less SWL ${swl.value} m`);
+      add('water-column', waterColumn(bore, swl.value), `from the bore depth ${bore.depth} m less SWL ${swl.value} m`);
     }
     const date = v.time && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v.time) ? v.time.slice(0, 16) : results.sheet.date;
     if (values.length || v.notes || v.weather || v.flow || v.appearance || v.photos?.length) rows.push({ visit: v, site, date, values });
@@ -295,6 +313,14 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
     for (const l of setPlaces) {
       const { easting, northing } = roundedNztm(l.lat, l.lng);
       await db.sites.update(l.site.id, { easting, northing });
+    }
+    // a bore's stick-up or depth measured in the field fills in what the site didn't have
+    for (const row of plan.rows) {
+      const su = row.values.find((x) => x.param.id === 'stick-up')?.value;
+      const dp = row.values.find((x) => x.param.id === 'bore-depth')?.value;
+      const had = row.site.bore ?? {};
+      const bore = { ...had, ...(su !== undefined && had.stickUp === undefined ? { stickUp: su } : {}), ...(dp !== undefined && had.depth === undefined ? { depth: dp } : {}) };
+      if (JSON.stringify(bore) !== JSON.stringify(had)) await db.sites.update(row.site.id, { bore });
     }
     const qcSites = new Set((await db.sites.where('projectId').equals(projectId).toArray()).filter((s) => isQcSite(s)).map((s) => s.id));
     const existing = await db.samples.where('projectId').equals(projectId).toArray();

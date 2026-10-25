@@ -17,6 +17,8 @@ export interface FieldMeasure {
   dp?: number;
   min?: number;
   max?: number;
+  /** Fill it in if measured (a bore's stick-up or depth); pre-filled from the site's details. */
+  optional?: boolean;
 }
 
 export interface FieldSite {
@@ -31,6 +33,8 @@ export interface FieldSite {
   last?: { date: string; values: Record<string, number> };
   /** The readings taken here, when not all of them (a bore's water level isn't taken at a stream). */
   measures?: string[];
+  /** Readings filled in before the visit (a bore's stick-up and depth from its details), to check or change. */
+  preset?: Record<string, number>;
   /** A site added on the phone: a new monitoring point, with its kind (Surface water, Groundwater …). */
   added?: boolean;
   type?: string;
@@ -223,9 +227,10 @@ export function checkSheet(x: unknown): FieldSheet {
   const sites = (Array.isArray(x.sites) ? x.sites : []).filter(isObj).slice(0, 200).map((s): FieldSite => {
     const last = isObj(s.last) && isObj(s.last.values) ? { date: str(s.last.date, 20) ?? '', values: Object.fromEntries(Object.entries(s.last.values).filter(([, v]) => num(v) !== undefined).slice(0, 50)) as Record<string, number> } : undefined;
     const measures = Array.isArray(s.measures) ? s.measures.filter((m): m is string => typeof m === 'string').slice(0, 40) : undefined;
-    return { id: str(s.id, 80) ?? '', code: str(s.code, 40) ?? '?', name: str(s.name, 120), lat: num(s.lat), lng: num(s.lng), note: str(s.note, 1000), last, ...(measures ? { measures } : {}) };
+    const preset = isObj(s.preset) ? (Object.fromEntries(Object.entries(s.preset).filter(([, v]) => num(v) !== undefined).slice(0, 20)) as Record<string, number>) : undefined;
+    return { id: str(s.id, 80) ?? '', code: str(s.code, 40) ?? '?', name: str(s.name, 120), lat: num(s.lat), lng: num(s.lng), note: str(s.note, 1000), last, ...(measures ? { measures } : {}), ...(preset && Object.keys(preset).length ? { preset } : {}) };
   });
-  const measures = (Array.isArray(x.measures) ? x.measures : []).filter(isObj).slice(0, 40).map((m): FieldMeasure => ({ id: str(m.id, 80) ?? '', name: str(m.name, 120) ?? '', unit: str(m.unit, 30) ?? '', dp: num(m.dp), min: num(m.min), max: num(m.max) }));
+  const measures = (Array.isArray(x.measures) ? x.measures : []).filter(isObj).slice(0, 40).map((m): FieldMeasure => ({ id: str(m.id, 80) ?? '', name: str(m.name, 120) ?? '', unit: str(m.unit, 30) ?? '', dp: num(m.dp), min: num(m.min), max: num(m.max), ...(m.optional ? { optional: true } : {}) }));
   const o = isObj(x.observe) ? x.observe : {};
   return {
     app: FIELD_APP,

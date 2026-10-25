@@ -11,6 +11,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.27.0',
+    date: '2026-10-25',
+    title: 'Bores: everything from the SWL',
+    items: [
+      'The static water level (SWL, down from the top of the casing) is the reading; EnviroDB works the rest out from it: depth to water below ground (with the casing stick-up), groundwater level RL (with the top-of-casing level) and the water column (with the bore depth). Each worked-out result says how.',
+      'In field mode, a sheet that asks for the SWL also offers the stick-up and bore depth as optional readings, pre-filled from the bore’s details to check or change on the day; a site without them learns them from the first visit that measures them.',
+      'The separate “Depth to Water” parameter added in 1.24 is gone (it was the SWL by another name): depth-to-water columns match the SWL again, and a library that had it loses it when nothing uses it. New parameters: Groundwater Level (RL), Depth to Water (below ground), Casing Stick-up, Bore Depth (measured), Water Column.',
+    ],
+  },
+  {
     version: '1.26.0',
     date: '2026-10-25',
     title: 'Search everything, and the keyboard',

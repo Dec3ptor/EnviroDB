@@ -21,7 +21,19 @@ export function boreSummary(b: BoreDetails | undefined): string {
   return parts.join(' · ');
 }
 
-/** Groundwater level (m RL) from a depth to water below the top of casing; null without a top-of-casing level. */
+/** Depth to water below the ground (m) from the static water level below the top of casing, given the stick-up. */
+export function depthBelowGround(b: BoreDetails | undefined, swl: number): number | null {
+  if (!b || b.stickUp === undefined || !Number.isFinite(swl)) return null;
+  return Math.round((swl - b.stickUp) * 1000) / 1000;
+}
+
+/** The water standing in the bore (m): its depth less the static water level. */
+export function waterColumn(b: BoreDetails | undefined, swl: number): number | null {
+  if (!b || b.depth === undefined || !Number.isFinite(swl)) return null;
+  return Math.round((b.depth - swl) * 1000) / 1000;
+}
+
+/** Groundwater level (m RL) from a static water level below the top of casing; null without a top-of-casing level. */
 export function levelFromDepth(b: BoreDetails | undefined, depthToWater: number): number | null {
   if (!b || b.tocRl === undefined || !Number.isFinite(depthToWater)) return null;
   return Math.round((b.tocRl - depthToWater) * 1000) / 1000;
@@ -30,7 +42,7 @@ export function levelFromDepth(b: BoreDetails | undefined, depthToWater: number)
 /** Something to check a depth-to-water reading against: deeper than the well is a slip of the thumb. */
 export function depthWarning(b: BoreDetails | undefined, depthToWater: number): string | null {
   if (!b) return null;
-  if (depthToWater < 0) return 'A depth to water can’t be negative (artesian? note it).';
+  if (depthToWater < 0) return 'A water level below the casing can’t be negative (artesian? note it).';
   if (b.depth !== undefined && depthToWater > b.depth) return `Deeper than the well (${m(b.depth)} m).`;
   return null;
 }

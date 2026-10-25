@@ -141,9 +141,11 @@ there as they work and show up for the others within seconds.
 - **Photos.** A sample's details show the photos taken on the phone in field mode, from the shared folder's *Field
   photos*; add photos from your computer there too. The pictures stay in the shared folder, never in the database.
 - **Bores.** A groundwater site keeps its bore's particulars (*Setup* → the droplet beside the site): top-of-casing
-  level, stick-up, well depth, screen, diameter. *Depth to water* and *Purge volume* are field readings of their
-  own; with a top-of-casing level, a depth to water from the field brings the *Groundwater Level* with it (RL = TOC −
-  depth), and a depth deeper than the well is flagged.
+  level, stick-up, depth, screen, diameter. The *Static Water Level* (down from the top of the casing) is the
+  reading; EnviroDB works the rest out: *Depth to Water (below ground)* with the stick-up, *Groundwater Level (RL)*
+  with the top-of-casing level, *Water Column* with the depth – each noting how. In field mode the stick-up and
+  bore depth are optional readings pre-filled from the bore, and a site learns them from the first visit that
+  measures them. An SWL deeper than the bore is flagged.
 - **Teach EnviroDB a file.** When you put a sheet's layout right on import, tick *Teach EnviroDB this layout* and
   the next file of the same shape – the words in its first rows, not the numbers – uses it by itself, for the whole
   team. The Layout step says when a taught layout is in use, with *Forget it*.

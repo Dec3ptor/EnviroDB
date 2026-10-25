@@ -261,7 +261,7 @@ describe('copy for AI input', () => {
     // one CSV row per sample, every row with the same number of columns
     const csv = t.slice(t.indexOf('## Results'));
     const lines = csv.slice(csv.indexOf('```csv') + 7, csv.lastIndexOf('```')).trim().split('\n');
-    expect(lines[0].startsWith('site,date,pH (field) (pH units),Groundwater Level (m),pH (pH units),')).toBe(true); // field measurements first
+    expect(lines[0].startsWith('site,date,pH (field) (pH units),Static Water Level (m),pH (pH units),')).toBe(true); // field measurements first
     expect(lines.length - 1).toBe(pack.samples);
     const cols = lines[0].split(',').length;
     expect(lines.every((l) => l.split(',').length === cols)).toBe(true);
