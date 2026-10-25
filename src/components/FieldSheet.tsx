@@ -280,7 +280,7 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded }: { res
                     {params.map((p) => {
                       const v = r.values.find((x) => x.param.id === p.id);
                       return (
-                        <Table.Td key={p.id} ta="right" c={v?.warning ? 'orange' : undefined} title={v?.warning ?? undefined}>
+                        <Table.Td key={p.id} ta="right" c={v?.warning ? 'orange' : v?.derived ? 'dimmed' : undefined} title={v?.warning ?? (v?.derived ? `Worked out ${v.derived}` : undefined)} fs={v?.derived ? 'italic' : undefined}>
                           {v ? fmtNum(v.value) : '–'}
                         </Table.Td>
                       );

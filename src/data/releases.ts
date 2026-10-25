@@ -11,6 +11,17 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.24.0',
+    date: '2026-10-25',
+    title: 'Photos, bores, taught layouts and a workbook',
+    items: [
+      'Photos in the app: a sample’s details show the photos taken on the phone in field mode (from the shared folder’s Field photos), bigger on click; add photos from your computer there too, and take one off the sample. The pictures stay in the shared folder, never in the database.',
+      'Bores: a groundwater site keeps its bore’s particulars (Setup → the droplet beside the site) – top-of-casing level, stick-up, well depth, screen, diameter. Depth to water and purge volume are field readings of their own; with a top-of-casing level, a depth to water from the field brings the groundwater level with it (RL = TOC − depth), and a depth deeper than the well is flagged. The phone’s site notes carry the bore’s particulars.',
+      'Teach EnviroDB this file: when you put a sheet’s layout right on import (its header row, which column is the site or the date), tick “Teach EnviroDB this layout” and the next file of the same shape – the words in its first rows, not the numbers – uses it by itself, for the whole team. The Layout step says when a taught layout is in use, with Forget it.',
+      'Project workbook: one Excel file of the whole project – a sheet for each site with the dates down and the parameters across (units under the names, comments as cell notes), the sites with their bore details, the limits and triggers – from Data → Export or Setup → Workbook.',
+    ],
+  },
+  {
     version: '1.23.0',
     date: '2026-10-25',
     title: 'Easing in',

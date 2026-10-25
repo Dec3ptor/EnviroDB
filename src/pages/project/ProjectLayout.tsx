@@ -1,6 +1,6 @@
 import { InboxPanel } from '../../components/InboxPanel';
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
-import { Badge, Button, Center, Group, Loader, Menu, Modal, SegmentedControl, Stack, Tabs, Text, ThemeIcon, UnstyledButton, ActionIcon } from '@mantine/core';
+import { Box, Badge, Button, Center, Group, Loader, Menu, Modal, SegmentedControl, Stack, Tabs, Text, ThemeIcon, UnstyledButton, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconSparkles, IconMap, IconDeviceMobile, IconDeviceMobileDown, IconQrcode } from '@tabler/icons-react';
 import { ProjectDataProvider, useProject } from '../../hooks/useProjectData';
@@ -179,9 +179,15 @@ function Header() {
               </Tabs.Tab>
             );
           })}
+          {/* a tab with one view: its help sits at the end of the tab row rather than on a line of its own */}
+          {switchViews.length <= 1 && current !== 'import' && current !== 'consent-setup' && HELP[current] && (
+            <Box ml="auto" pl="xs" style={{ alignSelf: 'center', flexShrink: 0 }}>
+              <HelpTip help={HELP[current]} size="xs" />
+            </Box>
+          )}
         </Tabs.List>
       </Tabs>
-      {current !== 'import' && current !== 'consent-setup' && (
+      {current !== 'import' && current !== 'consent-setup' && switchViews.length > 1 && (
         <Group gap={4} wrap="nowrap">
           {switchViews.length > 1 && (
         <SegmentedControl

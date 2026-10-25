@@ -24,6 +24,7 @@ import type {
   Settings,
   Site, InboxFile,
   AuditEntry,
+  ImportLayout,
 } from './types';
 import { BUILT_IN_PARAMETERS, splitPhysicalAndField, RETIRED_ALIASES, RETIRED_SHORT } from '../data/parameters';
 import { BUILT_IN_GUIDELINES } from '../data/guidelines';
@@ -62,6 +63,7 @@ export class EnviroDatabase extends Dexie {
   series!: Table<ContinuousSeries, string>;
   seriesDays!: Table<SeriesYear, string>;
   audit!: Table<AuditEntry, string>;
+  layouts!: Table<ImportLayout, string>;
   meta!: Table<MetaRecord, string>;
   // the shared workspace: what changed when (syncState), what is still to be written to the folder (syncDirty),
   // colleagues' files already read (syncFiles) and this browser's own details (syncLocal)
@@ -121,13 +123,16 @@ export class EnviroDatabase extends Dexie {
     this.version(10).stores({
       audit: 'id, projectId, at',
     });
+    this.version(11).stores({
+      layouts: 'id, fingerprint',
+    });
   }
 }
 
 export const db = new EnviroDatabase();
 
 export const DATA_TABLES = [
-  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa', 'conditions', 'assessments', 'issues', 'archive', 'series', 'seriesDays', 'audit',
+  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa', 'conditions', 'assessments', 'issues', 'archive', 'series', 'seriesDays', 'audit', 'layouts',
 ] as const;
 export type DataTable = (typeof DATA_TABLES)[number];
 

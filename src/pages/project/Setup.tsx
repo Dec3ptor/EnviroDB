@@ -3,7 +3,9 @@ import { ActionIcon, Anchor, Autocomplete, Badge, Box, Button, Card, Group, Moda
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { Link, useNavigate } from 'react-router-dom';
-import { IconArchive, IconArrowDown, IconArrowUp, IconHistory, IconPlus, IconTrash, IconListDetails, IconSparkles, IconMap } from '@tabler/icons-react';
+import { IconArchive, IconArrowDown, IconArrowUp, IconHistory, IconPlus, IconTrash, IconListDetails, IconSparkles, IconMap, IconFileSpreadsheet } from '@tabler/icons-react';
+import { BoreButton } from '../../components/BoreDetails';
+import { exportProjectWorkbook } from '../../reports/workbook';
 import { useProject } from '../../hooks/useProjectData';
 import { useEditable } from '../../hooks/useEditable';
 import { ProjectForm } from '../Projects';
@@ -68,6 +70,7 @@ function SiteRow({ site, index, count, onMove }: { site: Site; index: number; co
       </Table.Td>
       <Table.Td>
         <Group gap={4} wrap="nowrap">
+          {s.type === 'Groundwater' && <BoreButton site={s} onSave={(bore) => saveSite({ ...s, bore }, site).then(reset)} />}
           <SaveIcon dirty={dirty} disabled={!s.code.trim()} onClick={() => saveSite(s, site).then(reset)} label="Save site" />
           <ActionIcon
             variant="subtle"
@@ -407,6 +410,13 @@ export function SetupTab() {
             </Text>
           </div>
           <Group gap="xs">
+            {sites.length > 0 && (
+              <Tooltip label="An Excel workbook of the whole project: a sheet for each site (dates down, parameters across), the sites, the limits and triggers" multiline maw={320} withArrow>
+                <Button variant="default" leftSection={<IconFileSpreadsheet size={16} />} onClick={() => exportProjectWorkbook(data).catch((e) => notifications.show({ color: 'red', message: (e as Error).message }))}>
+                  Workbook
+                </Button>
+              </Tooltip>
+            )}
             <Button variant="default" component={Link} to={`/projects/${project.id}/map`} leftSection={<IconMap size={16} />}>
               Place on the map
             </Button>

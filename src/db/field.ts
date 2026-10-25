@@ -15,6 +15,8 @@ import { recordRound, touchProject } from './repo';
 import { currentWorkspaceFolder } from '../sync/workspace';
 import { isQcSite } from '../lib/qc';
 import { logAudit } from './audit';
+import { boreSummary, depthWarning, hasBore, levelFromDepth } from '../lib/bore';
+import { safeName } from '../lib/photos';
 
 /** Field readings usually taken: the project's field parameters with results, or the common four. */
 export function defaultMeasures(b: Pick<ProjectBundle, 'params' | 'index'>): string[] {
@@ -24,7 +26,7 @@ export function defaultMeasures(b: Pick<ProjectBundle, 'params' | 'index'>): str
 }
 
 /** Readings taken only in bores. */
-const GROUNDWATER_ONLY = new Set(['swl', 'gw-level', 'water-level-bgl']);
+const GROUNDWATER_ONLY = new Set(['swl', 'gw-level', 'water-level-bgl', 'dtw', 'purge-vol']);
 
 export interface SheetChoices {
   round: string;
@@ -78,7 +80,9 @@ export function makeSheet(b: ProjectBundle, c: SheetChoices): FieldSheet {
         mine = mine.filter((p) => !GROUNDWATER_ONLY.has(p.id) || s.type === 'Groundwater');
       }
       const measures = mine.length < params.length ? mine.map((p) => p.id) : undefined;
-      return { id: s.id, code: s.code, name: s.name || undefined, ...(ll ? { lat: Number(ll.lat.toFixed(6)), lng: Number(ll.lng.toFixed(6)) } : {}), note: s.description || undefined, last, ...(measures ? { measures } : {}) };
+      // a bore's particulars go with its directions: what the depth is measured from, how deep the well is
+      const note = [s.description, hasBore(s.bore) ? `Bore: ${boreSummary(s.bore)}` : ''].filter(Boolean).join('\n') || undefined;
+      return { id: s.id, code: s.code, name: s.name || undefined, ...(ll ? { lat: Number(ll.lat.toFixed(6)), lng: Number(ll.lng.toFixed(6)) } : {}), note, last, ...(measures ? { measures } : {}) };
     }),
     measures,
     observe: c.observe,
@@ -122,7 +126,8 @@ export interface FieldRow {
   site: Site;
   /** The sample's date and time. */
   date: string;
-  values: Array<{ param: Parameter; value: number; warning: string | null }>;
+  /** The readings; `derived` says how one was worked out from another (a level from a depth to water). */
+  values: Array<{ param: Parameter; value: number; warning: string | null; derived?: string }>;
 }
 
 export interface FieldPlan {
@@ -191,7 +196,14 @@ export function planField(b: Pick<ProjectBundle, 'siteMap' | 'paramMap' | 'proje
         unknownParams.add(pid);
         continue;
       }
-      values.push({ param, value, warning: readingWarning({ id: pid, name: param.name, unit: param.unit }, value) });
+      values.push({ param, value, warning: (pid === 'dtw' ? depthWarning(site.bore, value) : null) ?? readingWarning({ id: pid, name: param.name, unit: param.unit }, value) });
+    }
+    // a depth to water at a bore with a top-of-casing level: the groundwater level too
+    const dtw = values.find((x) => x.param.id === 'dtw');
+    const swl = b.paramMap.get('swl');
+    if (dtw && swl && !values.some((x) => x.param.id === 'swl')) {
+      const level = levelFromDepth(site.bore, dtw.value);
+      if (level !== null) values.push({ param: swl, value: level, warning: null, derived: `from ${dtw.value} m below TOC ${site.bore!.tocRl} m RL` });
     }
     const date = v.time && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v.time) ? v.time.slice(0, 16) : results.sheet.date;
     if (values.length || v.notes || v.weather || v.flow || v.appearance || v.photos?.length) rows.push({ visit: v, site, date, values });
@@ -218,7 +230,7 @@ function fieldNotes(v: FieldVisit, by: string | undefined, photos: string[]): st
   return lines;
 }
 
-const safe = (s: string) => s.normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
+const safe = safeName;
 
 /** Add a phone's results: readings to each site's sample for the day, notes, photos, and the round marked sampled. */
 export async function commitField(projectId: string, plan: FieldPlan, fileName: string, choices: FieldChoices = {}): Promise<{ batch: ImportBatch; samples: number; results: number; photos: number; photoError?: string; sitesAdded: number; located: number }> {
@@ -301,8 +313,8 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
       }
       await db.samples.put(sample);
       batch.samples++;
-      for (const { param, value } of row.values) {
-        resultsToPut.push({ id: stableId('r', sample.id, param.id), projectId, sampleId: sample.id, siteId: row.site.id, date: sample.date, parameterId: param.id, value, qualifier: '', unit: param.unit, importId: batch.id });
+      for (const { param, value, derived } of row.values) {
+        resultsToPut.push({ id: stableId('r', sample.id, param.id), projectId, sampleId: sample.id, siteId: row.site.id, date: sample.date, parameterId: param.id, value, qualifier: '', unit: param.unit, importId: batch.id, ...(derived ? { comment: `Worked out ${derived}` } : {}) });
       }
     }
     if (resultsToPut.length) {

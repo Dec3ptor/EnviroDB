@@ -12,6 +12,8 @@ import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResu
 import { formatDate } from '../../lib/dates';
 import { unitLabel } from '../../lib/units';
 import { exportPivotCsv, exportPivotXlsx } from '../../reports/excel';
+import { exportProjectWorkbook } from '../../reports/workbook';
+import { SamplePhotos } from '../../components/SamplePhotos';
 import { deleteImport, deleteSamples, saveEdited, setResultComment, setReviewed } from '../../db/repo';
 import { db } from '../../db/db';
 import { compareParams } from '../../data/parameters';
@@ -118,7 +120,7 @@ function ResultComment({ r }: { r: Result }) {
 }
 
 function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () => void }) {
-  const { sites: monitoring, qc, index, paramMap, continuous } = useProject();
+  const { project, sites: monitoring, qc, index, paramMap, continuous } = useProject();
   const sites = [...monitoring, ...qc.sites];
   const [leaving, setLeaving] = useState<Result | null>(null);
   const [why, setWhy] = useState('');
@@ -162,6 +164,7 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
           <TextInput label="Lab number" value={s.labNumber ?? ''} onChange={(e) => setDraft({ ...s, labNumber: e.currentTarget.value })} />
         </Group>
         <Textarea label="Notes" autosize minRows={2} value={s.notes ?? ''} onChange={(e) => setDraft({ ...s, notes: e.currentTarget.value })} placeholder="e.g. sampled after heavy rain" />
+        <SamplePhotos sample={s} site={sites.find((x) => x.id === s.siteId)} project={project} />
         {rainSeries(continuous).map(({ series, years }) => {
           const rain = rainAround(years, s.date);
           if (rain.day === null && rain.before === null) return null;
@@ -761,6 +764,10 @@ export function DataTab() {
                 </Menu.Item>
                 <Menu.Item leftSection={<IconDownload size={16} />} onClick={() => exportPivotCsv(exportArgs)}>
                   CSV
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Item leftSection={<IconFileSpreadsheet size={16} />} onClick={() => exportProjectWorkbook(data).catch((e) => notifications.show({ color: 'red', message: (e as Error).message }))}>
+                  Project workbook (a sheet for each site)
                 </Menu.Item>
                 {ai && (
                   <>

@@ -18,7 +18,9 @@ const field: P[] = [
   { id: 'salinity', name: 'Salinity', group: 'Field', unit: 'ppt', aliases: ['salinity'] },
   { id: 'clarity', name: 'Visual Clarity', group: 'Field', unit: 'm', aliases: ['visual clarity', 'clarity', 'black disc', 'black disc clarity', 'water clarity'] },
   { id: 'flow', name: 'Flow', group: 'Field', unit: 'L/s', aliases: ['flow', 'flow rate', 'discharge rate', 'discharge volume rate'] },
-  { id: 'swl', name: 'Groundwater Level', short: 'SWL', group: 'Field', unit: 'm', aliases: ['swl', 'static water level', 'depth to water', 'groundwater level', 'water level', 'dtw', 'depth to groundwater'], decimals: 2 },
+  { id: 'swl', name: 'Groundwater Level', short: 'SWL', group: 'Field', unit: 'm', aliases: ['swl', 'static water level', 'groundwater level', 'water level', 'groundwater level (rl)', 'water level (rl)', 'swl (rl)', 'water level rl', 'reduced water level'], decimals: 2 },
+  { id: 'dtw', name: 'Depth to Water', short: 'DTW', group: 'Field', unit: 'm', aliases: ['depth to water', 'dtw', 'depth to groundwater', 'depth to water (toc)', 'depth to water below toc', 'dtw (m btoc)', 'depth to water (m btoc)', 'water level (m btoc)', 'm btoc', 'depth to water table', 'dtw (m)'], decimals: 2 },
+  { id: 'purge-vol', name: 'Purge Volume', group: 'Field', unit: 'L', aliases: ['purge volume', 'volume purged', 'purged volume', 'purge vol', 'purge (l)', 'volume purged (l)'], decimals: 1 },
 ];
 
 // Laboratory physical measurements.

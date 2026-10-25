@@ -147,6 +147,12 @@ export interface Site {
   /** The site's colour on graphs, maps and in data packs (hex); unset: from its place in the list. */
   colour?: string;
   /**
+   * A monitoring bore: the top of casing's level (m RL) – what depth to water is measured from, and what turns it
+   * into a groundwater level – how far the casing stands above the ground, the well's depth and screen (m below
+   * top of casing), its diameter (mm).
+   */
+  bore?: { tocRl?: number; stickUp?: number; depth?: number; screenTop?: number; screenBottom?: number; diameter?: number };
+  /**
    * How the site is graded against the NPS-FM's attribute bands: a river or lake (none: not graded; unset: rivers
    * for surface water sites), and the classes some bands depend on.
    */
@@ -535,6 +541,29 @@ export interface QaRecord {
   swap?: { a: ID; b: ID; parameterIds?: ID[] };
   by?: string;
   at: string;
+}
+
+/**
+ * A sheet layout someone put right by hand, kept for files of the same shape (see importers/layouts.ts): which
+ * rows and columns are what. Shared with the team.
+ */
+export interface ImportLayout {
+  id: ID;
+  /** The shape of the sheet it was learned from. */
+  fingerprint: string;
+  sheetName: string;
+  plan:
+    | { mode: 'lab'; sheet: string }
+    | { mode: 'wide'; sheet: string; config: import('../importers/wide').WideConfig }
+    | { mode: 'long'; sheet: string; config: import('../importers/long').LongConfig }
+    | { mode: 'export'; sheet: string; format: import('../importers/labExports').ExportFormat }
+    | { mode: 'skip'; sheet: string };
+  /** The file it was learned from, when, by whom. */
+  fileName: string;
+  learnedOn: string;
+  by?: string;
+  uses?: number;
+  lastUsed?: string;
 }
 
 export interface ImportBatch {

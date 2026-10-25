@@ -440,7 +440,7 @@ function CodeScanner({ want = 'link', onLink, onKey }: { want?: 'link' | 'key'; 
 // ------------------------------------------------------------ a sheet: its sites
 
 /** Readings taken only in bores. */
-const BORE_ONLY = /^(swl|gw-level|water-level-bgl)$/;
+const BORE_ONLY = /^(swl|gw-level|water-level-bgl|dtw|purge-vol)$/;
 
 /** A new monitoring point, added on the phone: it goes back to the computer with the results. */
 function AddSiteModal({ opened, sheet, onClose, onAdded }: { opened: boolean; sheet: FieldSheet; onClose: () => void; onAdded: (id: string) => void }) {

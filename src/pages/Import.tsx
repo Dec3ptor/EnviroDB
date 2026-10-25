@@ -12,8 +12,10 @@ import { notifications } from '@mantine/notifications';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  IconAlertTriangle, IconArrowBackUp, IconArrowLeft, IconArrowRight, IconCheck, IconChecks, IconCircleCheck, IconFileSpreadsheet, IconPlus, IconUpload, IconX, IconBolt, IconFileReport, IconTable, IconShieldCheck,
+  IconAlertTriangle, IconArrowBackUp, IconArrowLeft, IconArrowRight, IconCheck, IconChecks, IconCircleCheck, IconFileSpreadsheet, IconPlus, IconUpload, IconX, IconBolt, IconFileReport, IconTable, IconShieldCheck, IconBulb,
 } from '@tabler/icons-react';
+import { forgetLayout, plansChanged, rememberLayouts, withRememberedLayouts } from '../importers/layouts';
+import type { ImportLayout } from '../db/types';
 import { db, getSettings } from '../db/db';
 import { ProjectDataProvider, useProject } from '../hooks/useProjectData';
 import { cellAt, cellText, columnLetter, type SheetGrid } from '../importers/workbook';
@@ -249,6 +251,10 @@ interface WizardState {
   fileName: string;
   grids: SheetGrid[];
   plans: SheetPlan[];
+  /** What EnviroDB guessed, to tell when a layout was put right by hand. */
+  guessed: SheetPlan[];
+  /** Layouts taken from an earlier file of the same shape. */
+  remembered: Array<{ sheet: string; layout: ImportLayout }>;
   /** What the files say about each other's samples (a PDF naming an ESdat file's samples). */
   context: ImportContext;
   /** Files left out, and why; results taken from one file rather than another. */
@@ -346,6 +352,8 @@ export function ImportWizard(_props: { projectId: string }) {
   /** How far a save has got: results written so far, of how many. */
   const [saving, setSaving] = useState<{ saved: number; total: number } | null>(null);
   const [state, setState] = useState<WizardState | null>(null);
+  /** Keep the layouts as put right here for files like this one. */
+  const [teach, setTeach] = useState(false);
   const [siteMap, setSiteMap] = useState<Record<string, string | null>>({});
   const [paramMapping, setParamMapping] = useState<Record<string, string | null>>({});
   const [unitMap, setUnitMap] = useState<Record<string, string | undefined>>({});
@@ -424,9 +432,12 @@ export function ImportWizard(_props: { projectId: string }) {
       const inputs = await Promise.all(files.map(async (f) => ({ name: f.name, data: f instanceof File ? await f.arrayBuffer() : f.data })));
       const read = await readImportFiles(inputs);
       if (!read.grids.length) throw new Error(read.notes.join(' ') || 'The file has no data.');
-      const { plans, notes } = defaultPlans(read.grids, read.context, buildParamIndex(params));
+      const { plans: guessed, notes } = defaultPlans(read.grids, read.context, buildParamIndex(params));
+      // a sheet shaped like one someone put right before: that layout
+      const { plans, remembered } = await withRememberedLayouts(read.grids, guessed);
       const fileName = read.names.length === 1 ? read.names[0] : `${read.names[0]} and ${read.names.length - 1} more`;
-      setState({ fileName, grids: read.grids, plans, context: read.context, notes: [...read.notes, ...notes] });
+      setState({ fileName, grids: read.grids, plans, guessed, remembered, context: read.context, notes: [...read.notes, ...notes] });
+      setTeach(false);
       setSiteMap({});
       setParamMapping({});
       setUnitMap({});
@@ -666,6 +677,26 @@ export function ImportWizard(_props: { projectId: string }) {
               {w}
             </Alert>
           ))}
+          {state.remembered.map(({ sheet, layout }) => (
+            <Alert key={sheet} color="teal" variant="light" py={6} icon={<IconBulb size={16} />}>
+              <Group justify="space-between" wrap="wrap" gap="xs">
+                <Text size="sm">
+                  {state.grids.length > 1 ? `${sheet}: the` : 'The'} layout EnviroDB was taught from {layout.fileName} ({formatDate(layout.learnedOn)}{layout.by ? `, ${layout.by}` : ''}) is used.
+                </Text>
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  onClick={async () => {
+                    await forgetLayout(layout.id);
+                    const guess = state.guessed.find((p) => p.sheet === sheet);
+                    setState({ ...state, remembered: state.remembered.filter((r) => r.sheet !== sheet), plans: state.plans.map((p) => (p.sheet === sheet && guess ? guess : p)) });
+                  }}
+                >
+                  Forget it
+                </Button>
+              </Group>
+            </Alert>
+          ))}
           {parsed.warnings.map((w) => (
             <Alert key={w} color="orange" variant="light" icon={<IconAlertTriangle size={16} />} py={6}>
               {w}
@@ -716,11 +747,29 @@ export function ImportWizard(_props: { projectId: string }) {
               </Card>
             );
           })}
+          {plansChanged(state.guessed, state.plans) && (
+            <Checkbox
+              checked={teach}
+              onChange={(e) => setTeach(e.currentTarget.checked)}
+              label="Teach EnviroDB this layout: use it by itself for files shaped like this one (the whole team’s)"
+              description="The shape is the words in the sheet’s first rows – a lab’s or a spreadsheet’s headings – not the numbers."
+            />
+          )}
           <Group justify="space-between">
             <Button variant="default" leftSection={<IconArrowLeft size={16} />} onClick={() => setStep(0)}>
               Choose other files
             </Button>
-            <Button rightSection={<IconArrowRight size={16} />} disabled={!samples.length} onClick={() => setStep(2)}>
+            <Button
+              rightSection={<IconArrowRight size={16} />}
+              disabled={!samples.length}
+              onClick={async () => {
+                if (teach && plansChanged(state.guessed, state.plans)) {
+                  const kept = await rememberLayouts(state.grids, state.plans, state.fileName);
+                  if (kept.length) notifications.show({ color: 'teal', message: `Layout remembered for files like ${state.fileName}.` });
+                }
+                setStep(2);
+              }}
+            >
               Next: sites &amp; dates
             </Button>
           </Group>
