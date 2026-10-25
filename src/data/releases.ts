@@ -11,6 +11,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.23.0',
+    date: '2026-10-25',
+    title: 'Easing in',
+    items: [
+      'A Getting started checklist on the dashboard – create a project, add its sites, import the first results, add consent limits, make the first report – ticked off as each is done, each step a link to the right place. Hide it with the ×; it goes by itself once everything is done.',
+      'A two-minute tour: six stops around the app (projects, importing, the library, a project’s tabs, features and settings). It offers itself once there’s a project, and is always there from the sidebar’s Tour link or the checklist.',
+      'A ⓘ beside every page title and every project view: what the page is for in two sentences, with a link to the README. The view’s help changes with the view switch.',
+    ],
+  },
+  {
     version: '1.22.0',
     date: '2026-10-25',
     title: 'Before you issue',

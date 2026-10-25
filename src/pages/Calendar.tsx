@@ -5,6 +5,7 @@ import { useSettingsReady } from '../hooks/useSettings';
 import { featureOn } from '../lib/features';
 import { CalendarSheet } from '../components/calendar/CalendarSheet';
 import { RoundsList } from '../components/calendar/RoundsList';
+import { HELP } from '../components/Onboarding';
 
 // The team's monitoring schedule for the year, laid out like the spreadsheet – and linked to the projects.
 export function CalendarPage() {
@@ -26,7 +27,7 @@ export function CalendarPage() {
   return (
     <>
       <PageHeader
-        title="Monitoring calendar"
+        title="Monitoring calendar" help={HELP.calendar}
         description="The team’s monitoring schedule, like the spreadsheet: a row per job, what’s planned each month, coloured as it’s done this year. Select a month and click Round to record it: sampled, sent to the lab, results back, results sent."
       />
       <Stack gap="sm">

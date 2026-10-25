@@ -28,6 +28,7 @@ import { useFeatures } from '../../hooks/useFeatures';
 import { featureOn, PROJECT_TABS, tabOf, viewOff, visibleViews, type ProjectView } from '../../lib/features';
 import { EmptyState } from '../../components/common';
 import { db } from '../../db/db';
+import { HELP, HelpTip } from '../../components/Onboarding';
 
 // the map (and Leaflet) loads only when the tab is opened
 const MapTab = lazy(() => import('./MapTab').then((m) => ({ default: m.MapTab })));
@@ -169,7 +170,7 @@ function Header() {
         </Group>
       </Group>
       <Tabs value={tab} onChange={(v) => v && go(v)} variant="outline">
-        <Tabs.List style={{ flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none' }}>
+        <Tabs.List style={{ flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none' }} data-tour="project-tabs">
           {PROJECT_TABS.map((t) => {
             const Icon = TAB_ICONS[t.value];
             return (
@@ -180,7 +181,9 @@ function Header() {
           })}
         </Tabs.List>
       </Tabs>
-      {switchViews.length > 1 && current !== 'import' && current !== 'consent-setup' && (
+      {current !== 'import' && current !== 'consent-setup' && (
+        <Group gap={4} wrap="nowrap">
+          {switchViews.length > 1 && (
         <SegmentedControl
           size="xs"
           value={current}
@@ -199,6 +202,9 @@ function Header() {
               ),
           }))}
         />
+          )}
+          {HELP[current] && <HelpTip help={HELP[current]} size="xs" />}
+        </Group>
       )}
       {ai && <AiInputModal opened={aiOpen} onClose={() => setAiOpen(false)} />}
       <FieldWorkModal

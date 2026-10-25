@@ -36,6 +36,7 @@ import { IssuedPanel, IssueModal, useIssuedContent, useLatestIssues, type Report
 import { issuedBuildOptions } from '../../db/issues';
 import type { IssuedReport } from '../../db/types';
 import { preIssueChecks } from '../../reports/checks';
+import { noteFirstReport } from '../../components/Onboarding';
 
 /** No images added yet (one object, so the preview isn't rebuilt for nothing). */
 const NO_FIGURES: Record<string, FigureImage[]> = {};
@@ -288,6 +289,7 @@ export function ReportsTab() {
     setBusy(kind);
     try {
       await exportReport(kind, { bundle: data, template, period, settings, promptTexts: prompts, figures: reportFigures, siteIds: chosenSites ?? undefined });
+      noteFirstReport();
     } catch (e) {
       notifications.show({ title: 'Export failed', message: (e as Error).message, color: 'red' });
     } finally {

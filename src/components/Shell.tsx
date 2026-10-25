@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { AppShell, Badge, Burger, Group, NavLink, Tabs, Text, ActionIcon, useMantineColorScheme, Divider, ScrollArea, Box } from '@mantine/core';
+import { useEffect, useState } from 'react';
+import { Anchor, AppShell, Badge, Burger, Group, NavLink, Tabs, Text, ActionIcon, useMantineColorScheme, Divider, ScrollArea, Box } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -22,6 +22,7 @@ import { WorkspaceBadge } from './workspace/Workspace';
 import { VersionFooter } from './Version';
 import { startInboxWatch, useInbox } from '../sync/inbox';
 import { useFeature } from '../hooks/useFeatures';
+import { noteTourOffered, Tour, tourToOffer } from './Onboarding';
 
 /** The Library's pages: reference data shared by every project. */
 export const LIBRARY = [
@@ -66,14 +67,28 @@ export function Shell() {
   const path = location.pathname;
   const calendar = useFeature('calendar');
   const nav = [
-    { to: '/', label: 'Dashboard', icon: IconLayoutDashboard, active: path === '/' },
-    { to: '/projects', label: 'Projects', icon: IconFolders, active: path === '/projects' },
-    ...(calendar ? [{ to: '/calendar', label: 'Monitoring calendar', icon: IconCalendarMonth, active: path.startsWith('/calendar') }] : []),
+    { to: '/', label: 'Dashboard', icon: IconLayoutDashboard, active: path === '/', tour: 'nav-dashboard' },
+    { to: '/projects', label: 'Projects', icon: IconFolders, active: path === '/projects', tour: 'nav-projects' },
+    ...(calendar ? [{ to: '/calendar', label: 'Monitoring calendar', icon: IconCalendarMonth, active: path.startsWith('/calendar'), tour: 'nav-calendar' }] : []),
     // the Quick check is with importing: both start from a lab file
-    { to: '/import', label: 'Import data', icon: IconUpload, active: path.startsWith('/import') || path.startsWith('/quick-check'), badge: inboxCount },
+    { to: '/import', label: 'Import data', icon: IconUpload, active: path.startsWith('/import') || path.startsWith('/quick-check'), badge: inboxCount, tour: 'nav-import' },
     // reference data shared by every project: guidelines, report templates and parameters
-    { to: '/guidelines', label: 'Library', icon: IconBook2, active: LIBRARY.some((l) => path.startsWith(l.to)) },
+    { to: '/guidelines', label: 'Library', icon: IconBook2, active: LIBRARY.some((l) => path.startsWith(l.to)), tour: 'nav-library' },
   ];
+  // the tour: offered once when there's something to show, and whenever asked for
+  const [tour, setTour] = useState(false);
+  useEffect(() => {
+    const on = () => setTour(true);
+    window.addEventListener('edb:tour', on);
+    return () => window.removeEventListener('edb:tour', on);
+  }, []);
+  useEffect(() => {
+    if (projects?.length && tourToOffer()) {
+      noteTourOffered();
+      const t = setTimeout(() => setTour(true), 1200);
+      return () => clearTimeout(t);
+    }
+  }, [projects?.length]);
   const recent = [...(projects ?? [])].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, 8);
 
   return (
@@ -112,6 +127,7 @@ export function Shell() {
               label={n.label}
               leftSection={<n.icon size={18} stroke={1.6} />}
               rightSection={'badge' in n && n.badge ? <Badge size="sm" variant="filled" title={`${n.badge} new lab file${n.badge === 1 ? '' : 's'} in the inbox`}>{n.badge}</Badge> : undefined}
+              data-tour={n.tour}
               active={n.active}
               variant="light"
               style={{ borderRadius: 8 }}
@@ -139,9 +155,9 @@ export function Shell() {
           )}
         </AppShell.Section>
         <AppShell.Section>
-          <NavLink component={Link} to="/settings" label="Settings & backup" leftSection={<IconSettings size={18} stroke={1.6} />} active={path.startsWith('/settings')} variant="light" style={{ borderRadius: 8 }} />
+          <NavLink component={Link} to="/settings" label="Settings & backup" leftSection={<IconSettings size={18} stroke={1.6} />} active={path.startsWith('/settings')} variant="light" style={{ borderRadius: 8 }} data-tour="nav-settings" />
           <Text size="xs" c="dimmed" px="sm" py={4}>
-            Saved to your team’s workspace folder as you work.
+            Saved to your team’s workspace folder as you work. <Anchor size="xs" onClick={() => setTour(true)}>Tour</Anchor>
           </Text>
           <VersionFooter />
         </AppShell.Section>
@@ -149,6 +165,7 @@ export function Shell() {
       <AppShell.Main>
         <Outlet />
       </AppShell.Main>
+      <Tour open={tour} onClose={() => setTour(false)} />
     </AppShell>
   );
 }

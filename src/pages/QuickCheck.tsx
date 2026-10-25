@@ -22,6 +22,7 @@ import { useSettings } from '../hooks/useSettings';
 import { exportReport } from '../reports/export';
 import { QUICK_CHECK_TEMPLATE, QUICK_CHECK_TEMPLATE_ID } from '../data/templates';
 import { IMPORTING, SectionNav } from '../components/Shell';
+import { HELP } from '../components/Onboarding';
 
 // Quick check: drop lab results – no project needed – and see them against guideline values. Nothing is saved
 // unless you make a project of them.
@@ -143,7 +144,7 @@ export function QuickCheckPage() {
     <Stack>
       <SectionNav items={IMPORTING} />
       <PageHeader
-        title="Quick check"
+        title="Quick check" help={HELP.quickcheck}
         description="Drop lab results – any project or none – and see them against guideline values straight away. Nothing is saved unless you make a project of them."
       />
       {!q ? (

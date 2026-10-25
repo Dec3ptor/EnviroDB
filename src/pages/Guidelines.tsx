@@ -21,6 +21,7 @@ import { buildParamIndex, matchParameter } from '../lib/matching';
 import { SaveButton } from '../components/Unsaved';
 import { same } from '../sync/model';
 import { LIBRARY, SectionNav } from '../components/Shell';
+import { HELP } from '../components/Onboarding';
 
 function exportCsv(set: GuidelineSet, names: Map<string, string>, unit: string) {
   const rows = [['Parameter', 'Minimum', 'Maximum', 'Unit', 'Hardness-dependent', 'Note']];
@@ -100,7 +101,7 @@ export function GuidelinesPage() {
     <Stack>
       <SectionNav items={LIBRARY} />
       <PageHeader
-        title="Guideline values"
+        title="Guideline values" help={HELP.library}
         description="Guideline sets are compared with results in tables, graphs and reports. Create custom sets for site-specific trigger values or other guidelines."
         actions={
           <>

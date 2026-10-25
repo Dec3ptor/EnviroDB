@@ -30,6 +30,7 @@ import type { Deadline } from './dashboard/widgets';
 import type { RuleEvaluation } from '../lib/compliance';
 import { dueItemPath } from '../components/DueItem';
 import type { ImportBatch } from '../db/types';
+import { FirstRunChecklist, HELP, startTour } from '../components/Onboarding';
 
 function useDashboard(bundles: ProjectBundle[]): DashboardData {
   return useMemo(() => {
@@ -238,6 +239,7 @@ export function DashboardPage() {
     <Stack gap="lg">
       <PageHeader
         title="Dashboard"
+        help={HELP.dashboard}
         description={`${formatDate(today)} · ${active.length} active project${active.length === 1 ? '' : 's'}`}
         actions={
           editing ? (
@@ -293,6 +295,7 @@ export function DashboardPage() {
           }}
         />
       )}
+      <FirstRunChecklist onTour={startTour} />
       {editing && (
         <Alert variant="light" py={8}>
           <Group justify="space-between" gap="sm" wrap="wrap">

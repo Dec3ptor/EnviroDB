@@ -21,6 +21,7 @@ import { FeaturesCard } from '../components/FeaturesCard';
 import { featureOn } from '../lib/features';
 import { useSearchParams } from 'react-router-dom';
 import { APP_COLOURS, DEFAULT_APP_COLOUR, isHexColour } from '../lib/palette';
+import { HELP } from '../components/Onboarding';
 
 function fmtBytes(n?: number) {
   if (!n) return '—';
@@ -63,7 +64,7 @@ export function SettingsPage() {
 
   return (
     <Stack gap="lg">
-      <PageHeader title="Settings & backup" />
+      <PageHeader title="Settings & backup" help={HELP.settings} />
       <Tabs value={tab} onChange={(v) => v && setParams({ tab: v }, { replace: true })} keepMounted={false}>
         <Tabs.List mb="lg">
           <Tabs.Tab value="you" leftSection={<IconUser size={16} />}>

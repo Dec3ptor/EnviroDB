@@ -10,8 +10,9 @@ import { addMonths, formatDate, makeDate, periodPresets, recentReportingYears, t
 import { PARAMETER_GROUPS } from '../data/parameters';
 import { consentParameterIds, type ConsentView, type ProjectBundle } from '../lib/analysis';
 import { PopupPicker, type PickerData, type PickerOption, type PickerPreset, type PopupPickerProps } from './PopupPicker';
+import { HelpTip, type HelpText } from './Onboarding';
 
-export function PageHeader({ title, description, actions, badge }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; badge?: ReactNode }) {
+export function PageHeader({ title, description, actions, badge, help }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; badge?: ReactNode; help?: HelpText }) {
   return (
     <Group justify="space-between" align="flex-start" mb="md" wrap="wrap" gap="sm">
       <Stack gap={2} style={{ minWidth: 0, flex: '1 1 260px' }}>
@@ -20,6 +21,7 @@ export function PageHeader({ title, description, actions, badge }: { title: Reac
             {title}
           </Title>
           {badge}
+          {help && <HelpTip help={help} />}
         </Group>
         {description && (
           <Text c="dimmed" size="sm">

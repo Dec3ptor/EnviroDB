@@ -43,6 +43,7 @@ import { FieldResultsModal } from '../components/FieldSheet';
 import { IMPORTING, SectionNav } from '../components/Shell';
 import { deleteImport, setReviewed } from '../db/repo';
 import { modals } from '@mantine/modals';
+import { HELP } from '../components/Onboarding';
 
 const ACCEPT = {
   'application/pdf': ['.pdf'],
@@ -1249,7 +1250,7 @@ export function ImportPage() {
   return (
     <Stack>
       <SectionNav items={IMPORTING} />
-      <PageHeader title="Import data" description="Lab results (e.g. Hill Labs Excel), monitoring master spreadsheets or long tables." />
+      <PageHeader title="Import data" help={HELP.import} description="Lab results (e.g. Hill Labs Excel), monitoring master spreadsheets or long tables." />
       {!projects.length ? (
         <EmptyState title="Create a project first" action={<NewProjectButton />}>
           Data is imported into a project. You can create sites during the import.

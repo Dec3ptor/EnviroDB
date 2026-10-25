@@ -12,6 +12,7 @@ import { createDemoProject } from '../db/demo';
 import { importProjectPackage, readJsonFile } from '../db/backup';
 import { MONTH_LONG, formatDate } from '../lib/dates';
 import { useParamsAndSets } from '../hooks/useProjectData';
+import { HELP } from '../components/Onboarding';
 
 export function ProjectForm({ value, onChange, letters }: { value: Project; onChange: (p: Project) => void; letters?: boolean }) {
   const { sets } = useParamsAndSets();
@@ -122,7 +123,7 @@ export function ProjectsPage() {
   return (
     <Stack>
       <PageHeader
-        title="Projects"
+        title="Projects" help={HELP.projects}
         description="Each project holds its sites, monitoring data, consent rules, schedules and reports."
         actions={
           <>

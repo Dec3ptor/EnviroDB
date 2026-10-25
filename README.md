@@ -513,6 +513,12 @@ there as they work and show up for the others within seconds.
 
 ## Finding your way around
 
+**The first time**, the dashboard has a *Getting started* checklist – create a project, add its sites, import the
+first results, add consent limits, make the first report – ticked off as each is done, each step a link to the
+right place (hide it with the ×). A **two-minute tour** offers itself once there's a project, and is always
+there from *Tour* at the foot of the sidebar: six stops around the app. Every page title and every project view
+has a **ⓘ** that says what it's for and links to the section of this README.
+
 **EnviroDB starts with the essentials** and shows the rest as it's needed:
 
 - **Features the team uses** (*Settings → Team → Features*): the essentials – projects, importing, data,
