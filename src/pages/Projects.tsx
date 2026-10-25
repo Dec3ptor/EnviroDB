@@ -58,6 +58,17 @@ export function ProjectForm({ value, onChange, letters }: { value: Project; onCh
           allowDeselect={false}
         />
         <GuidelinePicker sets={sets} value={value.guidelineSetIds} onChange={(v) => set('guidelineSetIds', v)} label="Default guideline comparison" description="Highlighted in tables, shown on graphs" />
+        <Select
+          label="Concentrations written as"
+          description="mg/L and g/m³ are the same quantity (NZ labs report g/m³). Tables, graphs, reports and exports follow this; a parameter added from an import with no unit takes it."
+          data={[
+            { value: 'mg/L', label: 'mg/L (and µg/L)' },
+            { value: 'g/m³', label: 'g/m³ (and mg/m³)' },
+          ]}
+          value={value.concUnit ?? 'mg/L'}
+          onChange={(v) => set('concUnit', v === 'g/m³' ? 'g/m³' : undefined)}
+          allowDeselect={false}
+        />
       </SimpleGrid>
     </Stack>
   );

@@ -33,6 +33,7 @@ import { compareParams } from '../data/parameters';
 import { isQcSite } from './qc';
 import { fmtNum } from './values';
 import { formatDate } from './dates';
+import { withProjectUnits } from './units';
 
 export const SNAPSHOT_VERSION = 1;
 
@@ -358,8 +359,8 @@ export function snapshotBundle(content: SnapshotContent): ProjectBundle {
     sites: sites.filter((s) => !qcSites.has(s.id)),
     siteMap: new Map(sites.map((s) => [s.id, s])),
     samples: byDate.filter((s) => !isQc(s)),
-    params,
-    paramMap: new Map(params.map((p) => [p.id, p])),
+    params: withProjectUnits(params, content.project.concUnit),
+    paramMap: new Map(withProjectUnits(params, content.project.concUnit).map((p) => [p.id, p])),
     guidelineSets: content.guidelineSets,
     setMap: new Map(content.guidelineSets.map((g) => [g.id, g])),
     rules: [...content.rules].sort((a, b) => a.order - b.order),

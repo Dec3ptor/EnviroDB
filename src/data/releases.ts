@@ -11,6 +11,15 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.25.0',
+    date: '2026-10-25',
+    title: 'g/m³ or mg/L, your choice',
+    items: [
+      'A project says how it writes concentrations – mg/L or g/m³ (the same quantity; NZ labs report g/m³) – in its details. Tables, graphs, reports, data packs and exports follow it (µg/L becomes mg/m³ the same way); the parameter library’s own units are untouched, so other projects are unaffected.',
+      'A parameter added during an import takes the project’s unit when the file gives none, and the file’s unit written the project’s way when it does – no more mg/L by default in a g/m³ project.',
+    ],
+  },
+  {
     version: '1.24.0',
     date: '2026-10-25',
     title: 'Photos, bores, taught layouts and a workbook',

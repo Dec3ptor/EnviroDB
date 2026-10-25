@@ -4,7 +4,7 @@ import { resultsFor } from './dataIndex';
 import { addDays, dayOf, daysBetween, formatDate, reportingYear } from './dates';
 import { compareResult, describeLimit, limitFor, toInterval, verdict, verdictOutside, type Verdict } from './guidelines';
 import { computeStat, statLabel, type PercentileMethod } from './stats';
-import { convert, unitLabel } from './units';
+import { unitFactor, convert, unitLabel } from './units';
 import { fmtNum, fmtResult, statValue } from './values';
 
 export interface Exceedance {
@@ -52,6 +52,8 @@ export function siteLabel(sites: Site[] | Map<string, Site>, id: string): string
 }
 
 function ruleUnit(rule: Rule, param?: Parameter): string {
+  // the same quantity written the project's way (a 1 mg/L limit in a g/m³ project reads 1 g/m³)
+  if (rule.unit && param?.unit && rule.unit !== param.unit && unitFactor(rule.unit, param.unit) === 1) return param.unit;
   return rule.unit || param?.unit || '';
 }
 

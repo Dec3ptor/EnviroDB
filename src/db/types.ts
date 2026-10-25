@@ -8,6 +8,9 @@ export type ID = string;
 
 export type NdHandling = 'dl' | 'half' | 'zero';
 
+/** The two ways of writing a water concentration – the same thing. */
+export type ConcUnit = 'mg/L' | 'g/m³';
+
 export interface Project {
   id: ID;
   name: string;
@@ -24,6 +27,11 @@ export interface Project {
   hardnessAdjust: boolean;
   /** How non-detects are treated when calculating statistics. */
   ndHandling: NdHandling;
+  /**
+   * How concentrations are written in this project: mg/L or g/m³ (the same quantity – NZ labs report g/m³). Tables,
+   * graphs, reports and exports follow it, and a parameter added from an import without a unit takes it.
+   */
+  concUnit?: ConcUnit;
   /** First month (1-12) of the reporting year, e.g. 7 for July–June. */
   yearStartMonth: number;
   /** Percentile method for statistics: Excel PERCENTILE.INC or Hazen (NPS-FM). */

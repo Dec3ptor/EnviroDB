@@ -92,6 +92,42 @@ export interface NormUnit {
   known: boolean;
 }
 
+// ------------------------------------------------------------ a project's way of writing concentrations
+
+export type ConcUnit = 'mg/L' | 'g/m³';
+/** mg/L ↔ g/m³ and µg/L ↔ mg/m³: the same quantities, written the other way. */
+const CONC_PAIRS: Array<[string, string]> = [
+  ['mg/l', 'g/m3'],
+  ['ug/l', 'mg/m3'],
+];
+
+/** The unit as a project writes it: a g/m³ project shows mg/L parameters as g/m³ (and µg/L as mg/m³); other units stay. */
+export function projectUnit(unit: string, pref: ConcUnit | undefined): string {
+  if (!pref || !unit) return unit;
+  const key = normUnit(unit).key;
+  for (const [mgl, gm3] of CONC_PAIRS) {
+    if (pref === 'g/m³' && key === mgl) return DEFS[gm3].label;
+    if (pref === 'mg/L' && key === gm3) return DEFS[mgl].label;
+  }
+  return unit;
+}
+
+/** The parameters with their display units as the project writes them (copies; the library's own units stay). */
+export function withProjectUnits<P extends { unit: string }>(params: P[], pref: ConcUnit | undefined): P[] {
+  if (!pref) return params;
+  return params.map((p) => {
+    const u = projectUnit(p.unit, pref);
+    return u === p.unit ? p : { ...p, unit: u };
+  });
+}
+
+/** The display unit for a parameter added from a file: the file's unit as the project writes it; none = the project's concentration unit. */
+export function importUnit(unit: string | undefined, pref: ConcUnit | undefined): string {
+  const base = pref ?? 'mg/L';
+  if (!unit) return base;
+  return projectUnit(unitLabel(unit), base);
+}
+
 /** Normalise a unit string: "g/m³ as CaCO3" → { key: 'g/m3', basis: 'as CaCO3' }. */
 export function normUnit(raw: string | undefined | null): NormUnit {
   if (!raw) return { key: '', known: false };

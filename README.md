@@ -130,6 +130,9 @@ there as they work and show up for the others within seconds.
   previous rounds* table without the discharge. On the Reports tab, *Edit layout*, open the section
   (⋯ → *Duplicate* makes a second one); sites are chosen there, parameters there or in the template.
   Badges in the section list show each choice ("only GWL", "not DP1").
+- **g/m³ or mg/L.** A project says how it writes concentrations in its details (*Concentrations written as*):
+  the same quantity either way. Tables, graphs, reports and exports follow it, and a parameter added from an
+  import with no unit takes it. The parameter library's own units stay, so other projects are unaffected.
 - **Photos.** A sample's details show the photos taken on the phone in field mode, from the shared folder's *Field
   photos*; add photos from your computer there too. The pictures stay in the shared folder, never in the database.
 - **Bores.** A groundwater site keeps its bore's particulars (*Setup* → the droplet beside the site): top-of-casing

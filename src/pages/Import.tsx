@@ -33,7 +33,7 @@ import { commitImport, type CommitSummary, type ImportMapping } from '../importe
 import { createParameter, newSite, saveSite } from '../db/repo';
 import { DateField, EmptyState, LevelBadge, PageHeader, paramOptions } from '../components/common';
 import { formatDate } from '../lib/dates';
-import { COMMON_UNITS, normUnit, sameDimension, unitLabel } from '../lib/units';
+import { COMMON_UNITS, importUnit, sameDimension, unitLabel, type ConcUnit } from '../lib/units';
 import { evaluateAll } from '../lib/analysis';
 import { fmtNum } from '../lib/values';
 import { guessGroup, PARAMETER_GROUPS } from '../data/parameters';
@@ -261,15 +261,10 @@ interface WizardState {
   notes: string[];
 }
 
-/** The display unit for a parameter added from a lab file: mg/L for the g/m³ NZ labs report (the same thing). */
-function newParamUnit(unit?: string): string {
-  if (!unit) return 'mg/L';
-  return normUnit(unit).key === 'g/m3' ? 'mg/L' : unitLabel(unit);
-}
-
-function NewParamModal({ initial, onClose, onCreated }: { initial: { name: string; unit?: string; group?: string }; onClose: () => void; onCreated: (id: string) => void }) {
+function NewParamModal({ initial, pref, onClose, onCreated }: { initial: { name: string; unit?: string; group?: string }; pref: ConcUnit | undefined; onClose: () => void; onCreated: (id: string) => void }) {
   const [name, setName] = useState(initial.name);
-  const [unit, setUnit] = useState(initial.unit ? newParamUnit(initial.unit) : '');
+  // the file's unit as the project writes it (g/m³ or mg/L); none: the project's concentration unit, once created
+  const [unit, setUnit] = useState(initial.unit ? importUnit(initial.unit, pref) : '');
   const [group, setGroup] = useState(guessGroup(initial.name, initial.group));
   return (
     <Modal opened onClose={onClose} title="New parameter">
@@ -284,7 +279,7 @@ function NewParamModal({ initial, onClose, onCreated }: { initial: { name: strin
           <Button
             disabled={!name.trim()}
             onClick={async () => {
-              const p = await createParameter(name.trim(), unit || 'mg/L', group);
+              const p = await createParameter(name.trim(), unit || importUnit(undefined, pref), group);
               onCreated(p.id);
               onClose();
             }}
@@ -976,7 +971,7 @@ export function ImportWizard(_props: { projectId: string }) {
                     try {
                       const next = { ...paramMapping };
                       for (const r of unmatchedAnalytes) {
-                        const p = await createParameter(r.analyte, newParamUnit(r.unit), guessGroup(r.analyte, r.group));
+                        const p = await createParameter(r.analyte, importUnit(r.unit, data.project.concUnit), guessGroup(r.analyte, r.group));
                         next[r.key] = p.id;
                       }
                       setParamMapping(next);
@@ -1084,7 +1079,7 @@ export function ImportWizard(_props: { projectId: string }) {
             </Button>
           </Group>
           {newParamFor && (
-            <NewParamModal initial={newParamFor} onClose={() => setNewParamFor(null)} onCreated={(id) => setParamMapping((m) => ({ ...m, [newParamFor.key]: id }))} />
+            <NewParamModal pref={data.project.concUnit} initial={newParamFor} onClose={() => setNewParamFor(null)} onCreated={(id) => setParamMapping((m) => ({ ...m, [newParamFor.key]: id }))} />
           )}
         </Stack>
       )}

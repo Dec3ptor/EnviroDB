@@ -6,6 +6,7 @@ import { buildIndex } from '../lib/dataIndex';
 import { isQcSite } from '../lib/qc';
 import type { ProjectBundle } from '../lib/analysis';
 import { compareParams } from '../data/parameters';
+import { withProjectUnits } from '../lib/units';
 
 /** Loads every project's data (for the dashboard). */
 export function useAllBundles(): { bundles: ProjectBundle[]; projects: Project[]; loading: boolean } {
@@ -45,20 +46,23 @@ export function useAllBundles(): { bundles: ProjectBundle[]; projects: Project[]
       const archived = project.status === 'archived';
       const allSamples = archived ? [] : [...(samplesBy.get(project.id) ?? [])].sort((a, b) => (a.date < b.date ? -1 : 1));
       const isQc = (s: (typeof allSamples)[number]) => !!s.qc || qcIds.has(s.siteId);
+      // the parameters as this project writes them (g/m³ or mg/L)
+      const pParams = project.concUnit ? withProjectUnits(sortedParams, project.concUnit) : sortedParams;
+      const pMap = project.concUnit ? new Map(pParams.map((p) => [p.id, p])) : paramMap;
       return {
         project,
         sites: ps,
         siteMap: new Map(all.map((s) => [s.id, s])),
         samples: allSamples.filter((s) => !isQc(s)),
-        params: sortedParams,
-        paramMap,
+        params: pParams,
+        paramMap: pMap,
         guidelineSets: sets,
         setMap,
         rules: [...(rulesBy.get(project.id) ?? [])].sort((a, b) => a.order - b.order),
         notes: notesBy.get(project.id) ?? [],
         schedules: schBy.get(project.id) ?? [],
         obligations: oblBy.get(project.id) ?? [],
-        index: buildIndex(allSamples, archived ? [] : resultsBy.get(project.id) ?? [], all, sortedParams),
+        index: buildIndex(allSamples, archived ? [] : resultsBy.get(project.id) ?? [], all, pParams),
         qc: { sites: qcSites, samples: allSamples.filter(isQc), records: qaBy.get(project.id) ?? [] },
       };
     });
