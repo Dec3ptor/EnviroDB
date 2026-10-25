@@ -2,10 +2,10 @@
 // against the fingerprints of the files issued.
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Anchor, Autocomplete, Badge, Button, Checkbox, FileButton, Group, Loader, Modal, ScrollArea, SegmentedControl, Stack, Text, TextInput, Textarea, Tooltip } from '@mantine/core';
+import { Alert, Anchor, Autocomplete, Badge, Button, Checkbox, FileButton, Group, Loader, Modal, ScrollArea, SegmentedControl, Stack, Text, TextInput, Textarea, Tooltip, Popover } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { IconAlertTriangle, IconCheck, IconFileTypeDocx, IconFileTypePdf, IconFingerprint, IconGitCompare, IconHistory, IconLock, IconLockOpen, IconTrash } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconFileTypeDocx, IconFileTypePdf, IconFingerprint, IconGitCompare, IconHistory, IconLock, IconLockOpen, IconTrash, IconCircleCheck, IconInfoCircle } from '@tabler/icons-react';
 import type { FigureImage, IssuedReport, Project, ReportObligation, ReportTemplate, Settings } from '../../db/types';
 import type { ProjectBundle } from '../../lib/analysis';
 import { AREA_TEXT, diffSnapshots, MissingParts, nextRevision, sha256, sizeText, snapshotContent, type ChangeArea, type IssueDiff, type SnapshotContent } from '../../lib/issued';
@@ -13,6 +13,8 @@ import { cancelRevision, deleteIssue, findIssuedFile, issuedBuildOptions, issueR
 import { fullReport, reportFile, type ExportKind } from '../../reports/export';
 import { downloadBlob } from '../../db/backup';
 import { formatDate, todayStr } from '../../lib/dates';
+import { checksSummary, type ReportCheck } from '../../reports/checks';
+import { Link } from 'react-router-dom';
 
 /** What the report would be built from now – to issue, or to compare with what was issued. */
 export interface ReportNow {
@@ -76,6 +78,58 @@ function IssuedDownloads({ issue, size = 'xs' }: { issue: IssuedReport; size?: '
 
 // ------------------------------------------------------------ issuing
 
+/** What's missing or not quite ready, as a list – before issuing. */
+export function ChecksList({ checks, projectId }: { checks: ReportCheck[]; projectId: string }) {
+  if (!checks.length)
+    return (
+      <Group gap={6}>
+        <IconCircleCheck size={16} color="var(--mantine-color-teal-6)" />
+        <Text size="sm">Nothing missing: every site has results, the commentary is written, references resolve.</Text>
+      </Group>
+    );
+  const where: Record<NonNullable<ReportCheck['where']>, string> = { data: 'Data', compliance: 'Compliance', reports: 'Reports', setup: 'Setup', schedule: 'Sampling & reporting' };
+  return (
+    <Stack gap={4}>
+      {checks.map((c, i) => (
+        <Group key={i} gap={8} wrap="nowrap" align="flex-start">
+          {c.level === 'warn' ? <IconAlertTriangle size={15} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0, marginTop: 3 }} /> : <IconInfoCircle size={15} color="var(--mantine-color-blue-6)" style={{ flexShrink: 0, marginTop: 3 }} />}
+          <Text size="sm">
+            {c.text}
+            {c.where && c.where !== 'reports' && (
+              <>
+                {' '}
+                <Anchor component={Link} to={`/projects/${projectId}/${c.where}`} size="sm">
+                  {where[c.where]}
+                </Anchor>
+              </>
+            )}
+          </Text>
+        </Group>
+      ))}
+    </Stack>
+  );
+}
+
+/** The checks as a line under the Issue button: a count, and the list on click. */
+export function ChecksLine({ checks, projectId }: { checks: ReportCheck[]; projectId: string }) {
+  const warns = checks.filter((c) => c.level === 'warn').length;
+  return (
+    <Popover width={420} position="bottom-start" withArrow shadow="md">
+      <Popover.Target>
+        <Button size="compact-xs" variant="subtle" color={warns ? 'orange' : checks.length ? 'blue' : 'teal'} leftSection={warns ? <IconAlertTriangle size={13} /> : checks.length ? <IconInfoCircle size={13} /> : <IconCircleCheck size={13} />}>
+          {checksSummary(checks)}
+        </Button>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Text size="xs" fw={600} mb={6}>
+          Before issuing
+        </Text>
+        <ChecksList checks={checks} projectId={projectId} />
+      </Popover.Dropdown>
+    </Popover>
+  );
+}
+
 export function IssueModal({
   opened,
   onClose,
@@ -84,6 +138,7 @@ export function IssueModal({
   project,
   obligation,
   submitted,
+  checks = [],
 }: {
   opened: boolean;
   onClose: () => void;
@@ -93,6 +148,8 @@ export function IssueModal({
   project: Project;
   obligation?: ReportObligation;
   submitted: boolean;
+  /** What's missing or not quite ready (warnings, not stops). */
+  checks?: ReportCheck[];
 }) {
   const [revision, setRevision] = useState('');
   const [purpose, setPurpose] = useState('');
@@ -150,6 +207,11 @@ export function IssueModal({
   return (
     <Modal opened={opened} onClose={() => !busy && onClose()} title={previous ? `Issue a revision of ${previous.revision}` : 'Issue this report'} size="lg">
       <Stack gap="sm">
+        {checks.length > 0 && (
+          <Alert color={checks.some((c) => c.level === 'warn') ? 'orange' : 'blue'} variant="light" p="sm" title="Before you issue">
+            <ChecksList checks={checks} projectId={project.id} />
+          </Alert>
+        )}
         <Text size="sm">
           The files are downloaded to send, and the report is locked as issued. EnviroDB keeps what it was built from – the results, limits, layout and commentary – compressed, with a fingerprint of each file, so it can be rebuilt as
           issued and any later change shown.
@@ -457,10 +519,13 @@ export function IssuedPanel({
   onShowCurrent,
   onIssue,
   onOpen,
+  checks,
 }: {
   revisions: IssuedReport[];
   all: IssuedReport[];
   issued: { content?: SnapshotContent; error?: string };
+  /** What's missing before issuing. */
+  checks?: ReportCheck[];
   now: ReportNow;
   showCurrent: boolean;
   onShowCurrent: (v: boolean) => void;
@@ -494,11 +559,14 @@ export function IssuedPanel({
     return (
       <Stack gap={4}>
         <Group justify="space-between" gap={4}>
-          <Tooltip label="Download the files to send and lock the report as issued (Rev 0), keeping what it was built from" multiline maw={280}>
-            <Button size="xs" variant="default" leftSection={<IconLock size={14} />} onClick={onIssue}>
-              Issue…
-            </Button>
-          </Tooltip>
+          <Group gap={4} wrap="nowrap">
+            <Tooltip label="Download the files to send and lock the report as issued (Rev 0), keeping what it was built from" multiline maw={280}>
+              <Button size="xs" variant="default" leftSection={<IconLock size={14} />} onClick={onIssue}>
+                Issue…
+              </Button>
+            </Tooltip>
+            {checks && <ChecksLine checks={checks} projectId={now.bundle.project.id} />}
+          </Group>
           {tools}
         </Group>
         {historyModal}

@@ -35,6 +35,7 @@ import { ReportSites } from '../../components/report/ReportSites';
 import { IssuedPanel, IssueModal, useIssuedContent, useLatestIssues, type ReportNow } from '../../components/report/Issued';
 import { issuedBuildOptions } from '../../db/issues';
 import type { IssuedReport } from '../../db/types';
+import { preIssueChecks } from '../../reports/checks';
 
 /** No images added yet (one object, so the preview isn't rebuilt for nothing). */
 const NO_FIGURES: Record<string, FigureImage[]> = {};
@@ -278,6 +279,9 @@ export function ReportsTab() {
     return () => clearTimeout(h);
   }, [data, template, period, settings, prompts, chosenSites, reportFigures, asIssued, issued.content, issued.error]);
 
+  // what's missing before issuing (warnings, not stops)
+  const checks = useMemo(() => (template && !asIssued ? preIssueChecks({ bundle: data, template, period, doc, promptTexts: prompts, figures: reportFigures, imports: data.imports, siteIds: chosenSites ?? undefined }) : []), [data, template, period, doc, prompts, reportFigures, chosenSites, asIssued]);
+
   const [busy, setBusy] = useState<'pdf' | 'docx' | null>(null);
   const exportDoc = async (kind: 'pdf' | 'docx') => {
     if (!template) return;
@@ -441,7 +445,7 @@ export function ReportsTab() {
                     </Stack>
                   )}
                   {reportNow && issues && (
-                    <IssuedPanel revisions={revisions} all={allIssued} issued={issued} now={reportNow} showCurrent={showCurrent} onShowCurrent={setShowCurrent} onIssue={() => setIssuing(true)} onOpen={openIssued} />
+                    <IssuedPanel revisions={revisions} all={allIssued} issued={issued} now={reportNow} showCurrent={showCurrent} onShowCurrent={setShowCurrent} onIssue={() => setIssuing(true)} onOpen={openIssued} checks={checks} />
                   )}
                   {obligation && (
                     <Group justify="space-between">
@@ -611,7 +615,7 @@ export function ReportsTab() {
       </Grid.Col>
       <JumpToPreview preview={previewCard} back={settingsCard} />
       {reportNow && (
-        <IssueModal opened={issuing} onClose={() => setIssuing(false)} now={reportNow} previous={latestIssue?.revising ? latestIssue : undefined} project={project} obligation={obligation} submitted={!!submitted} />
+        <IssueModal opened={issuing} onClose={() => setIssuing(false)} now={reportNow} previous={latestIssue?.revising ? latestIssue : undefined} project={project} obligation={obligation} submitted={!!submitted} checks={checks} />
       )}
       <SaveAsModal opened={saveAs} onClose={() => setSaveAs(false)} initialName={`${stored.name} (edited)`} onSave={saveAsNew} />
     </Grid>

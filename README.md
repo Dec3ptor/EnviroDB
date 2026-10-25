@@ -395,6 +395,11 @@ there as they work and show up for the others within seconds.
   - **It's kept small.** The data is compressed and split by site and year; each part is kept once and
     shared by every revision and every later report that uses it (images too). A revision usually adds a few
     KB; the demo project's three years of results take about 30 KB in all.
+  - **Before you issue**, EnviroDB lists what's missing or not quite ready beside the *Issue…* button and in
+    the issue dialog: sites with no results in the period, rules with nothing to assess, results nobody has
+    reviewed, commentary left blank or still as drafted, references to tables or figures that aren't in the
+    report, placeholders left as typed, figures sections with no pictures, exceedances without a follow-up,
+    a period not yet over. Warnings, not stops – the report can still be issued.
   - **What has changed since** is shown with the issued report: results changed, added or left out (lab
     re-issues, late results, swapped bottles), limits, guideline values, layout and commentary – with the
     results in the report's period flagged, when a revision may be needed.

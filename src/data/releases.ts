@@ -11,6 +11,15 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.22.0',
+    date: '2026-10-25',
+    title: 'Before you issue',
+    items: [
+      'A check before issuing a report, beside the Issue… button and in the issue dialog: sites with no results in the period, rules with nothing to assess, results nobody has reviewed, commentary left blank or still as EnviroDB drafted it, references to tables or figures that aren’t in the report, placeholders left as typed, figures sections with no pictures, exceedances without a follow-up, a period not yet over. Each points to where to put it right. Warnings, not stops.',
+      'A due report opens straight into its report from the due item’s card (Open the report, with the obligation’s own template); what changed since a report was issued stays shown with the issued report.',
+    ],
+  },
+  {
     version: '1.21.0',
     date: '2026-10-25',
     title: 'Due items, sign-off and a history',
