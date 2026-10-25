@@ -11,6 +11,16 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.26.0',
+    date: '2026-10-25',
+    title: 'Search everything, and the keyboard',
+    items: [
+      'Search everything (Ctrl K, ⌘ K on a Mac, or the magnifier in the header): projects, sites (by code, name or alias), parameters, limits and triggers, reports and plans due, report templates, guideline values and the app’s pages. ↑ ↓ and Enter, or a click.',
+      'Keyboard shortcuts: ? lists them; g then d, p, c, i, l or s goes to the Dashboard, Projects, Calendar, Import, Library or Settings; 1–7 switches a project’s tabs. Never while typing in a field.',
+      'A pass over dark mode (report previews, maps, data) and the Data tab on a phone: nothing overflows, the controls stack, the grid scrolls.',
+    ],
+  },
+  {
     version: '1.25.0',
     date: '2026-10-25',
     title: 'g/m³ or mg/L, your choice',

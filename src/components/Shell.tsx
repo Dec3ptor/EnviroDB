@@ -23,6 +23,8 @@ import { VersionFooter } from './Version';
 import { startInboxWatch, useInbox } from '../sync/inbox';
 import { useFeature } from '../hooks/useFeatures';
 import { noteTourOffered, Tour, tourToOffer } from './Onboarding';
+import { SearchButton, SearchModal } from './Search';
+import { ShortcutsHelp, useSearchAndShortcuts } from './Shortcuts';
 
 /** The Library's pages: reference data shared by every project. */
 export const LIBRARY = [
@@ -75,6 +77,8 @@ export function Shell() {
     // reference data shared by every project: guidelines, report templates and parameters
     { to: '/guidelines', label: 'Library', icon: IconBook2, active: LIBRARY.some((l) => path.startsWith(l.to)), tour: 'nav-library' },
   ];
+  // Ctrl K search, ? for the shortcuts
+  const { search, setSearch, help, setHelp } = useSearchAndShortcuts();
   // the tour: offered once when there's something to show, and whenever asked for
   const [tour, setTour] = useState(false);
   useEffect(() => {
@@ -111,6 +115,7 @@ export function Shell() {
           </Group>
           <Group gap="xs" wrap="nowrap">
             <WorkspaceBadge />
+            <SearchButton onClick={() => setSearch(true)} />
             <ActionIcon variant="default" size="lg" onClick={() => toggleColorScheme()} aria-label="Toggle colour scheme">
               {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
             </ActionIcon>
@@ -166,6 +171,8 @@ export function Shell() {
         <Outlet />
       </AppShell.Main>
       <Tour open={tour} onClose={() => setTour(false)} />
+      <SearchModal opened={search} onClose={() => setSearch(false)} />
+      <ShortcutsHelp opened={help} onClose={() => setHelp(false)} />
     </AppShell>
   );
 }

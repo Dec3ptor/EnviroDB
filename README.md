@@ -130,6 +130,11 @@ there as they work and show up for the others within seconds.
   previous rounds* table without the discharge. On the Reports tab, *Edit layout*, open the section
   (⋯ → *Duplicate* makes a second one); sites are chosen there, parameters there or in the template.
   Badges in the section list show each choice ("only GWL", "not DP1").
+- **Search everything.** Ctrl K (⌘ K on a Mac) or the magnifier in the header finds projects, sites (by code,
+  name or alias), parameters, limits and triggers, reports and plans due, templates, guideline values and the
+  app's pages; ↑ ↓ and Enter to go. **Keyboard shortcuts:** ? lists them – *g* then *d*, *p*, *c*, *i*, *l* or
+  *s* goes to the Dashboard, Projects, Calendar, Import, Library or Settings; *1–7* switches a project's tabs.
+  Never while typing in a field.
 - **g/m³ or mg/L.** A project says how it writes concentrations in its details (*Concentrations written as*):
   the same quantity either way. Tables, graphs, reports and exports follow it, and a parameter added from an
   import with no unit takes it. The parameter library's own units stay, so other projects are unaffected.
