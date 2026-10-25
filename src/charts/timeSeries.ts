@@ -22,6 +22,8 @@ export interface ChartSeries {
   id: string;
   name: string;
   colorIndex: number;
+  /** A colour of the site's own (hex), instead of the palette's. */
+  color?: string;
   points: ChartPoint[];
 }
 export interface ChartLine {
@@ -54,7 +56,41 @@ export interface ChartSpec {
   trends?: Array<{ seriesId: string; points: Array<[number, number]> }>;
   /** Continuous data behind the results: daily rainfall as bars from the top, flow or level as a line. */
   overlay?: ChartOverlay;
+  /** How the results are drawn (default: lines with points, normal weight). */
+  look?: ChartLook;
+  /** The value axis's range, where set (otherwise it fits the data). */
+  yRange?: { min?: number; max?: number };
+  /** The value axis's name (default: the unit). */
+  yLabel?: string;
+  /** The site legend: at the top (default, when there's more than one site) or not shown. */
+  legend?: 'top' | 'none';
+  /** Text scale for the whole graph (default 1). */
+  fontScale?: number;
+  /** Lines of your own across the graph, each at a value, with a label. */
+  refLines?: ChartNote[];
+  /** Dates to mark, each with a label ('YYYY-MM-DD'). */
+  events?: ChartEvent[];
 }
+
+export interface ChartLook {
+  /** Lines with points (default), points only, or lines only. */
+  kind: 'lines' | 'points' | 'linesOnly';
+  weight: 'light' | 'normal' | 'bold';
+}
+export interface ChartNote {
+  value: number;
+  label: string;
+  color?: string;
+  dash?: boolean;
+}
+export interface ChartEvent {
+  date: string;
+  label: string;
+  color?: string;
+}
+export const DEFAULT_LOOK: ChartLook = { kind: 'lines', weight: 'normal' };
+/** A note's colour unless given: a neutral grey that stays apart from the limit, trigger and guideline colours. */
+export const NOTE_COLOR = '#6b6a66';
 
 export interface ChartOverlay {
   name: string;
@@ -133,7 +169,7 @@ export function buildChartSpec(input: ChartInput): ChartSpec {
       hasNd ||= nd;
       pts.push({ t: toUtcMs(r.date), v, nd, text: `${r.qualifier ? r.qualifier + ' ' : ''}${fmtNum(v)}`, date: r.date });
     }
-    if (pts.length) series.push({ id: sid, name: site.code, colorIndex: siteOrder.get(sid) ?? 0, points: pts });
+    if (pts.length) series.push({ id: sid, name: site.code, colorIndex: siteOrder.get(sid) ?? 0, ...(site.colour ? { color: site.colour } : {}), points: pts });
   }
 
   const u = unitLabel(unit);
@@ -314,10 +350,13 @@ function utcDate(ms: number) {
 export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCoreOption {
   const ink = opts.dark && !opts.forExport ? INK.dark : INK.light;
   const palette = opts.dark && !opts.forExport ? SERIES_DARK : SERIES_LIGHT;
-  const fs = opts.fontScale ?? 1;
+  const fs = (opts.fontScale ?? 1) * (spec.fontScale ?? 1);
+  const look = spec.look ?? DEFAULT_LOOK;
+  const lineW = look.weight === 'light' ? 1.25 : look.weight === 'bold' ? 3 : 2;
+  const symbolSize = look.weight === 'light' ? 6 : look.weight === 'bold' ? 10 : 8;
   const showTitle = opts.showTitle ?? true;
   const unitText = unitLabel(spec.unit);
-  const multi = spec.series.length > 1;
+  const multi = spec.series.length > 1 && spec.legend !== 'none';
   const avail = opts.width ? opts.width - 16 : undefined;
   // site legend at the top, wrapped to the width
   const legendFont = 11.5 * fs;
@@ -328,9 +367,18 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
   const fitted = shown.length ? shown : spec.series;
   const values = fitted.flatMap((s) => s.points.map((p) => p.v));
   const times = fitted.flatMap((s) => s.points.map((p) => p.t));
-  const xMin = spec.xAuto && times.length && spec.xMin !== undefined ? Math.max(spec.xMin, Math.min(...times)) : spec.xMin;
-  const xMax = spec.xAuto && times.length && spec.xMax !== undefined ? Math.min(spec.xMax, Math.max(...times)) : spec.xMax;
-  const lineValues = spec.lines.flatMap((l) => l.values);
+  let xMin = spec.xAuto && times.length && spec.xMin !== undefined ? Math.max(spec.xMin, Math.min(...times)) : spec.xMin;
+  let xMax = spec.xAuto && times.length && spec.xMax !== undefined ? Math.min(spec.xMax, Math.max(...times)) : spec.xMax;
+  // a date marked beyond the results still shows: the axis reaches it (a week either side)
+  for (const e of spec.events ?? []) {
+    if (!/^\d{4}-\d{2}-\d{2}/.test(e.date)) continue;
+    const t = toUtcMs(e.date.slice(0, 10));
+    const edge = Math.max(xMax ?? Math.max(...times, t), ...times);
+    const start = Math.min(xMin ?? Math.min(...times, t), ...times);
+    if (t > edge) xMax = t + 7 * 864e5;
+    if (t < start) xMin = t - 7 * 864e5;
+  }
+  const lineValues = [...spec.lines.flatMap((l) => l.values), ...(spec.refLines ?? []).map((n) => n.value)];
   const dataMax = Math.max(0, ...values);
   const lineMax = Math.max(0, ...lineValues);
   // Start the axis at zero unless the data sit far from it (e.g. pH 6–9, temperature)
@@ -394,14 +442,14 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
     }
   });
   const series: unknown[] = spec.series.map((s) => {
-    const color = palette[s.colorIndex % palette.length];
+    const color = s.color ?? palette[s.colorIndex % palette.length];
     return {
       type: 'line',
       name: s.name,
-      showSymbol: true,
+      showSymbol: look.kind !== 'linesOnly',
       symbol: 'circle',
-      symbolSize: 8,
-      lineStyle: { width: 2, color, cap: 'round', join: 'round' },
+      symbolSize,
+      lineStyle: { width: look.kind === 'points' ? 0 : lineW, color, cap: 'round', join: 'round', opacity: look.kind === 'points' ? 0 : 1 },
       itemStyle: { color, borderColor: ink.surface, borderWidth: 2 },
       emphasis: { focus: 'series', scale: 1.4 },
       connectNulls: true,
@@ -417,14 +465,14 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
   for (const tr of spec.trends ?? []) {
     const s = spec.series.find((x) => x.id === tr.seriesId);
     if (!s || tr.points.length < 2) continue;
-    const color = palette[s.colorIndex % palette.length];
+    const color = s.color ?? palette[s.colorIndex % palette.length];
     series.push({
       type: 'line',
       name: s.name,
       showSymbol: false,
       silent: true,
       z: 4,
-      lineStyle: { width: 2, color, type: [6, 4], opacity: 0.9 },
+      lineStyle: { width: lineW, color, type: [6, 4], opacity: 0.9 },
       itemStyle: { color },
       tooltip: { show: false },
       data: tr.points.filter(([, v]) => !spec.log || v > 0).map(([t, v]) => ({ value: [t, v] })),
@@ -465,6 +513,36 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
       },
     });
   }
+  const notes = (spec.refLines ?? []).filter((n) => Number.isFinite(n.value) && (!spec.log || n.value > 0));
+  const events = (spec.events ?? []).filter((e) => /^\d{4}-\d{2}-\d{2}/.test(e.date));
+  if (notes.length || events.length) {
+    series.push({
+      type: 'line',
+      name: '__notes',
+      data: [],
+      silent: true,
+      z: 5,
+      markLine: {
+        silent: true,
+        symbol: 'none',
+        animation: false,
+        precision: 20,
+        data: [
+          ...notes.map((n) => ({
+            yAxis: n.value,
+            lineStyle: { type: n.dash === false ? 'solid' : [4, 4], width: 1.5, color: n.color ?? NOTE_COLOR },
+            label: { show: !!n.label, formatter: n.label, position: 'insideEndTop', color: n.color ?? NOTE_COLOR, fontSize: 11 * fs, fontFamily: FONT, distance: [0, 3] },
+          })),
+          ...events.map((e) => ({
+            xAxis: toUtcMs(e.date),
+            lineStyle: { type: 'solid', width: 1.5, color: e.color ?? NOTE_COLOR },
+            label: { show: !!e.label, formatter: e.label, position: 'insideEndTop', rotate: 90, color: e.color ?? NOTE_COLOR, fontSize: 11 * fs, fontFamily: FONT, distance: [3, 0] },
+          })),
+        ],
+      },
+    });
+  }
+  const yFixed = spec.yRange ?? {};
   return {
     useUTC: true,
     animation: !opts.forExport,
@@ -546,7 +624,7 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
     },
     yAxis: [{
       type: spec.log ? 'log' : 'value',
-      name: unitText,
+      name: spec.yLabel ?? unitText,
       nameLocation: 'end',
       nameGap: 10,
       nameTextStyle: { color: ink.secondary, fontSize: 11 * fs, align: 'left' },
@@ -554,8 +632,8 @@ export function chartOption(spec: ChartSpec, opts: RenderOpts = {}): EChartsCore
       axisTick: { show: false },
       axisLabel: { color: opts.forExport ? ink.secondary : ink.muted, fontSize: 11 * fs, formatter: (v: number) => fmtNum(v) },
       splitLine: { lineStyle: { color: ink.grid, width: 1, type: 'solid' } },
-      max: spec.log ? undefined : zeroBased ? (v: { max: number }) => niceMax(Math.max(v.max, lineMax, dataMax) * 1.08) : Math.ceil((hi + step * 0.3) / step) * step,
-      min: spec.log ? undefined : zeroBased ? (v: { min: number }) => (v.min >= 0 ? 0 : v.min) : Math.floor((lo - step * 0.3) / step) * step,
+      max: yFixed.max !== undefined ? yFixed.max : spec.log ? undefined : zeroBased ? (v: { max: number }) => niceMax(Math.max(v.max, lineMax, dataMax) * 1.08) : Math.ceil((hi + step * 0.3) / step) * step,
+      min: yFixed.min !== undefined ? yFixed.min : spec.log ? undefined : zeroBased ? (v: { min: number }) => (v.min >= 0 ? 0 : v.min) : Math.floor((lo - step * 0.3) / step) * step,
     }, ...(overlay ? [overlayAxis(overlay, ink, opts.forExport, fs)] : [])],
     graphic: graphics,
     series,

@@ -59,6 +59,16 @@ there as they work and show up for the others within seconds.
   by colour-blind readers). Client data packs draw them the same way. Graphs export
   as high-resolution PNGs, can be copied straight into Word, or exported all at once to a
   Word document.
+- **Make a graph your own.** The sliders button on a graph opens *Customise*: its title and subtitle, the
+  axis label, which sites show, the results as lines and points, points only or lines only (light to bold),
+  the site legend, the value axis fitted to the data, from zero or a range you set, log scale, and larger
+  text for slides. Add **lines of your own** across the graph (a value with a label – a baseline, an older
+  limit) and **events** (a date with a label – works done, a spill); each is labelled on the graph, and the
+  date axis reaches a marked date beyond the results. **Site colours are the project's**: change one here
+  and it's the same on every graph, in reports and data packs and on the map, for everyone. *Customise all
+  graphs* sets the look they share; a graph with settings of its own keeps them, *Apply the look to all
+  graphs* copies one graph's look to the rest (each keeps its own title, sites and notes), and *Reset* puts a
+  graph back. Copies and downloads carry it all.
 - **Put the sites on a map.** A project's *Map* tab shows its monitoring sites on LINZ aerial
   imagery (or street or topographic maps), labelled in the colours the graphs use. Choose a site's
   *Place* and click where it is, or click the map and pick the site for that point (or *New site

@@ -99,7 +99,7 @@ export function ProjectDataProvider({ projectId, children }: { projectId: string
       qc: { sites: sortedSites.filter((s) => qcSiteIds.has(s.id)), samples: byDate.filter(isQc), records: qaRecords },
       register: { conditions, assessments },
       continuous: { series: [...series].sort((a, b) => a.name.localeCompare(b.name)), days: seriesDays },
-      siteColor: (id: string) => SERIES_LIGHT[(colorIdx.get(id) ?? 0) % SERIES_LIGHT.length],
+      siteColor: (id: string) => sortedSites.find((x) => x.id === id)?.colour ?? SERIES_LIGHT[(colorIdx.get(id) ?? 0) % SERIES_LIGHT.length],
     };
   }, [project, sites, samples, results, rules, notes, schedules, obligations, imports, params, guidelineSets, qaRecords, conditions, assessments, series, seriesDays]);
 

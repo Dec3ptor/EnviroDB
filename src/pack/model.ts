@@ -168,7 +168,7 @@ export function buildPackData(b: ProjectBundle, settings: PackSettings, ctx: Pac
     return thresholdStyles(spec.lines).map((l, i) => ({ values: l.values, text: l.text, kind: l.kind, color: [l.color, dark[i].color], dash: l.dash ? l.dash.join(' ') : '' }));
   });
 
-  const colorOf = new Map(b.sites.map((x, i) => [x.id, SERIES_LIGHT[i % SERIES_LIGHT.length]]));
+  const colorOf = new Map(b.sites.map((x, i) => [x.id, x.colour ?? SERIES_LIGHT[i % SERIES_LIGHT.length]]));
   // rainfall or flow behind the graphs, a value a day over the pack's dates
   const o = overlayFor(s.overlay, b.continuous);
   let overlay: PackData['overlay'];

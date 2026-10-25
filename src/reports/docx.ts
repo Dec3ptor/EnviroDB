@@ -668,6 +668,7 @@ export async function chartsToDocx(title: string, subtitle: string, images: Arra
     children.push(new Paragraph({ style: 'Caption', children: [new TextRun({ text: `Figure ${i + 1}: ${img.title}` })] }));
   });
   const plain = { style: 'report' as const, accent: '#0f766e', headingColor: '#0f766e', tableHeader: 'accent' as const, highlight: 'fill' as const };
-  const d = new Document({ creator: MADE_BY, styles: styles({ template: { fontSize: 10 }, look: plain } as ReportDoc), sections: [{ children }] });
+  // a plain page: no letterhead, so nothing is indented (the styles include Word's contents styles, which ask)
+  const d = new Document({ creator: MADE_BY, styles: styles({ template: { fontSize: 10 }, look: plain, page: { indent: 0 } } as unknown as ReportDoc), sections: [{ children }] });
   return Packer.toBlob(d);
 }

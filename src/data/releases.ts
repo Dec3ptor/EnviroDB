@@ -11,6 +11,18 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.20.0',
+    date: '2026-10-25',
+    title: 'Graphs your way',
+    items: [
+      'Each graph has a Customise button (the sliders): its title and subtitle, the axis label, which sites show, the results as lines and points, points only or lines only, light to bold, the site legend, the value axis fitted, from zero or a range you set, log scale, larger text for slides.',
+      'Your own lines and events: a line across a graph at a value with a label (a baseline, an older limit), and dates to mark (works done, a spill) – each labelled on the graph, with a colour of your choice. The date axis reaches a marked date beyond the results.',
+      'Site colours are the project’s: change one on any graph and it’s the same on every graph, in reports, data packs and on the map, for everyone. Each site has a colour picker in the Customise panel.',
+      'Customise all graphs sets the shared look; a graph with settings of its own keeps them, and Apply the look to all graphs copies one graph’s look to the rest (each keeps its own title, sites and notes). Reset puts a graph back.',
+      'The copy, PNG and Word downloads carry it all. Fixed: All graphs to Word failed with a page-settings error.',
+    ],
+  },
+  {
     version: '1.19.0',
     date: '2026-10-24',
     title: 'Less to take in: the essentials first',

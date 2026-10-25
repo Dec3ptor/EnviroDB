@@ -144,6 +144,8 @@ export interface Site {
   description?: string;
   active: boolean;
   order: number;
+  /** The site's colour on graphs, maps and in data packs (hex); unset: from its place in the list. */
+  colour?: string;
   /**
    * How the site is graded against the NPS-FM's attribute bands: a river or lake (none: not graded; unset: rivers
    * for surface water sites), and the classes some bands depend on.
