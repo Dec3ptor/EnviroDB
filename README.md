@@ -130,6 +130,20 @@ there as they work and show up for the others within seconds.
   previous rounds* table without the discharge. On the Reports tab, *Edit layout*, open the section
   (⋯ → *Duplicate* makes a second one); sites are chosen there, parameters there or in the template.
   Badges in the section list show each choice ("only GWL", "not DP1").
+- **Due items.** A report or plan that's due opens its own card – from the dashboard, the calendar, *Actions to
+  take* or *Overview → Sampling & reporting*: what it is, the period, who it goes to, its status, *Mark
+  submitted*, files or links to the document, and notes. *Open the report* shows only when the obligation has a
+  template; a management plan or other document (each obligation says what it is) is written elsewhere and
+  attached when it's done.
+- **Results reviewed and signed off.** Each import is marked reviewed – by whom, when – on the Data tab's import
+  history or straight after importing. Unreviewed imports are an action on the dashboard, and the Reports tab
+  warns when the period has results nobody has signed off. A result can carry a **comment** (the speech bubble
+  in a sample's details), marked in the corner of its cell. An import can be **undone** straight after importing,
+  within an hour from the dashboard, or any time from the import history.
+- **Follow-up and history.** *Compliance → Follow-up* lists every exceedance in the period with where its
+  follow-up is up to (open, regulator notified with the date, closed). *Setup → History* is the project's record
+  of who did what, when: imports and undoing, sign-offs, sites, rules, obligations, archiving – shared with the
+  team. Archived projects stay out of the working set (not loaded for the dashboard) so it stays quick.
 - **Pick up where you left off.** Each tab keeps how you set it up – the graphs chosen and their
   options, the data filters and sort, the report's template, period and layout tab, the compliance
   and overview periods – when you go to another tab and come back, and next time in this browser.

@@ -3,7 +3,7 @@ import { RegisterView } from './Register';
 import { Accordion, ActionIcon, Badge, Button, Card, Group, Menu, SegmentedControl, Select, Stack, Table, Text, Textarea, Popover } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { Link } from 'react-router-dom';
-import { IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay, IconFileTypeDocx, IconSparkles, IconListDetails, IconTable, IconChecklist } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay, IconFileTypeDocx, IconSparkles, IconListDetails, IconTable, IconChecklist } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
@@ -167,6 +167,90 @@ function ExceedanceTable({ ev }: { ev: RuleEvaluation }) {
   );
 }
 
+/** Every exceedance in the period, across the rules, with where its follow-up is up to: the list to work through. */
+function FollowUpView({ evals }: { evals: RuleEvaluation[] }) {
+  const { siteMap, paramMap, notes } = useProject();
+  const [show, setShow] = useState<'open' | 'all'>('open');
+  const noteMap = new Map(notes.map((n) => [n.id, n]));
+  const rows = evals
+    .flatMap((ev) => ev.exceedances.map((ex) => ({ ev, ex, note: noteMap.get(`${ev.rule.id}|${ex.key}`) })))
+    .filter((r) => show === 'all' || !r.note || r.note.status === 'open')
+    .sort((a, b) => b.ex.date.localeCompare(a.ex.date));
+  const counts = { open: 0, notified: 0, closed: 0 };
+  for (const ev of evals) for (const ex of ev.exceedances) counts[noteMap.get(`${ev.rule.id}|${ex.key}`)?.status ?? 'open']++;
+  return (
+    <Stack gap="sm">
+      <Group justify="space-between" wrap="wrap" gap="sm">
+        <Group gap="xs">
+          <Badge color="orange" variant="light">
+            {counts.open} open
+          </Badge>
+          <Badge color="blue" variant="light">
+            {counts.notified} notified
+          </Badge>
+          <Badge color="green" variant="light">
+            {counts.closed} closed
+          </Badge>
+        </Group>
+        <SegmentedControl size="xs" value={show} onChange={(v) => setShow(v as 'open' | 'all')} data={[{ value: 'open', label: 'Still open' }, { value: 'all', label: 'All in the period' }]} />
+      </Group>
+      {!rows.length ? (
+        <EmptyState title={show === 'open' ? 'Nothing open' : 'No exceedances in the period'}>
+          {show === 'open' ? 'Every exceedance in the period has been notified or closed.' : 'Limits, triggers and guideline rules were all met.'}
+        </EmptyState>
+      ) : (
+        <Table.ScrollContainer minWidth={760}>
+          <Table striped>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Date</Table.Th>
+                <Table.Th>Site</Table.Th>
+                <Table.Th>Rule</Table.Th>
+                <Table.Th ta="right">Value</Table.Th>
+                <Table.Th>Limit</Table.Th>
+                <Table.Th>Notified</Table.Th>
+                <Table.Th>Follow-up</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.map(({ ev, ex, note }) => (
+                <Table.Tr key={`${ev.rule.id}|${ex.key}`}>
+                  <Table.Td className="tabular">{formatDate(ex.date)}</Table.Td>
+                  <Table.Td>{siteMap.get(ex.siteId)?.code}</Table.Td>
+                  <Table.Td>
+                    <Text size="sm">{ev.rule.name}</Text>
+                    <Text size="xs" c="dimmed">
+                      {paramMap.get(ex.parameterId)?.name ?? ex.parameterId}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td ta="right" fw={600} className="tabular">
+                    {ex.value === null ? '' : `${ex.qualifier}${fmtNum(ex.value)}`} {ex.unit === '%' ? '%' : unitLabel(ex.unit)}
+                  </Table.Td>
+                  <Table.Td>{ex.limitText}</Table.Td>
+                  <Table.Td className="tabular">{note?.notifiedOn ? formatDate(note.notifiedOn) : ''}</Table.Td>
+                  <Table.Td>
+                    <Group gap="xs" wrap="nowrap">
+                      <NoteEditor key={ex.key} ruleId={ev.rule.id} ex={ex} note={note} />
+                      {note?.text && (
+                        <Text size="xs" c="dimmed" lineClamp={1} style={{ maxWidth: 240 }}>
+                          {note.text}
+                        </Text>
+                      )}
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      )}
+      <Text size="xs" c="dimmed">
+        Open exceedances from the last 90 days also show under Actions to take on the dashboard. Each rule’s own list is under Rules.
+      </Text>
+    </Stack>
+  );
+}
+
 export function ComplianceTab() {
   const data = useProject();
   const { project, rules } = data;
@@ -174,8 +258,9 @@ export function ComplianceTab() {
   const [period, setPeriod] = useViewState<PeriodValue>(`${project.id}:compliance.period`, () => defaultPeriod(project.yearStartMonth, 'thisRy'), revivePeriod(project.yearStartMonth));
   const [editing, setEditing] = useState<Rule | null>(null);
   // the rules one by one, or the limits and triggers as a table
-  const [view, setView] = useViewState<'rules' | 'table' | 'register'>(`${project.id}:compliance.view`, 'rules', (v) => (v === 'rules' || v === 'table' || v === 'register' ? v : undefined));
+  const [view, setView] = useViewState<'rules' | 'table' | 'register' | 'followup'>(`${project.id}:compliance.view`, 'rules', (v) => (v === 'rules' || v === 'table' || v === 'register' || v === 'followup' ? v : undefined));
   const evals = useMemo(() => evaluateAll(data, period.start, period.end, rules.filter((r) => r.active)), [data, period, rules]);
+  const openCount = useMemo(() => evals.reduce((n, ev) => n + ev.exceedances.filter((ex) => (data.notes.find((x) => x.id === `${ev.rule.id}|${ex.key}`)?.status ?? 'open') === 'open').length, 0), [evals, data.notes]);
   const evalMap = new Map(evals.map((e) => [e.rule.id, e]));
   // most important first: limits exceeded, then triggers, results to check, compliant, no data, paused
   const rank = (r: Rule) => {
@@ -227,7 +312,7 @@ export function ComplianceTab() {
           {(rules.length > 0 || view === 'register') && (
             <SegmentedControl
               value={view}
-              onChange={(v) => setView(v as 'rules' | 'table' | 'register')}
+              onChange={(v) => setView(v as 'rules' | 'table' | 'register' | 'followup')}
               data={[
                 {
                   value: 'rules',
@@ -244,6 +329,15 @@ export function ComplianceTab() {
                     <Group gap={6} wrap="nowrap">
                       <IconTable size={16} />
                       <span>Limits &amp; triggers</span>
+                    </Group>
+                  ),
+                },
+                {
+                  value: 'followup',
+                  label: (
+                    <Group gap={6} wrap="nowrap">
+                      <IconAlertTriangle size={16} />
+                      <span>Follow-up{openCount ? ` (${openCount})` : ''}</span>
                     </Group>
                   ),
                 },
@@ -328,6 +422,8 @@ export function ComplianceTab() {
         </EmptyState>
       ) : view === 'table' ? (
         <LimitsView data={data} evals={evals} period={period} onEdit={setEditing} />
+      ) : view === 'followup' ? (
+        <FollowUpView evals={evals} />
       ) : (
         <Accordion multiple variant="separated" defaultValue={evals.filter((e) => e.status === 'exceeded').map((e) => e.rule.id)}>
           {ordered.map((rule) => {

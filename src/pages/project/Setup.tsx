@@ -3,12 +3,12 @@ import { ActionIcon, Anchor, Autocomplete, Badge, Box, Button, Card, Group, Moda
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { Link, useNavigate } from 'react-router-dom';
-import { IconArchive, IconArrowDown, IconArrowUp, IconPlus, IconTrash, IconListDetails, IconSparkles, IconMap } from '@tabler/icons-react';
+import { IconArchive, IconArrowDown, IconArrowUp, IconHistory, IconPlus, IconTrash, IconListDetails, IconSparkles, IconMap } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { useEditable } from '../../hooks/useEditable';
 import { ProjectForm } from '../Projects';
-import { deleteProject, deleteSite, newSite, saveProject, saveSite } from '../../db/repo';
-import type { NdHandling, Project, Site } from '../../db/types';
+import { deleteProject, deleteSite, newSite, saveProject, saveSite, setProjectStatus } from '../../db/repo';
+import type { AuditEntry, NdHandling, Project, Site } from '../../db/types';
 import { SITE_ROLES, SITE_TYPES } from '../../db/types';
 import { COMMON_UNITS, unitLabel } from '../../lib/units';
 import { db } from '../../db/db';
@@ -20,6 +20,9 @@ import { ContinuousCard } from '../../components/ContinuousCard';
 import { useSettings } from '../../hooks/useSettings';
 import { useFeatures } from '../../hooks/useFeatures';
 import { FEATURES, featureOn, viewOff } from '../../lib/features';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { AUDIT_KIND_TEXT } from '../../db/audit';
+import { formatDate } from '../../lib/dates';
 
 function SiteRow({ site, index, count, onMove }: { site: Site; index: number; count: number; onMove: (dir: -1 | 1) => void }) {
   const [s, setS, { dirty, reset }] = useEditable(site);
@@ -250,6 +253,55 @@ function ViewsCard() {
   );
 }
 
+/** Who did what, when: imports and their undoing, sign-offs, sites, rules, obligations. */
+function HistoryCard({ projectId }: { projectId: string }) {
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState<string | null>(null);
+  const entries = useLiveQuery(() => (open ? db.audit.where('projectId').equals(projectId).reverse().sortBy('at') : Promise.resolve([] as AuditEntry[])), [projectId, open]);
+  const shown = (entries ?? []).filter((e) => !kind || e.kind === kind).slice(0, 300);
+  return (
+    <Card>
+      <Group justify="space-between" mb={4}>
+        <Title order={4}>History</Title>
+        {open && <Select size="xs" placeholder="Everything" clearable data={Object.entries(AUDIT_KIND_TEXT).map(([value, label]) => ({ value, label }))} value={kind} onChange={setKind} w={160} />}
+      </Group>
+      <Text size="sm" c="dimmed" mb="xs">
+        What happened to this project and who did it: imports and their undoing, results reviewed, sites, rules and reporting obligations changed. Shared with the team.
+      </Text>
+      {!open ? (
+        <Button variant="default" size="xs" leftSection={<IconHistory size={14} />} onClick={() => setOpen(true)}>
+          Show the history
+        </Button>
+      ) : !entries ? null : !shown.length ? (
+        <Text size="sm" c="dimmed">
+          Nothing recorded yet{kind ? ' of that kind' : ''}. From now on, changes are kept here.
+        </Text>
+      ) : (
+        <Table.ScrollContainer minWidth={520}>
+          <Table fz="sm" verticalSpacing={4}>
+            <Table.Tbody>
+              {shown.map((e) => (
+                <Table.Tr key={e.id}>
+                  <Table.Td className="tabular" style={{ whiteSpace: 'nowrap', width: 150 }}>
+                    {formatDate(e.at.slice(0, 10))} {e.at.slice(11, 16)}
+                  </Table.Td>
+                  <Table.Td style={{ width: 140 }}>{e.by || <Text span c="dimmed">—</Text>}</Table.Td>
+                  <Table.Td style={{ width: 90 }}>
+                    <Badge size="xs" variant="light">
+                      {AUDIT_KIND_TEXT[e.kind] ?? e.kind}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>{e.text}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      )}
+    </Card>
+  );
+}
+
 export function SetupTab() {
   const data = useProject();
   const { project, sites: monitoring, qc, rules } = data;
@@ -402,12 +454,14 @@ export function SetupTab() {
 
       <ParametersCard />
 
+      <HistoryCard projectId={project.id} />
+
       <Card style={{ borderColor: 'var(--mantine-color-red-3)' }}>
         <Title order={4} mb="xs">
           Archive or delete
         </Title>
         <Group>
-          <Button variant="default" leftSection={<IconArchive size={16} />} onClick={() => db.projects.update(project.id, { status: project.status === 'active' ? 'archived' : 'active', updatedAt: new Date().toISOString() })}>
+          <Button variant="default" leftSection={<IconArchive size={16} />} onClick={() => void setProjectStatus(project.id, project.status === 'active' ? 'archived' : 'active')}>
             {project.status === 'active' ? 'Archive project' : 'Restore project'}
           </Button>
           <Button

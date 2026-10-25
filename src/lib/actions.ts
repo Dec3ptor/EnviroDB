@@ -8,10 +8,12 @@ import { cellValue, type CalendarSheet } from './calendar';
 import { openRounds, roundText, type RoundOptions } from './rounds';
 import { addDays, addMonths, daysBetween, formatDate, todayStr } from './dates';
 import { nextObligation, scheduleStatus } from './schedule';
+import { dueItemPath } from '../components/DueItem';
+import type { ImportBatch, Project } from '../db/types';
 
 export interface Action {
   id: string;
-  kind: 'report' | 'results' | 'lab' | 'inbox' | 'qa' | 'sampling' | 'exceedance';
+  kind: 'report' | 'results' | 'lab' | 'inbox' | 'qa' | 'sampling' | 'exceedance' | 'review';
   /** 0 overdue or needing a response, 1 due soon, 2 to keep in mind. */
   urgency: 0 | 1 | 2;
   title: string;
@@ -23,6 +25,33 @@ export interface Action {
   date: string;
   /** A round's results to send: the calendar row and month (YYYY-MM) of the round, to record them sent. */
   calendar?: { item: string; month: string };
+}
+
+/** Imports not yet reviewed (checked and signed off), one action per project. */
+export function reviewActions(imports: ImportBatch[], projects: Map<string, Project>, today = todayStr()): Action[] {
+  const by = new Map<string, ImportBatch[]>();
+  for (const b of imports) {
+    if (b.reviewed) continue;
+    const p = projects.get(b.projectId);
+    if (!p || p.status !== 'active') continue;
+    by.set(b.projectId, [...(by.get(b.projectId) ?? []), b]);
+  }
+  return [...by].map(([projectId, list]) => {
+    const p = projects.get(projectId)!;
+    const oldest = list.map((b) => b.importedAt.slice(0, 10)).sort()[0];
+    const n = list.reduce((a, b) => a + b.results, 0);
+    return {
+      id: `review:${projectId}`,
+      kind: 'review',
+      urgency: daysBetween(oldest, today) > 14 ? 1 : 2,
+      title: `Review ${list.length === 1 ? 'an import' : `${list.length} imports`}: ${p.name}`,
+      detail: `${n} results not yet checked and signed off${list.length === 1 ? ` · ${list[0].fileName}` : ''}`,
+      projectId,
+      projectName: p.name,
+      link: `/projects/${projectId}/data`,
+      date: oldest,
+    };
+  });
 }
 
 export function actionsToTake(bundles: ProjectBundle[], sheet: CalendarSheet | null = null, today = todayStr(), rounds: Omit<RoundOptions, 'today'> = {}): Action[] {
@@ -46,7 +75,7 @@ export function actionsToTake(bundles: ProjectBundle[], sheet: CalendarSheet | n
         urgency: days < 0 ? 0 : 1,
         title: days < 0 ? `${ob.name} is overdue` : `${ob.name} due ${formatDate(next.dueDate)}`,
         detail: `For ${formatDate(next.periodStart)} – ${formatDate(next.periodEnd)}${ob.recipient ? ` · to ${ob.recipient}` : ''}`,
-        link: `/projects/${p.id}/reports?obligation=${ob.id}&period=${next.index}`,
+        link: dueItemPath(p.id, ob.id, next.index),
         date: next.dueDate,
       });
     }

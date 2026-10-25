@@ -41,7 +41,9 @@ export function useAllBundles(): { bundles: ProjectBundle[]; projects: Project[]
       const ps = all.filter((s) => !isQcSite(s));
       const qcSites = all.filter((s) => isQcSite(s));
       const qcIds = new Set(qcSites.map((s) => s.id));
-      const allSamples = [...(samplesBy.get(project.id) ?? [])].sort((a, b) => (a.date < b.date ? -1 : 1));
+      // an archived project is out of the working set: its results aren't loaded or indexed here (open it to see them)
+      const archived = project.status === 'archived';
+      const allSamples = archived ? [] : [...(samplesBy.get(project.id) ?? [])].sort((a, b) => (a.date < b.date ? -1 : 1));
       const isQc = (s: (typeof allSamples)[number]) => !!s.qc || qcIds.has(s.siteId);
       return {
         project,
@@ -56,7 +58,7 @@ export function useAllBundles(): { bundles: ProjectBundle[]; projects: Project[]
         notes: notesBy.get(project.id) ?? [],
         schedules: schBy.get(project.id) ?? [],
         obligations: oblBy.get(project.id) ?? [],
-        index: buildIndex(allSamples, resultsBy.get(project.id) ?? [], all, sortedParams),
+        index: buildIndex(allSamples, archived ? [] : resultsBy.get(project.id) ?? [], all, sortedParams),
         qc: { sites: qcSites, samples: allSamples.filter(isQc), records: qaBy.get(project.id) ?? [] },
       };
     });

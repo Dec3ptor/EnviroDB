@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ActionIcon, Badge, Button, Card, Group, Menu, Modal, NumberInput, Progress, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { modals } from '@mantine/modals';
-import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { IconCalendarPlus, IconCheck, IconDots, IconEdit, IconFileReport, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
@@ -15,6 +15,7 @@ import { downloadBlob, safeFileName } from '../../db/backup';
 import { CalendarSheet } from '../../components/calendar/CalendarSheet';
 import { RoundsList } from '../../components/calendar/RoundsList';
 import { CALENDAR_SYMBOLS, scheduleSymbols } from '../../lib/calendar';
+import { DueItemDrawer, OBLIGATION_KIND_TEXT } from '../../components/DueItem';
 
 function ScheduleModal({ value, onClose }: { value: MonitoringSchedule; onClose: () => void }) {
   const data = useProject();
@@ -98,9 +99,17 @@ function ObligationModal({ value, onClose }: { value: ReportObligation; onClose:
     <Modal opened onClose={onClose} title="Reporting obligation" size="lg">
       <Stack gap="sm">
         <Group grow>
-          <TextInput label="Report" value={o.name} onChange={(e) => set('name', e.currentTarget.value)} data-autofocus />
+          <TextInput label="Name" value={o.name} onChange={(e) => set('name', e.currentTarget.value)} data-autofocus placeholder="e.g. Annual monitoring report, Stormwater management plan" />
           <TextInput label="Submit to" value={o.recipient ?? ''} onChange={(e) => set('recipient', e.currentTarget.value)} placeholder="e.g. Regional Council" />
         </Group>
+        <Select
+          label="What it is"
+          data={(Object.keys(OBLIGATION_KIND_TEXT) as Array<NonNullable<ReportObligation['kind']>>).map((k) => ({ value: k, label: OBLIGATION_KIND_TEXT[k] }))}
+          value={o.kind ?? 'report'}
+          onChange={(v) => v && setO({ ...o, kind: v as ReportObligation['kind'], templateId: v === 'report' ? o.templateId : undefined })}
+          allowDeselect={false}
+          description="A monitoring report can be made in EnviroDB from a template; a plan or other document is written elsewhere and attached when it’s done."
+        />
         <Group grow align="flex-end">
           <Select
             label="Frequency"
@@ -119,7 +128,11 @@ function ObligationModal({ value, onClose }: { value: ReportObligation; onClose:
             }}
             allowDeselect={false}
           />
-          <Select label="Report template" data={(templates ?? []).map((t) => ({ value: t.id, label: t.name }))} value={o.templateId ?? null} onChange={(v) => set('templateId', v ?? undefined)} clearable />
+          {(o.kind ?? 'report') === 'report' ? (
+            <Select label="Report template" description="Leave blank when it’s written outside EnviroDB" data={(templates ?? []).map((t) => ({ value: t.id, label: t.name }))} value={o.templateId ?? null} onChange={(v) => set('templateId', v ?? undefined)} clearable />
+          ) : (
+            <TextInput label="Made" value="Outside EnviroDB – attach the file or a link when it’s done" readOnly variant="filled" />
+          )}
         </Group>
         <Text size="sm" fw={500}>
           First reporting period
@@ -158,7 +171,11 @@ function ObligationModal({ value, onClose }: { value: ReportObligation; onClose:
 export function ScheduleTab() {
   const data = useProject();
   const { project, schedules, obligations, samples, siteMap, index } = data;
-  const navigate = useNavigate();
+  // a due item opened by its link (from the dashboard, the calendar or an action)
+  const [params, setParams] = useSearchParams();
+  const dueId = params.get('obligation');
+  const dueO = dueId ? obligations.find((o) => o.id === dueId) : undefined;
+  const due = dueO ? { o: dueO, index: Math.max(0, Number(params.get('period') ?? 0) || 0) } : null;
   const [editS, setEditS] = useState<MonitoringSchedule | null>(null);
   const [editO, setEditO] = useState<ReportObligation | null>(null);
   const today = todayStr();
@@ -367,8 +384,8 @@ export function ScheduleTab() {
                               </Table.Td>
                               <Table.Td>
                                 <Group gap={4} justify="flex-end" wrap="nowrap">
-                                  <Button size="compact-xs" variant="light" leftSection={<IconFileReport size={14} />} onClick={() => navigate(`/projects/${project.id}/reports?obligation=${o.id}&period=${p.index}`)}>
-                                    Generate
+                                  <Button size="compact-xs" variant="light" leftSection={<IconFileReport size={14} />} onClick={() => setParams({ obligation: o.id, period: String(p.index) })}>
+                                    Open
                                   </Button>
                                   {p.submission ? (
                                     <Button size="compact-xs" variant="subtle" color="gray" leftSection={<IconX size={14} />} onClick={() => setSubmitted(o.id, p, null)}>
@@ -395,6 +412,18 @@ export function ScheduleTab() {
       </Card>
       {editS && <ScheduleModal key={editS.id} value={editS} onClose={() => setEditS(null)} />}
       {editO && <ObligationModal key={editO.id} value={editO} onClose={() => setEditO(null)} />}
+      {due && (
+        <DueItemDrawer
+          obligation={due.o}
+          periodIndex={due.index}
+          projectId={project.id}
+          onClose={() => setParams({}, { replace: true })}
+          onEdit={() => {
+            setEditO(due.o);
+            setParams({}, { replace: true });
+          }}
+        />
+      )}
     </Stack>
   );
 }

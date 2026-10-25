@@ -11,6 +11,20 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.21.0',
+    date: '2026-10-25',
+    title: 'Due items, sign-off and a history',
+    items: [
+      'A due report or plan opens its own card (from the dashboard, the calendar, Actions to take and Sampling & reporting): what it is, the period, who it goes to, its status, Mark submitted, files or links to the document, and notes. Open the report only shows when the obligation has a template – a management plan or other document is attached when it’s done. Each obligation now says what it is: monitoring report, management plan or other document.',
+      'Results reviewed and signed off: each import is marked reviewed (by whom, when) on the Data tab’s import history or straight after importing. Unreviewed imports are an action on the dashboard, and the Reports tab warns when the period has results nobody has signed off.',
+      'Comments on results: the speech bubble beside a result in a sample’s details. A commented result has a corner mark in the Data tab, and the comment shows on hover.',
+      'Compliance → Follow-up: every exceedance in the period across the rules, with where its follow-up is up to (open, regulator notified with the date, closed) and the counts.',
+      'Undo an import straight after importing, or within an hour from the dashboard’s Recent imports; the Data tab’s undo stays.',
+      'History (Setup): who did what, when – imports and their undoing, results reviewed, sites, rules, reporting obligations, exceedance follow-ups, archiving. Shared with the team and kept in project files.',
+      'Archived projects stay out of the working set: their results aren’t loaded or indexed for the dashboard, so it stays quick as years accumulate (open the project to see them).',
+    ],
+  },
+  {
     version: '1.20.0',
     date: '2026-10-25',
     title: 'Graphs your way',

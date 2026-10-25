@@ -21,6 +21,7 @@ import { ImportCalendarModal } from './ImportCalendarModal';
 import { RoundModal } from './RoundModal';
 import { roundOf, roundOptions, roundText, STAGES, type Round, type RoundOptions } from '../../lib/rounds';
 import { useSettings } from '../../hooks/useSettings';
+import { dueItemPath } from '../DueItem';
 
 // The monitoring calendar as a spreadsheet, laid out like the team's "Schedule All Monitoring" sheet: a row per job,
 // the months with what's planned and coloured by how it went this year, the key and notes beside them. Click or drag
@@ -975,7 +976,7 @@ function ReportFacts({ reports, project }: { reports: NonNullable<ReturnType<She
   return (
     <div className="cal-facts" onMouseDown={(e) => e.stopPropagation()}>
       {shown.map((x) => (
-        <Anchor key={`${x.obligationId}|${x.index}`} component={Link} to={`/projects/${project.id}/reports?obligation=${x.obligationId}&period=${x.index}`} size="xs" c={x.submitted ? 'teal' : x.due < today ? 'red' : 'dimmed'} display="block">
+        <Anchor key={`${x.obligationId}|${x.index}`} component={Link} to={dueItemPath(project.id, x.obligationId, x.index)} size="xs" c={x.submitted ? 'teal' : x.due < today ? 'red' : 'dimmed'} display="block">
           {x.name}: {formatDate(x.due)}
           {x.submitted ? ` · sent ${formatDate(x.submitted)}` : x.due < today ? ' · overdue' : ''}
         </Anchor>

@@ -221,6 +221,8 @@ export interface Result {
    * result is kept, and shown struck through in the sample's details.
    */
   excluded?: { reason: string; by?: string; at: string };
+  /** A comment on this result ("lab re-ran this", "sampled after heavy rain"), shown in the Data tab. */
+  comment?: string;
 }
 
 export interface GuidelineValue {
@@ -411,10 +413,23 @@ export interface ReportSubmission {
   notes?: string;
 }
 
+/** A document attached to a reporting obligation's period: the report or plan produced outside EnviroDB, or a link to it. */
+export interface ObligationAttachment {
+  /** The period it belongs to (its end date). */
+  periodEnd: string;
+  name: string;
+  /** A link (SharePoint, OneDrive, a file path to copy). */
+  url?: string;
+  addedOn: string;
+  by?: string;
+}
+
 export interface ReportObligation {
   id: ID;
   projectId: ID;
   name: string;
+  /** What it is: a report EnviroDB can make, a management plan or another document produced elsewhere (default report). */
+  kind?: 'report' | 'plan' | 'other';
   recipient?: string;
   every: number; // 0 = one-off
   unit: 'month' | 'year';
@@ -425,6 +440,10 @@ export interface ReportObligation {
   notes?: string;
   active: boolean;
   submissions: ReportSubmission[];
+  /** Files and links for each period's document. */
+  attachments?: ObligationAttachment[];
+  /** Working notes for each period (by its end date): what's done, what's waiting. */
+  periodNotes?: Record<string, string>;
 }
 
 /**
@@ -531,6 +550,19 @@ export interface ImportBatch {
   /** Earlier results cleared off these samples first (the import's "clear out" option). */
   cleared?: number;
   notes?: string;
+  /** Checked and signed off: the results are ready to report. */
+  reviewed?: { by: string; on: string };
+}
+
+/** Something that happened to a project: who did what, when – the project's history. */
+export interface AuditEntry {
+  id: ID;
+  projectId: ID;
+  /** ISO time. */
+  at: string;
+  by: string;
+  kind: 'import' | 'undo' | 'review' | 'site' | 'rule' | 'obligation' | 'result' | 'sample' | 'note' | 'project' | 'setup';
+  text: string;
 }
 
 // ---------------------------------------------------------------- continuous data (rainfall, flow, level)

@@ -12,7 +12,7 @@ import { notifications } from '@mantine/notifications';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  IconAlertTriangle, IconArrowLeft, IconArrowRight, IconCheck, IconCircleCheck, IconFileSpreadsheet, IconPlus, IconUpload, IconX, IconBolt, IconFileReport, IconTable, IconShieldCheck,
+  IconAlertTriangle, IconArrowBackUp, IconArrowLeft, IconArrowRight, IconCheck, IconChecks, IconCircleCheck, IconFileSpreadsheet, IconPlus, IconUpload, IconX, IconBolt, IconFileReport, IconTable, IconShieldCheck,
 } from '@tabler/icons-react';
 import { db, getSettings } from '../db/db';
 import { ProjectDataProvider, useProject } from '../hooks/useProjectData';
@@ -41,6 +41,8 @@ import { LockedError, showKeyId } from '../field/lock';
 import { teamKeysOf } from '../components/TeamKey';
 import { FieldResultsModal } from '../components/FieldSheet';
 import { IMPORTING, SectionNav } from '../components/Shell';
+import { deleteImport, setReviewed } from '../db/repo';
+import { modals } from '@mantine/modals';
 
 const ACCEPT = {
   'application/pdf': ['.pdf'],
@@ -285,6 +287,50 @@ function NewParamModal({ initial, onClose, onCreated }: { initial: { name: strin
         </Group>
       </Stack>
     </Modal>
+  );
+}
+
+/** Straight after an import: sign the results off as reviewed, or undo the import while it's fresh. */
+function ImportFollowUp({ importId, fileName, results, onUndone }: { importId: string; fileName: string; results: number; onUndone: () => void }) {
+  const batch = useLiveQuery(() => db.imports.get(importId), [importId]);
+  if (batch === undefined) return null;
+  if (!batch)
+    return (
+      <Alert color="gray" variant="light" p="xs" mb="md">
+        <Text size="sm">This import was undone.</Text>
+      </Alert>
+    );
+  return (
+    <Group gap="sm" mb="md" wrap="wrap">
+      {batch.reviewed ? (
+        <Badge color="teal" variant="light" size="lg">
+          Reviewed by {batch.reviewed.by || 'you'} · {formatDate(batch.reviewed.on)}
+        </Badge>
+      ) : (
+        <Button leftSection={<IconChecks size={16} />} onClick={() => void setReviewed(importId, true)}>
+          Mark these results reviewed
+        </Button>
+      )}
+      <Button
+        variant="default"
+        color="red"
+        leftSection={<IconArrowBackUp size={16} />}
+        onClick={() =>
+          modals.openConfirmModal({
+            title: 'Undo this import?',
+            children: <Text size="sm">Removes the {results} results added by “{fileName}”. Results it replaced are not restored.</Text>,
+            labels: { confirm: 'Undo import', cancel: 'Keep it' },
+            confirmProps: { color: 'red' },
+            onConfirm: () => void deleteImport(importId).then(onUndone),
+          })
+        }
+      >
+        Undo this import
+      </Button>
+      <Text size="xs" c="dimmed">
+        Reviewed means checked and ready to report; until then the Reports tab says the period has unreviewed results. Undo is also on the Data tab’s import history.
+      </Text>
+    </Group>
   );
 }
 
@@ -1086,10 +1132,11 @@ export function ImportWizard(_props: { projectId: string }) {
               <div>
                 <Title order={4}>Imported {summary.results} results from {summary.samples} samples</Title>
                 <Text size="sm" c="dimmed">
-                  {summary.newSamples} new sample{summary.newSamples === 1 ? '' : 's'} · {summary.replaced} replaced · {summary.skipped} skipped{summary.cleared ? ` · ${summary.cleared} earlier result${summary.cleared === 1 ? '' : 's'} cleared` : ''} · You can undo this from the Data tab.
+                  {summary.newSamples} new sample{summary.newSamples === 1 ? '' : 's'} · {summary.replaced} replaced · {summary.skipped} skipped{summary.cleared ? ` · ${summary.cleared} earlier result${summary.cleared === 1 ? '' : 's'} cleared` : ''}
                 </Text>
               </div>
             </Group>
+            <ImportFollowUp importId={summary.id} fileName={summary.fileName} results={summary.results} onUndone={() => setStep(0)} />
             {importCheck && (
               <>
                 <Title order={5} mb={4}>

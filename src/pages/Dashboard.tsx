@@ -19,7 +19,7 @@ import { fmtNum } from '../lib/values';
 import { NewProjectButton } from './Projects';
 import { db } from '../db/db';
 import { useCalendarSheet } from '../hooks/useCalendarSheet';
-import { actionsToTake, inboxActions, qaActions } from '../lib/actions';
+import { actionsToTake, inboxActions, qaActions, reviewActions } from '../lib/actions';
 import { projectQa } from '../hooks/useQa';
 import { useInbox } from '../sync/inbox';
 import { useSettings } from '../hooks/useSettings';
@@ -28,6 +28,8 @@ import { featureOn } from '../lib/features';
 import { EssentialsNote } from '../components/FeaturesCard';
 import type { Deadline } from './dashboard/widgets';
 import type { RuleEvaluation } from '../lib/compliance';
+import { dueItemPath } from '../components/DueItem';
+import type { ImportBatch } from '../db/types';
 
 function useDashboard(bundles: ProjectBundle[]): DashboardData {
   return useMemo(() => {
@@ -70,7 +72,7 @@ function useDashboard(bundles: ProjectBundle[]): DashboardData {
           project: b,
           status: meta.label,
           color: meta.color,
-          link: `/projects/${b.project.id}/reports?obligation=${ob.id}&period=${next.index}`,
+          link: dueItemPath(b.project.id, ob.id, next.index),
         });
       }
       const bySample = b.index.bySample;
@@ -166,13 +168,14 @@ export function DashboardPage() {
   const settings = useSettings();
   const calendarOn = featureOn(settings, 'calendar');
   const inbox = useInbox();
+  const imports = useLiveQuery(() => db.imports.toArray(), [], [] as ImportBatch[]);
   const actions = useMemo(() => {
     const projects = new Map(bundles.map((b) => [b.project.id, b.project]));
     // QA/QC findings in the last three months' results, for projects with the checks on
     const qa = qaActions(bundles.filter((b) => b.project.status === 'active' && b.project.qa).map((b) => ({ project: b.project, findings: projectQa(b, '12m', settings, today).findings.filter((f) => f.date >= addDays(today, -92)) })));
-    const all = [...inboxActions(inbox.files, projects), ...qa, ...actionsToTake(bundles, calendarOn ? sheet : null, today, { labDays: settings.labTurnaroundDays, sendDays: settings.sendResultsDays })];
+    const all = [...inboxActions(inbox.files, projects), ...reviewActions(imports, projects, today), ...qa, ...actionsToTake(bundles, calendarOn ? sheet : null, today, { labDays: settings.labTurnaroundDays, sendDays: settings.sendResultsDays })];
     return all.sort((a, b) => a.urgency - b.urgency || a.date.localeCompare(b.date));
-  }, [bundles, sheet, today, settings, inbox.files, calendarOn]);
+  }, [bundles, sheet, today, settings, inbox.files, calendarOn, imports]);
   const saved = useLiveQuery(() => db.meta.get(DASHBOARD_KEY), [], null);
   const [editing, setEditing] = useState(false);
   const [narrow, setNarrow] = useState(false);

@@ -14,6 +14,7 @@ import { fromBase64 } from '../lib/issued';
 import { recordRound, touchProject } from './repo';
 import { currentWorkspaceFolder } from '../sync/workspace';
 import { isQcSite } from '../lib/qc';
+import { logAudit } from './audit';
 
 /** Field readings usually taken: the project's field parameters with results, or the common four. */
 export function defaultMeasures(b: Pick<ProjectBundle, 'params' | 'index'>): string[] {
@@ -313,6 +314,7 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
     await db.imports.put(batch);
     await touchProject(projectId);
   });
+  await logAudit(projectId, 'import', `Field results added from ${fileName}: ${batch.results} readings, ${batch.samples} sites`);
   // the round: sampled on the day (when the project is on the monitoring calendar)
   const day = plan.rows[0]?.date.slice(0, 10) ?? results.sheet.date;
   const row = await db.calendarRows.where('projectId').equals(projectId).first();

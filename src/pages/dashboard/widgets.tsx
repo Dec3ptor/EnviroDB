@@ -4,7 +4,7 @@ import { ActionIcon, Anchor, Badge, Button, Group, List, Paper, SegmentedControl
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  IconAlertTriangle, IconBook2, IconCalendarDue, IconCalendarMonth, IconCheck, IconCircleCheck, IconCircleX, IconFileReport, IconFlask, IconFolders, IconListCheck, IconSettings, IconUpload, IconHourglassHigh, IconInbox, IconZoomCheck } from '@tabler/icons-react';
+  IconAlertTriangle, IconArrowBackUp, IconBook2, IconCalendarDue, IconChecks, IconCalendarMonth, IconCheck, IconCircleCheck, IconCircleX, IconFileReport, IconFlask, IconFolders, IconListCheck, IconSettings, IconUpload, IconHourglassHigh, IconInbox, IconZoomCheck } from '@tabler/icons-react';
 import { db } from '../../db/db';
 import type { ProjectBundle } from '../../lib/analysis';
 import type { RuleEvaluation } from '../../lib/compliance';
@@ -17,6 +17,9 @@ import { LevelBadge, StatTile } from '../../components/common';
 import { CalendarSheet } from '../../components/calendar/CalendarSheet';
 import { NewProjectButton } from '../Projects';
 import { useFeature } from '../../hooks/useFeatures';
+import { dueItemPath } from '../../components/DueItem';
+import { deleteImport } from '../../db/repo';
+import { modals } from '@mantine/modals';
 
 // The dashboard's widgets: each is a card that can be placed, moved and resized on the dashboard.
 
@@ -91,7 +94,7 @@ function KeyFigures({ bundles, dash, today }: WidgetCtx) {
   );
 }
 
-const ACTION_ICON: Record<Action['kind'], typeof IconFlask> = { report: IconFileReport, results: IconListCheck, lab: IconHourglassHigh, inbox: IconInbox, qa: IconZoomCheck, sampling: IconFlask, exceedance: IconAlertTriangle };
+const ACTION_ICON: Record<Action['kind'], typeof IconFlask> = { report: IconFileReport, results: IconListCheck, lab: IconHourglassHigh, inbox: IconInbox, qa: IconZoomCheck, sampling: IconFlask, exceedance: IconAlertTriangle, review: IconChecks };
 const URGENCY_COLOR = ['red', 'orange', 'gray'] as const;
 
 function ActionsToTake({ actions }: WidgetCtx) {
@@ -309,7 +312,7 @@ function ReportsDue({ bundles, today }: WidgetCtx) {
       {list.map(({ b, o, p }) => (
         <Group key={`${o.id}|${p.index}`} gap="sm" wrap="nowrap" justify="space-between">
           <div style={{ minWidth: 0 }}>
-            <Anchor component={Link} to={`/projects/${b.project.id}/reports?obligation=${o.id}&period=${p.index}`} size="sm" fw={500} c="inherit" lineClamp={1}>
+            <Anchor component={Link} to={dueItemPath(b.project.id, o.id, p.index)} size="sm" fw={500} c="inherit" lineClamp={1}>
               {o.name}
             </Anchor>
             <Text size="xs" c="dimmed" lineClamp={1}>
@@ -461,9 +464,41 @@ function RecentImports({ bundles }: WidgetCtx) {
               {names.get(i.projectId) ?? 'Deleted project'} · {i.results} results from {i.samples} samples
             </Text>
           </div>
-          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-            {formatDate(i.importedAt)}
-          </Text>
+          <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+            {i.reviewed ? (
+              <Badge size="xs" color="teal" variant="light" title={`Reviewed by ${i.reviewed.by || 'someone'} on ${formatDate(i.reviewed.on)}`}>
+                Reviewed
+              </Badge>
+            ) : (
+              <Badge size="xs" color="gray" variant="light">
+                To review
+              </Badge>
+            )}
+            {Date.now() - Date.parse(i.importedAt) < 3600e3 && (
+              <Tooltip label="Undo this import (within an hour of importing)">
+                <ActionIcon
+                  size="sm"
+                  variant="subtle"
+                  color="red"
+                  aria-label="Undo import"
+                  onClick={() =>
+                    modals.openConfirmModal({
+                      title: 'Undo this import?',
+                      children: <Text size="sm">Removes the {i.results} results added by “{i.fileName}”. Results it replaced are not restored.</Text>,
+                      labels: { confirm: 'Undo import', cancel: 'Keep it' },
+                      confirmProps: { color: 'red' },
+                      onConfirm: () => void deleteImport(i.id),
+                    })
+                  }
+                >
+                  <IconArrowBackUp size={14} />
+                </ActionIcon>
+              </Tooltip>
+            )}
+            <Text size="xs" c="dimmed">
+              {formatDate(i.importedAt)}
+            </Text>
+          </Group>
         </Group>
       ))}
     </Stack>

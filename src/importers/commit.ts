@@ -5,6 +5,7 @@ import { stableId, uid } from '../lib/ids';
 import { isQcSite } from '../lib/qc';
 import { fractionOf, normName } from '../lib/matching';
 import { analyteMapKey, PROVISIONAL_NOTE, type ParsedImport } from './model';
+import { logAudit } from '../db/audit';
 
 export interface ImportMapping {
   sites: Record<string, string | null>; // sample key → site id
@@ -252,5 +253,6 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
 
   if (opts.rememberAliases) await rememberNames(parsed, mapping);
   await touchProject(projectId);
+  await logAudit(projectId, 'import', `Imported ${batch.fileName}: ${batch.results} results, ${batch.samples} samples${batch.replaced ? `, ${batch.replaced} replaced` : ''}`);
   return { ...batch, newSamples };
 }

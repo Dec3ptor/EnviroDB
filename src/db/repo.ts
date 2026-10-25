@@ -18,8 +18,10 @@ import type {
   ReportTemplate,
   Rule,
   Site,
+  ObligationAttachment,
 } from './types';
 import { nowIso, slugify, uid } from '../lib/ids';
+import { logAudit, whoAmI } from './audit';
 import { todayStr } from '../lib/dates';
 
 // ------------------------------------------------------------ saving edits
@@ -73,7 +75,7 @@ export async function touchProject(projectId: string): Promise<void> {
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
-  await db.transaction('rw', [db.projects, db.sites, db.samples, db.results, db.rules, db.notes, db.schedules, db.obligations, db.imports, db.calendarRows, db.qa, db.conditions, db.assessments, db.issues, db.archive, db.series, db.seriesDays], async () => {
+  await db.transaction('rw', [db.projects, db.sites, db.samples, db.results, db.rules, db.notes, db.schedules, db.obligations, db.imports, db.calendarRows, db.qa, db.conditions, db.assessments, db.issues, db.archive, db.series, db.seriesDays, db.audit], async () => {
     // its rows on the monitoring calendar stay, with the project's details
     const project = await db.projects.get(projectId);
     for (const r of await db.calendarRows.where('projectId').equals(projectId).toArray()) {
@@ -98,6 +100,7 @@ export async function deleteProject(projectId: string): Promise<void> {
     await db.assessments.where('projectId').equals(projectId).delete();
     await db.issues.where('projectId').equals(projectId).delete();
     await db.archive.where('projectId').equals(projectId).delete();
+    await db.audit.where('projectId').equals(projectId).delete();
     await db.series.where('projectId').equals(projectId).delete();
     await db.seriesDays.where('projectId').equals(projectId).delete();
     await db.schedules.where('projectId').equals(projectId).delete();
@@ -114,17 +117,23 @@ export function newSite(projectId: string, patch: Partial<Site> = {}): Site {
 }
 
 export async function saveSite(s: Site, before?: Site): Promise<void> {
+  const had = before ?? (await db.sites.get(s.id));
   await saveEdited(db.sites, s, before);
   await touchProject(s.projectId);
+  if (!had) await logAudit(s.projectId, 'site', `Site ${s.code} added`);
+  else if (had.code !== s.code || had.name !== s.name || had.type !== s.type || had.easting !== s.easting || had.northing !== s.northing) await logAudit(s.projectId, 'site', `Site ${had.code} changed${had.code !== s.code ? ` (now ${s.code})` : ''}`);
 }
 
 export async function deleteSite(siteId: string): Promise<void> {
+  const site = await db.sites.get(siteId);
+  let n = 0;
   await db.transaction('rw', [db.sites, db.samples, db.results], async () => {
     const samples = await db.samples.where('siteId').equals(siteId).primaryKeys();
-    await db.results.where('sampleId').anyOf(samples).delete();
+    n = await db.results.where('sampleId').anyOf(samples).delete();
     await db.samples.bulkDelete(samples);
     await db.sites.delete(siteId);
   });
+  if (site) await logAudit(site.projectId, 'site', `Site ${site.code} deleted${n ? `, with ${n} results` : ''}`);
 }
 
 export async function addSiteAlias(siteId: string, alias: string): Promise<void> {
@@ -251,16 +260,24 @@ export function newRule(projectId: string, patch: Partial<Rule> = {}): Rule {
   return { id: uid('rule'), projectId, name: '', level: 'Limit', kind: 'threshold', siteIds: [], operator: '>', active: true, order: Date.now(), ...patch };
 }
 export async function saveRule(r: Rule, before?: Rule) {
+  const had = before ?? (await db.rules.get(r.id));
   await saveEdited(db.rules, r, before);
   await touchProject(r.projectId);
+  await logAudit(r.projectId, 'rule', `${had ? 'Rule changed' : 'Rule added'}: ${r.name}`);
 }
 export async function deleteRule(id: string) {
+  const r = await db.rules.get(id);
   await db.rules.delete(id);
   await db.notes.where('ruleId').equals(id).delete();
+  if (r) await logAudit(r.projectId, 'rule', `Rule deleted: ${r.name}`);
 }
 
 export async function saveNote(n: Omit<ExceedanceNote, 'id' | 'updatedAt'>, before?: ExceedanceNote) {
   await saveEdited(db.notes, { ...n, id: `${n.ruleId}|${n.key}`, updatedAt: nowIso() }, before);
+  if (!before || before.status !== n.status) {
+    const rule = await db.rules.get(n.ruleId);
+    await logAudit(n.projectId, 'note', `Exceedance ${n.status === 'notified' ? 'notified to the regulator' : n.status === 'closed' ? 'closed' : 'open'}: ${rule?.name ?? n.ruleId}${n.notifiedOn ? ` (notified ${n.notifiedOn})` : ''}`);
+  }
 }
 
 export function newSchedule(projectId: string, patch: Partial<MonitoringSchedule> = {}): MonitoringSchedule {
@@ -291,7 +308,38 @@ export function newObligation(projectId: string, patch: Partial<ReportObligation
   };
 }
 export async function saveObligation(o: ReportObligation, before?: ReportObligation) {
+  // new or changed: by what's saved (the form's "before" is the unsaved new one for a new obligation)
+  const had = await db.obligations.get(o.id);
   await saveEdited(db.obligations, o, before);
+  if (!had) await logAudit(o.projectId, 'obligation', `Reporting obligation added: ${o.name}`);
+  else if (had.name !== o.name || had.firstDueDate !== o.firstDueDate || had.every !== o.every || had.unit !== o.unit || had.active !== o.active) await logAudit(o.projectId, 'obligation', `Reporting obligation changed: ${o.name}`);
+}
+
+/** A file or link for an obligation's period – the plan or report produced outside EnviroDB. */
+export async function addAttachment(obligationId: string, att: Omit<ObligationAttachment, 'addedOn' | 'by'>): Promise<void> {
+  await db.transaction('rw', db.obligations, async () => {
+    const o = await db.obligations.get(obligationId);
+    if (!o) return;
+    await db.obligations.update(obligationId, { attachments: [...(o.attachments ?? []), { ...att, addedOn: todayStr(), by: whoAmI() || undefined }] });
+  });
+}
+export async function removeAttachment(obligationId: string, periodEnd: string, name: string): Promise<void> {
+  await db.transaction('rw', db.obligations, async () => {
+    const o = await db.obligations.get(obligationId);
+    if (!o) return;
+    await db.obligations.update(obligationId, { attachments: (o.attachments ?? []).filter((a) => !(a.periodEnd === periodEnd && a.name === name)) });
+  });
+}
+/** Working notes for one of an obligation's periods. */
+export async function setPeriodNote(obligationId: string, periodEnd: string, text: string): Promise<void> {
+  await db.transaction('rw', db.obligations, async () => {
+    const o = await db.obligations.get(obligationId);
+    if (!o) return;
+    const notes = { ...(o.periodNotes ?? {}) };
+    if (text.trim()) notes[periodEnd] = text;
+    else delete notes[periodEnd];
+    await db.obligations.update(obligationId, { periodNotes: notes });
+  });
 }
 /** Marks a reporting period submitted (or not), starting from the obligation as saved now. */
 export async function setSubmitted(obligationId: string, period: { periodStart: string; periodEnd: string }, submittedOn: string | null) {
@@ -301,9 +349,35 @@ export async function setSubmitted(obligationId: string, period: { periodStart: 
     const others = o.submissions.filter((s) => s.periodEnd !== period.periodEnd);
     await db.obligations.update(obligationId, { submissions: submittedOn ? [...others, { periodStart: period.periodStart, periodEnd: period.periodEnd, submittedOn }] : others });
   });
+  // after the transaction: the history is its own table
+  const o = await db.obligations.get(obligationId);
+  if (o) await logAudit(o.projectId, 'obligation', `${o.name} for ${period.periodStart} – ${period.periodEnd}: ${submittedOn ? `marked submitted (${submittedOn})` : 'submission undone'}`);
 }
 export async function deleteObligation(id: string) {
+  const o = await db.obligations.get(id);
   await db.obligations.delete(id);
+  if (o) await logAudit(o.projectId, 'obligation', `Reporting obligation deleted: ${o.name}`);
+}
+
+/** An import's results checked and signed off (or the sign-off taken back). */
+export async function setReviewed(importId: string, reviewed: boolean): Promise<void> {
+  const b = await db.imports.get(importId);
+  if (!b) return;
+  await db.imports.update(importId, { reviewed: reviewed ? { by: whoAmI(), on: todayStr() } : undefined });
+  await logAudit(b.projectId, 'review', `${reviewed ? 'Reviewed' : 'Review taken back'}: ${b.fileName} (${b.results} results)`);
+}
+
+/** A comment on one result. */
+export async function setResultComment(resultId: string, comment: string): Promise<void> {
+  const r = await db.results.get(resultId);
+  if (!r) return;
+  await db.results.update(resultId, { comment: comment.trim() || undefined });
+}
+
+/** A project archived (out of the working set) or restored. */
+export async function setProjectStatus(projectId: string, status: 'active' | 'archived'): Promise<void> {
+  await db.projects.update(projectId, { status, updatedAt: nowIso() });
+  await logAudit(projectId, 'project', status === 'archived' ? 'Project archived' : 'Project restored');
 }
 
 // ------------------------------------------------------------ the monitoring calendar
@@ -479,6 +553,7 @@ export async function templateFrom(t: ReportTemplate, name = t.name): Promise<Re
 // ------------------------------------------------------------ imports / data
 
 export async function deleteImport(importId: string): Promise<void> {
+  const b = await db.imports.get(importId);
   await db.transaction('rw', [db.samples, db.results, db.imports], async () => {
     await db.results.where('importId').equals(importId).delete();
     // remove samples left without results
@@ -489,6 +564,7 @@ export async function deleteImport(importId: string): Promise<void> {
     }
     await db.imports.delete(importId);
   });
+  if (b) await logAudit(b.projectId, 'undo', `Import undone: ${b.fileName} (${b.results} results)`);
 }
 
 export async function deleteSamples(sampleIds: string[]): Promise<void> {

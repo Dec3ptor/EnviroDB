@@ -136,7 +136,7 @@ export async function restoreWorkspace(obj: unknown, mode: 'replace' | 'merge'):
 export async function exportProjectPackage(projectId: string): Promise<WorkspaceBackup> {
   const project = await db.projects.get(projectId);
   if (!project) throw new Error('Project not found');
-  const [sites, samples, results, rules, notes, schedules, obligations, imports, calendarRows, qa, conditions, assessments, issues, archive, series, seriesDays] = await Promise.all([
+  const [sites, samples, results, rules, notes, schedules, obligations, imports, calendarRows, qa, conditions, assessments, issues, archive, series, seriesDays, audit] = await Promise.all([
     db.sites.where('projectId').equals(projectId).toArray(),
     db.samples.where('projectId').equals(projectId).toArray(),
     db.results.where('projectId').equals(projectId).toArray(),
@@ -153,6 +153,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     db.archive.where('projectId').equals(projectId).toArray(),
     db.series.where('projectId').equals(projectId).toArray(),
     db.seriesDays.where('projectId').equals(projectId).toArray(),
+    db.audit.where('projectId').equals(projectId).toArray(),
   ]);
   const calendarMarks = calendarRows.length ? await db.calendarMarks.where('item').anyOf(calendarRows.map((r) => r.id)).toArray() : [];
   const usedParams = new Set(results.map((r) => r.parameterId));
@@ -168,7 +169,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     appVersion: APP_VERSION,
-    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks, qa, conditions, assessments, issues, archive, series, seriesDays },
+    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks, qa, conditions, assessments, issues, archive, series, seriesDays, audit },
   };
 }
 
@@ -210,6 +211,7 @@ export async function importProjectPackage(obj: unknown): Promise<string> {
       if (list.length) await db.table(t).bulkPut(list);
     };
     await put('sites', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId }));
+    await put('audit', (r) => ({ ...r, id: exists ? uid('aud') : r.id, projectId: newProjectId }));
     await put('imports', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId }));
     await put('samples', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId, siteId: remap(r.siteId as string)!, importId: remap(r.importId as string), qcOf: remap(r.qcOf as string) }));
     await put('results', (r) => ({

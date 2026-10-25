@@ -760,3 +760,18 @@ body {
 .edb-choice:hover {
   background: var(--mantine-color-default-hover);
 }
+
+/* a result with a comment: a small corner mark */
+.edb-grid td.commented {
+  position: relative;
+}
+.edb-grid td.commented::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 0;
+  height: 0;
+  border-top: 6px solid var(--mantine-color-blue-5);
+  border-left: 6px solid transparent;
+}

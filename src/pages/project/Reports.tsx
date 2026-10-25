@@ -3,7 +3,7 @@ import { Alert, Anchor, Badge, Button, Card, Collapse, Grid, Group, Loader, Moda
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
-import { IconCheck, IconChevronDown, IconChevronRight, IconDeviceFloppy, IconFileTypeDocx, IconFileTypePdf, IconLayoutList, IconLock, IconSettings, IconSparkles, IconTemplate } from '@tabler/icons-react';
+import { IconCheck, IconChevronDown, IconChevronRight, IconDeviceFloppy, IconFileTypeDocx, IconFileTypePdf, IconLayoutList, IconLock, IconSettings, IconSparkles, IconTemplate, IconChecks } from '@tabler/icons-react';
 import { db, saveReportWork } from '../../db/db';
 import { hasViewState, revivePeriod, seedViewState, useViewState } from '../../hooks/useViewState';
 import { useProject } from '../../hooks/useProjectData';
@@ -203,6 +203,11 @@ export function ReportsTab() {
   };
 
   const [tab, setTab] = useViewState<string | null>(k('tab'), 'report');
+  // imports with results in the report's period that nobody has signed off
+  const unreviewed = useMemo(() => {
+    const inPeriod = new Set(data.samples.filter((s) => s.date.slice(0, 10) >= period.start && s.date.slice(0, 10) <= period.end && s.importId).map((s) => s.importId!));
+    return data.imports.filter((b) => !b.reviewed && inPeriod.has(b.id));
+  }, [data.samples, data.imports, period.start, period.end]);
   const settingsCard = useRef<HTMLDivElement>(null);
   const previewCard = useRef<HTMLDivElement>(null);
   const pane = usePreviewPane(previewCard, 'lg');
@@ -359,6 +364,17 @@ export function ReportsTab() {
       <Grid.Col span={{ base: 12, lg: 4 }}>
         <Stack gap="md">
           <Card padding="md" ref={settingsCard} style={{ scrollMarginTop: 72, overflow: 'visible' }}>
+            {unreviewed.length > 0 && (
+              <Alert color="orange" variant="light" p="xs" mb="sm" icon={<IconChecks size={16} />} title={`${unreviewed.length === 1 ? 'An import in this period isn’t' : `${unreviewed.length} imports in this period aren’t`} reviewed yet`}>
+                <Text size="xs">
+                  {unreviewed
+                    .slice(0, 3)
+                    .map((b) => b.fileName)
+                    .join(', ')}
+                  {unreviewed.length > 3 ? ` and ${unreviewed.length - 3} more` : ''}. Check the results and mark them reviewed on the <Anchor component={Link} to={`/projects/${project.id}/data`} size="xs">Data tab</Anchor> (Import history) before issuing.
+                </Text>
+              </Alert>
+            )}
             <Tabs value={tab} onChange={setTab}>
               <Tabs.List grow mb="sm">
                 <Tabs.Tab value="report" leftSection={<IconSettings size={15} />}>

@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending, IconEyeOff, IconCloudRain } from '@tabler/icons-react';
+import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending, IconEyeOff, IconCloudRain, IconChecks, IconMessage } from '@tabler/icons-react';
 import { excludeResult, restoreResults } from '../../db/qa';
 import { useProject } from '../../hooks/useProjectData';
 import { ConsentViewControl, EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, consentPresets, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
@@ -12,7 +12,7 @@ import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResu
 import { formatDate } from '../../lib/dates';
 import { unitLabel } from '../../lib/units';
 import { exportPivotCsv, exportPivotXlsx } from '../../reports/excel';
-import { deleteImport, deleteSamples, saveEdited } from '../../db/repo';
+import { deleteImport, deleteSamples, saveEdited, setResultComment, setReviewed } from '../../db/repo';
 import { db } from '../../db/db';
 import { compareParams } from '../../data/parameters';
 
@@ -73,6 +73,47 @@ function Withheld({ r, p }: { r?: Result; p: Parameter }) {
     <td className="num result-excluded" title={`Left out (QA/QC): ${r.excluded.reason}`}>
       {displayValue(r, p).text}
     </td>
+  );
+}
+
+/** A comment on one result ("lab re-ran this"): a speech bubble, filled when there is one. */
+function ResultComment({ r }: { r: Result }) {
+  const [opened, setOpened] = useState(false);
+  const [text, setText] = useState(r.comment ?? '');
+  return (
+    <Popover opened={opened} onChange={setOpened} width={300} position="left" withArrow shadow="md">
+      <Popover.Target>
+        <Tooltip label={r.comment ? `Comment: ${r.comment}` : 'Add a comment'} multiline w={260}>
+          <ActionIcon
+            variant={r.comment ? 'light' : 'subtle'}
+            color={r.comment ? 'blue' : 'gray'}
+            size="sm"
+            aria-label={r.comment ? 'Edit the comment' : 'Add a comment'}
+            onClick={() => {
+              setText(r.comment ?? '');
+              setOpened(!opened);
+            }}
+          >
+            <IconMessage size={14} />
+          </ActionIcon>
+        </Tooltip>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Stack gap="xs">
+          <Textarea size="xs" label="Comment on this result" autosize minRows={2} value={text} onChange={(e) => setText(e.currentTarget.value)} placeholder="e.g. lab re-ran this; sampled after heavy rain" data-autofocus />
+          <Group justify="flex-end" gap="xs">
+            {r.comment && (
+              <Button size="xs" variant="subtle" color="red" onClick={() => void setResultComment(r.id, '').then(() => setOpened(false))}>
+                Remove
+              </Button>
+            )}
+            <Button size="xs" onClick={() => void setResultComment(r.id, text).then(() => setOpened(false))}>
+              Save
+            </Button>
+          </Group>
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
   );
 }
 
@@ -159,8 +200,9 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
                       {unitLabel(r.unit)}
                     </Text>
                   </Table.Td>
-                  <Table.Td w={64}>
+                  <Table.Td w={92}>
                     <Group gap={2} wrap="nowrap">
+                      <ResultComment r={r} />
                       {r.excluded ? (
                         <Tooltip label="Put back into the data">
                           <ActionIcon variant="subtle" size="sm" aria-label="Put the result back" onClick={() => void restoreResults([r.id])}>
@@ -349,7 +391,7 @@ function SamplesAsRows({ rows, columns, flags, onRow, head }: { rows: PivotRow[]
                   if (!r) return <Withheld key={p.id} r={row.withheld?.get(p.id)} p={p} />;
                   const f = flags.get(r.id);
                   return (
-                    <td key={p.id} className={`num ${cellClass(f)} ${r.qualifier === '<' ? 'nd' : ''}`} title={[f?.messages.join('\n'), r.text && r.text !== String(r.value) ? `Reported: ${r.text} ${r.unit}` : ''].filter(Boolean).join('\n') || undefined}>
+                    <td key={p.id} className={`num ${cellClass(f)} ${r.qualifier === '<' ? 'nd' : ''} ${r.comment ? 'commented' : ''}`} title={[f?.messages.join('\n'), r.text && r.text !== String(r.value) ? `Reported: ${r.text} ${r.unit}` : '', r.comment ? `Comment: ${r.comment}` : ''].filter(Boolean).join('\n') || undefined}>
                       {displayValue(r, p).text}
                     </td>
                   );
@@ -410,7 +452,7 @@ function ParamsAsRows({ rows, columns, flags, onRow }: { rows: PivotRow[]; colum
                   if (!r) return <Withheld key={row.sample.id} r={row.withheld?.get(p.id)} p={p} />;
                   const f = flags.get(r.id);
                   return (
-                    <td key={row.sample.id} className={`num ${cellClass(f)} ${r.qualifier === '<' ? 'nd' : ''}`} title={f?.messages.join('\n')}>
+                    <td key={row.sample.id} className={`num ${cellClass(f)} ${r.qualifier === '<' ? 'nd' : ''} ${r.comment ? 'commented' : ''}`} title={[f?.messages.join('\n'), r.comment ? `Comment: ${r.comment}` : ''].filter(Boolean).join('\n') || undefined}>
                       {displayValue(r, p).text}
                     </td>
                   );
@@ -468,6 +510,7 @@ function ImportHistory() {
                 <Table.Tr>
                   <Table.Th>Imported</Table.Th>
                   <Table.Th>File</Table.Th>
+                  <Table.Th>Reviewed</Table.Th>
                   <Table.Th>Type</Table.Th>
                   <Table.Th ta="right">Samples</Table.Th>
                   <Table.Th ta="right">Results</Table.Th>
@@ -480,6 +523,22 @@ function ImportHistory() {
                   <Table.Tr key={im.id}>
                     <Table.Td>{new Date(im.importedAt).toLocaleString('en-NZ')}</Table.Td>
                     <Table.Td>{im.fileName}</Table.Td>
+                    <Table.Td>
+                      {im.reviewed ? (
+                        <Group gap={4} wrap="nowrap">
+                          <Badge color="teal" variant="light" title={`Reviewed by ${im.reviewed.by || 'someone'} on ${formatDate(im.reviewed.on)}`}>
+                            {im.reviewed.by || 'Reviewed'} · {formatDate(im.reviewed.on)}
+                          </Badge>
+                          <Button size="compact-xs" variant="subtle" color="gray" onClick={() => void setReviewed(im.id, false)}>
+                            Undo
+                          </Button>
+                        </Group>
+                      ) : (
+                        <Button size="compact-xs" variant="light" leftSection={<IconChecks size={14} />} onClick={() => void setReviewed(im.id, true)}>
+                          Mark reviewed
+                        </Button>
+                      )}
+                    </Table.Td>
                     <Table.Td>
                       <Badge variant="light">{im.kind === 'lab' ? 'Lab results' : im.kind === 'wide' ? 'Spreadsheet' : im.kind === 'field' ? 'Field' : 'Table'}</Badge>
                     </Table.Td>
