@@ -38,7 +38,7 @@ describe('the space between a table and what follows', () => {
   it('the PDF and the Word file leave the same space', async () => {
     const doc = buildReport({ bundle: await loadBundle(projectId), template: annual, period: year, settings: me });
     // the PDF: the margin under the table (or under its notes)
-    const flat = toPdfDefinition(doc).content as Array<Record<string, unknown>>;
+    const flat = toPdfDefinition(doc).content as unknown as Array<Record<string, unknown>>;
     const pdfTables = flat.filter((c) => 'table' in c && Array.isArray((c.table as { body?: unknown }).body) && (c.table as { headerRows?: number }).headerRows);
     const margins = pdfTables.map((c) => (c.margin as number[])[3]);
     expect(margins.filter((m) => m === SUMMARY_GAP_PT).length).toBe(3); // the round tables without notes
