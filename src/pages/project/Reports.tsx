@@ -23,6 +23,7 @@ import { exportReport } from '../../reports/export';
 import { saveTemplate, setSubmitted } from '../../db/repo';
 import type { FigureImage, FiguresBlock, LetterBlock, Project, ReportTemplate, TextBlock } from '../../db/types';
 import { FigureImages, FiguresLayout } from '../../components/report/Figures';
+import { FieldPhotoPicker } from '../../components/report/FieldPhotoPicker';
 import { SectionsEditor } from '../../components/report/SectionsEditor';
 import { InsertRef, ReportDocContext, ReportSamplesContext, ReportSitesContext } from '../../components/report/blocks';
 import { InsertCalc } from '../../components/report/InsertCalc';
@@ -593,7 +594,12 @@ export function ReportsTab() {
                 Photos, plans and graphs for this report – saved with this project and period.{fb.images.length ? ` ${fb.images.length} more from the template ${fb.images.length === 1 ? 'is' : 'are'} in every report.` : ''}
               </Text>
               <Stack gap="sm">
-                <FigureImages images={reportFigures[fb.id] ?? []} numbering={fb.numbering} onChange={(images) => saveFigures(fb.id, images)} />
+                <FigureImages
+                  images={reportFigures[fb.id] ?? []}
+                  numbering={fb.numbering}
+                  onChange={(images) => saveFigures(fb.id, images)}
+                  more={(add) => <FieldPhotoPicker samples={data.samples} sites={data.sites} period={period} siteIds={chosenSites} images={reportFigures[fb.id] ?? []} onAdd={add} />}
+                />
                 <MoreOptions label="Layout" summary={`${fb.perRow} per row · ${fb.numbering === 'group' ? 'one number, (a) (b) …' : fb.numbering === 'each' ? `${fb.label || 'Figure'} numbers` : 'no numbers'}`} defaultOpen={(reportFigures[fb.id]?.length ?? 0) > 1}>
                   <FiguresLayout block={fb} onChange={(nb) => changeTemplate({ ...template, blocks: template.blocks.map((x) => (x.id === nb.id ? nb : x)) })} />
                   <Text size="xs" c="dimmed" mt={6}>

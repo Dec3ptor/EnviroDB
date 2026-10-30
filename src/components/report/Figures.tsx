@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from 'react';
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { ActionIcon, Autocomplete, Group, Loader, SegmentedControl, Select, Stack, Switch, Text, TextInput, UnstyledButton } from '@mantine/core';
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -64,7 +64,7 @@ function ImageRow({ image, index, numbering, onChange, onRemove, disabled }: { i
  * Images for a Figures section: drop them on the box, choose them or paste them; then caption, name and order
  * them (drag ⋮⋮). Images are scaled down as they are added so reports stay a sensible size.
  */
-export function FigureImages({ images, onChange, numbering, disabled, hint }: { images: FigureImage[]; onChange: (images: FigureImage[]) => void; numbering?: FiguresBlock['numbering']; disabled?: boolean; hint?: string }) {
+export function FigureImages({ images, onChange, numbering, disabled, hint, more }: { images: FigureImage[]; onChange: (images: FigureImage[]) => void; numbering?: FiguresBlock['numbering']; disabled?: boolean; hint?: string; /** Another way to add images, under the box (the project's field photos): given how to add them. */ more?: (add: (images: FigureImage[]) => void) => ReactNode }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(0);
@@ -143,6 +143,7 @@ export function FigureImages({ images, onChange, numbering, disabled, hint }: { 
           </Group>
         </UnstyledButton>
       )}
+      {!disabled && more?.((added) => onChange([...latest.current, ...added]))}
       <input
         ref={input}
         type="file"

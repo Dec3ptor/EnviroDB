@@ -11,6 +11,14 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.28.0',
+    date: '2026-10-30',
+    title: 'Field photos in reports',
+    items: [
+      'A report’s figures can come from the project’s field photos: Choose from field photos, under the box in Figures for this report, shows the photos taken on the phone in field mode (and any added to a sample since), the report’s period and sites first, grouped by day, with every photo the project has a click away. Tick them, or a whole day’s, and they’re added from the shared folder – scaled like any other picture and captioned with the site and day, to change as you like. Photos already in the report say so.',
+    ],
+  },
+  {
     version: '1.27.0',
     date: '2026-10-25',
     title: 'Bores: everything from the SWL',

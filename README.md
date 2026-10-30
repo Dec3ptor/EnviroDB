@@ -200,7 +200,11 @@ there as they work and show up for the others within seconds.
   Plates or anything else (each counts on its own). Give a picture a name and write `{{fig:name}}` in
   your text for its number, e.g. "see Figure 3(b)"; tables work the same with `{{table:name}}`, and the
   numbers stay right when sections move. Pictures for one report go under *Figures for this report* on
-  the Reports tab; a site plan used every time goes in the section's own settings.
+  the Reports tab; a site plan used every time goes in the section's own settings. **Field photos** are
+  there too: *Choose from field photos* shows the photos taken on the phone in field mode (and any added
+  to a sample since), the report's period and sites first, grouped by day. Tick them and they're added
+  from the shared folder, captioned with the site and day ("GW1 – Monitoring bore BH1, 12 January
+  2026"); photos already in the report say so.
 - **Captions or headings, and references you can click.** Each table, graph or figures section is
   labelled with a numbered caption ("Table 3. Monitoring results", the default) or a heading of its
   own, not numbered – set *Labelled with* in the section (the numbering carries on without it). In any

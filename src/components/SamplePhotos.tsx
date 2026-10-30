@@ -6,29 +6,14 @@ import { ActionIcon, Button, FileButton, Group, Image, Portal, Stack, Text, Tool
 import { notifications } from '@mantine/notifications';
 import { IconCamera, IconX } from '@tabler/icons-react';
 import type { Project, Sample, Site } from '../db/types';
-import { addSamplePhotos, photoName, photoUrl, removeSamplePhoto, samplePhotoPaths } from '../lib/photos';
+import { addSamplePhotos, photoName, removeSamplePhoto, samplePhotoPaths } from '../lib/photos';
+import { usePhotoUrl } from '../hooks/usePhotoUrl';
 import { useWorkspace } from '../sync/workspace';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 
 function Thumb({ path, onOpen, onRemove }: { path: string; onOpen: (url: string) => void; onRemove: () => void }) {
-  const [url, setUrl] = useState<string | null | undefined>(undefined);
-  useEffect(() => {
-    let gone = false;
-    let made: string | null = null;
-    photoUrl(path).then((u) => {
-      if (gone) {
-        if (u) URL.revokeObjectURL(u);
-        return;
-      }
-      made = u;
-      setUrl(u);
-    });
-    return () => {
-      gone = true;
-      if (made) URL.revokeObjectURL(made);
-    };
-  }, [path]);
+  const url = usePhotoUrl(path);
   return (
     <div style={{ position: 'relative', width: 96 }}>
       <Tooltip label={url === null ? `${photoName(path)} – not in the shared folder` : photoName(path)} withArrow>

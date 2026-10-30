@@ -4,7 +4,9 @@
 
 import { db } from '../db/db';
 import { logAudit } from '../db/audit';
-import type { Project, Sample, Site } from '../db/types';
+import type { FigureImage, Project, Sample, Site } from '../db/types';
+import { formatDateLong } from './dates';
+import { uid } from './ids';
 import { currentWorkspaceFolder } from '../sync/workspace';
 import type { WorkspaceFolder } from '../sync/folder';
 import { readFigureFile } from './image';
@@ -97,3 +99,49 @@ export async function removeSamplePhoto(sample: Sample, path: string): Promise<v
 
 /** Just the file name, for a caption. */
 export const photoName = (path: string) => path.split('/').pop() ?? path;
+
+// ------------------------------------------------------------ photos for reports
+
+/** One of the project's photos: where it is, and the sample, site and day it's of. */
+export interface FieldPhoto {
+  path: string;
+  sampleId: string;
+  siteId: string;
+  /** The sample's date (and time). */
+  date: string;
+}
+
+/** The project's photos, from its samples' notes: the latest day first, then the sites in their order, then as taken. */
+export function projectPhotos(samples: Array<Pick<Sample, 'id' | 'siteId' | 'date' | 'notes'>>, siteOrder: Map<string, number> = new Map()): FieldPhoto[] {
+  const seen = new Set<string>();
+  const out: Array<FieldPhoto & { n: number }> = [];
+  for (const s of samples)
+    samplePhotoPaths(s.notes).forEach((path) => {
+      if (seen.has(path)) return;
+      seen.add(path);
+      out.push({ path, sampleId: s.id, siteId: s.siteId, date: s.date, n: out.length });
+    });
+  const day = (p: FieldPhoto) => p.date.slice(0, 10);
+  const order = (p: FieldPhoto) => siteOrder.get(p.siteId) ?? Number.MAX_SAFE_INTEGER;
+  return out.sort((a, b) => (day(a) !== day(b) ? (day(a) < day(b) ? 1 : -1) : order(a) - order(b) || a.n - b.n)).map(({ n: _n, ...p }) => (void _n, p));
+}
+
+/** The photos a report is about: those in its period and, when it covers only some sites, at those sites. */
+export function photosFor(photos: FieldPhoto[], period: { start: string; end: string }, siteIds?: string[] | null): FieldPhoto[] {
+  const sites = siteIds?.length ? new Set(siteIds) : null;
+  return photos.filter((p) => p.date.slice(0, 10) >= period.start && p.date.slice(0, 10) <= period.end && (!sites || sites.has(p.siteId)));
+}
+
+/** A caption for a photo in a report: the site and the day ("GW1 – Monitoring bore BH1, 25 October 2026"). */
+export function photoCaption(site: Pick<Site, 'code' | 'name'> | undefined, date: string): string {
+  const where = site ? `${site.code}${site.name ? ` – ${site.name}` : ''}` : 'Site photo';
+  return `${where}, ${formatDateLong(date.slice(0, 10))}`;
+}
+
+/** A photo as a report figure: read from the shared folder and scaled like an image dropped on the figures box. */
+export async function photoAsFigure(photo: Pick<FieldPhoto, 'path'>, caption: string, folder: WorkspaceFolder | null = currentWorkspaceFolder(), toDataUrl: (f: File) => Promise<string> = (f) => readFigureFile(f)): Promise<FigureImage> {
+  if (!folder) throw new Error('The shared folder isn’t connected.');
+  const f = await folder.file(photo.path);
+  if (!f) throw new Error(`${photoName(photo.path)} isn’t in the shared folder any more.`);
+  return { id: uid('fig'), src: await toDataUrl(f), caption, from: photo.path };
+}

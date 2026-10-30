@@ -972,6 +972,8 @@ export interface FigureImage {
   caption: string;
   /** A name to refer to it in text: {{fig:name}} gives "Figure 3" (or "Figure 3(b)" in a group). */
   ref?: string;
+  /** A field photo it was taken from: the photo's path in the shared folder (so it shows as already added). */
+  from?: string;
 }
 /** Images – site plans, photos, graphs from elsewhere – in a grid with captions and numbers. */
 export interface FiguresBlock extends ReportBlockBase {
