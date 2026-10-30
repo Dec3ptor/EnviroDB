@@ -5,6 +5,7 @@ import { CHART_GAP_MM, SIGN_GAP_MM, pageSizeMm, type Orientation } from './build
 import { downloadBlob } from '../db/backup';
 import { fitCellSize } from './measure';
 import { MADE_BY } from '../lib/version';
+import { TABLE_GAP_PT } from './model';
 
 const MM = 2.834645669; // points per mm
 
@@ -286,9 +287,9 @@ function nodeContent(n: DocNode, doc: ReportDoc, contentWidthPt: number): Conten
           paddingTop: () => 1.5,
           paddingBottom: () => 1.5,
         },
-        margin: [0, 0, 0, n.notes?.length ? 2 : 8],
+        margin: [0, 0, 0, n.notes?.length ? 2 : n.gapAfter ?? TABLE_GAP_PT],
       } as Content);
-      if (n.notes?.length) out.push({ stack: n.notes.map((x) => ({ text: x })), style: 'note', margin: [0, 0, 0, 8] });
+      if (n.notes?.length) out.push({ stack: n.notes.map((x) => ({ text: x })), style: 'note', margin: [0, 0, 0, n.gapAfter ?? TABLE_GAP_PT] });
       return out;
     }
   }

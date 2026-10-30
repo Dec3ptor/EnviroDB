@@ -11,6 +11,15 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.28.1',
+    date: '2026-10-30',
+    title: 'Tighter spacing under tables',
+    items: [
+      'A table’s summary (the Summary: line under each site’s results in the round tables) now sits close under its table, with the usual space before the next table – in the PDF and in Word.',
+      'In Word the space under every table matches the PDF: a blank line and more had been left after each table (and after the notes under it), twice the PDF’s gap.',
+    ],
+  },
+  {
     version: '1.28.0',
     date: '2026-10-30',
     title: 'Field photos in reports',

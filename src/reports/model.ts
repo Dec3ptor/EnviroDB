@@ -27,7 +27,8 @@ export type DocNode =
   | { t: 'lines'; lines: Run[][] }
   | { t: 'ul'; items: Run[][] }
   /** `anchor`: where links to this table (its caption) go. */
-  | { t: 'table'; caption?: string; head: Cell[][]; body: Cell[][]; widths: Array<number | '*' | 'auto'>; fontSize?: number; notes?: string[]; keepRows?: number; anchor?: string }
+  /** `gapAfter`: the space under the table (pt) when what follows belongs with it, e.g. its summary; unset: the usual 8 pt. */
+  | { t: 'table'; caption?: string; head: Cell[][]; body: Cell[][]; widths: Array<number | '*' | 'auto'>; fontSize?: number; notes?: string[]; keepRows?: number; anchor?: string; gapAfter?: number }
   | { t: 'image'; dataUrl: string; widthCm: number; heightCm: number; caption?: string; anchor?: string }
   /** Graphs side by side (two per row). */
   | { t: 'figures'; items: Array<{ dataUrl: string; widthCm: number; heightCm: number; caption?: string; anchor?: string }> }
@@ -251,3 +252,7 @@ export const PLACEHOLDERS: Array<[string, string]> = [
   ['fig:name', 'Figure number of an image or graph named “name”'],
   ['table:name', 'Table number of a table section named “name”'],
 ];
+
+/** The space under a table before what follows (pt), in the PDF and in Word; a table's own summary sits closer. */
+export const TABLE_GAP_PT = 8;
+export const SUMMARY_GAP_PT = 4;

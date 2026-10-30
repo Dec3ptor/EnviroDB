@@ -20,7 +20,7 @@ import { imageSize, logoSizeMm } from '../lib/image';
 import { buildChartSpec, chartOption, chartOverlay } from '../charts/timeSeries';
 import { overlayFor } from '../lib/continuous';
 import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
-import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type RefTarget, type ReportDoc, type ReportLook, type Run, type TocEntry } from './model';
+import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type RefTarget, type ReportDoc, type ReportLook, type Run, type TocEntry, SUMMARY_GAP_PT } from './model';
 import { CELL_PAD_MM, fontWidthFactor, longestWordMm as longestWord, textWidthMm as textWidth } from './measure';
 import { calcHead, calcNotes, calcValue, fillCalcs, tableCalcValue } from './calc';
 import { resultsFor } from '../lib/dataIndex';
@@ -1365,7 +1365,10 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         nodes.push(table);
         lastTable = table;
         const line = summaryLine(key, siteSummary(facts), `${site.code} – summary`);
-        if (line) nodes.push(line);
+        if (line) {
+          table.gapAfter = SUMMARY_GAP_PT; // the summary is about this table: kept close to it
+          nodes.push(line);
+        }
       }
       if (lastTable) {
         const notes = ['“<” indicates a result below the laboratory detection limit.'];

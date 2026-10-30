@@ -37,6 +37,7 @@ import { dataUrlToBytes } from '../charts/render';
 import { CHART_GAP_MM, SIGN_GAP_MM, pageSizeMm, type Orientation } from './build';
 import { fitCellSize, fontWidthFactor } from './measure';
 import { MADE_BY } from '../lib/version';
+import { TABLE_GAP_PT } from './model';
 
 const hex = (c?: string) => (c ? c.replace('#', '').toUpperCase() : undefined);
 const TWIP_PER_MM = 56.6929;
@@ -426,8 +427,10 @@ function nodeToDocx(n: DocNode, x: Ctx, contentWidthMm: number): Array<Paragraph
           rows: [...n.head.map((r) => docRow(r, true, x, size, scaled)), ...n.body.map((r) => docRow(r, false, x, size, scaled))],
         }),
       );
-      for (const note of n.notes ?? []) out.push(new Paragraph({ spacing: { after: 0 }, indent: ind, children: [new TextRun({ text: note, size: size - 2, color: '555555' })] }));
-      out.push(new Paragraph({ children: [], spacing: { after: 120 } }));
+      (n.notes ?? []).forEach((note, i) => out.push(new Paragraph({ spacing: { before: i ? 0 : 40, after: 0 }, indent: ind, children: [new TextRun({ text: note, size: size - 2, color: '555555' })] })));
+      // the space under the table, as in the PDF: an empty paragraph of exactly that height (Word needs a paragraph
+      // between tables; one of the normal line height left a gap twice the PDF's)
+      out.push(new Paragraph({ children: [], spacing: { before: 0, after: 0, line: Math.round((n.gapAfter ?? TABLE_GAP_PT) * 20), lineRule: 'exact' } }));
       return out;
     }
   }
