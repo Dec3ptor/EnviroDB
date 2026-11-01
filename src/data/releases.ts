@@ -11,6 +11,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.31.0',
+    date: '2026-11-01',
+    title: 'Type values in; calculated parameters',
+    items: [
+      'On the Data tab, click a value to change it, or an empty cell to add one (a number, or <0.005 for below detection; empty takes it off). Enter keeps it and goes on down, Tab across, Esc leaves it. Each change says what it did, with Undo, and goes in the project’s history; a value changed by hand keeps what it was before – a lab’s value is never lost – shown when you hover it and in the sample’s details. The date opens the sample.',
+      'Add, beside Export: a sample (a site on a day, to type its values in), a column to type into, or a new parameter. A column’s heading menu edits its parameter – name, unit, group, decimals, the names labs use for it, and a formula.',
+      'Calculated parameters: a parameter with a formula is worked out from the sample’s other values – e.g. DO in mg/L from DO % and temperature: [DO %] / 100 * DO_SAT([Temperature]). Excel’s functions are there, and DO_SAT gives oxygen’s solubility (APHA / USGS). The formula is checked as it’s typed and shows what it works out before it’s saved.',
+      'Ask an AI… copies what an AI needs to write a formula – the syntax and the project’s parameter names and units, nothing else – to paste back. A formula is only ever arithmetic: EnviroDB reads it itself and never runs it as code.',
+      'Calculated values are worked out as the data is shown and never stored: a measured value always wins, and clearing the formula takes them away. They show in italics, and in graphs, compliance, reports and exports like any value; QA/QC checks leave them out.',
+      'On the Library’s Parameters page, Add parameter and each parameter’s ƒ button open the same editor.',
+    ],
+  },
+  {
     version: '1.30.0',
     date: '2026-11-01',
     title: 'Photos already taken, placed where they were taken',

@@ -190,6 +190,11 @@ export interface Parameter {
   order?: number;
   /** Built-in names this parameter no longer goes by: matched to another parameter by someone (lower case). */
   removedAliases?: string[];
+  /**
+   * Worked out from other parameters in each sample – "[DO % saturation] / 100 * DO_SAT([Temperature])" – where the
+   * sample has no value of its own for it. The values are worked out as the data is shown, never stored.
+   */
+  formula?: string;
 }
 
 export interface Sample {
@@ -237,6 +242,10 @@ export interface Result {
   excluded?: { reason: string; by?: string; at: string };
   /** A comment on this result ("lab re-ran this", "sampled after heavy rain"), shown in the Data tab. */
   comment?: string;
+  /** Changed by hand in the Data tab: when, by whom, and what it was before the first change ('' – added by hand). */
+  edited?: { at: string; by?: string; was: string };
+  /** A calculated parameter's value, worked out from the sample's others as the data is shown – never stored. */
+  calc?: { formula: string; from: string };
 }
 
 export interface GuidelineValue {

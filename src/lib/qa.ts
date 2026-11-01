@@ -856,7 +856,8 @@ export function qaInputFor(
 ): QaInput {
   return {
     samples: [...b.samples, ...(b.qc?.samples ?? [])],
-    results: [...b.index.allBySample.values()].flat(),
+    // what was measured: a calculated value isn't the lab's or the sampler's to check
+    results: [...b.index.allBySample.values()].flat().filter((r) => !r.calc),
     sites: [...b.sites, ...(b.qc?.sites ?? [])],
     params: b.paramMap,
     limits: qaLimits(b),

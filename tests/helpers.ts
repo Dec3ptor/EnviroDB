@@ -5,14 +5,16 @@ import type { ProjectBundle } from '../src/lib/analysis';
 import { compareParams } from '../src/data/parameters';
 import { isQcSite } from '../src/lib/qc';
 import { withProjectUnits } from '../src/lib/units';
+import { withCalculated } from '../src/lib/calculated';
 
 /** Everything the report and analysis code needs about a project, read from the database. */
 export async function loadBundle(projectId: string): Promise<ProjectBundle> {
   const project = (await db.projects.get(projectId))!;
   const sites = (await db.sites.where('projectId').equals(projectId).toArray()).sort((a, b) => a.order - b.order);
   const samples = (await db.samples.where('projectId').equals(projectId).toArray()).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  const results = await db.results.where('projectId').equals(projectId).toArray();
   const params = withProjectUnits((await db.parameters.toArray()).sort(compareParams), project.concUnit);
+  // as the app does: with the calculated parameters' values
+  const results = withCalculated(samples, await db.results.where('projectId').equals(projectId).toArray(), params, project.ndHandling);
   const sets = await db.guidelineSets.toArray();
   // as the app does: quality control sites and samples apart
   const qcSites = sites.filter((s) => isQcSite(s));

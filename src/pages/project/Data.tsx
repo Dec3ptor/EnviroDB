@@ -1,10 +1,13 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Accordion, Badge, Button, Card, Drawer, Group, Menu, NumberInput, Pill, Popover, SegmentedControl, Select, Stack, Table, Text, TextInput, ActionIcon, Textarea, UnstyledButton, CloseButton, Tooltip } from '@mantine/core';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Accordion, Badge, Button, Card, Drawer, Group, Menu, Modal, NumberInput, Pill, Popover, SegmentedControl, Select, Stack, Table, Text, TextInput, ActionIcon, Textarea, UnstyledButton, CloseButton, Tooltip } from '@mantine/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending, IconEyeOff, IconCloudRain, IconChecks, IconMessage } from '@tabler/icons-react';
+import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending, IconEyeOff, IconCloudRain, IconChecks, IconMessage, IconMathFunction, IconPencil, IconX, IconPlus, IconCalendarPlus, IconColumnInsertRight } from '@tabler/icons-react';
+import { addSample, setCellValue, typedText } from '../../db/edits';
+import { logAudit, whoAmI } from '../../db/audit';
+import { ParameterEditor } from '../../components/ParameterEditor';
 import { excludeResult, restoreResults } from '../../db/qa';
 import { useProject } from '../../hooks/useProjectData';
 import { ConsentViewControl, EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, consentPresets, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
@@ -56,7 +59,7 @@ function Legend({ guidelineNames, hardness }: { guidelineNames: string[]; hardne
         Detection limit above limit
       </Text>
       <Text size="xs" c="dimmed">
-        &lt; = below detection limit · hover a cell for details · click a row to edit
+        &lt; = below detection limit · hover a cell for details · click a value to change it (or an empty cell to add one) · the date opens the sample · <i>italic</i> = calculated
         {hardness && (
           <Tooltip multiline w={300} label="Hardness-dependent metals are compared with hardness-modified guideline values where hardness was measured in the same sample (ANZECC 2000). Change this in Setup.">
             <span style={{ textDecoration: 'underline dotted', cursor: 'help' }}> · metals hardness-modified</span>
@@ -134,17 +137,23 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
     return pa && pb ? compareParams(pa, pb) : Number(!pa) - Number(!pb);
   });
   const save = async () => {
+    const changed: string[] = [];
     await db.transaction('rw', db.samples, db.results, async () => {
       await saveEdited(db.samples, s, sample ?? undefined); // only what was changed here
       for (const r of results) {
+        // a calculated value isn't stored: nothing to save
+        if (r.calc) continue;
         const patch: Partial<Result> = s.siteId !== sample?.siteId || s.date !== sample?.date ? { siteId: s.siteId, date: s.date } : {};
         if (edits[r.id] !== undefined) {
           const pv = parseValue(edits[r.id]);
-          Object.assign(patch, { value: pv.value, qualifier: pv.qualifier, text: pv.text, dl: pv.dl });
+          // changed by hand: what it was before the first change is kept
+          Object.assign(patch, { value: pv.value, qualifier: pv.qualifier, text: pv.text, dl: pv.dl, edited: { at: new Date().toISOString(), by: whoAmI() || undefined, was: r.edited?.was ?? typedText(r) } });
+          changed.push(`${paramMap.get(r.parameterId)?.name ?? r.parameterId}: ${typedText(r)} → ${edits[r.id].trim()}`);
         }
         if (Object.keys(patch).length) await db.results.update(r.id, patch);
       }
     });
+    if (changed.length) await logAudit(s.projectId, 'result', `${sites.find((x) => x.id === s.siteId)?.code ?? ''} ${formatDate(s.date.slice(0, 10))} – ${changed.join('; ')}`);
     notifications.show({ message: 'Sample saved', color: 'teal' });
     onClose();
   };
@@ -184,12 +193,45 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
           <Table.Tbody>
             {results.map((r) => {
               const p = paramMap.get(r.parameterId);
+              if (r.calc)
+                return (
+                  <Table.Tr key={r.id}>
+                    <Table.Td>
+                      <Tooltip label={`${p?.name ?? r.parameterId} = ${r.calc.formula}`} multiline w={320}>
+                        <span>
+                          {p?.name ?? r.parameterId} <span className="calc-mark">ƒ</span>
+                        </span>
+                      </Tooltip>
+                    </Table.Td>
+                    <Table.Td w={140}>
+                      <Text size="xs" fs="italic">
+                        {displayValue(r, p).text}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td w={90}>
+                      <Text size="xs" c="dimmed">
+                        {unitLabel(p?.unit ?? r.unit)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td w={92}>
+                      <Text size="xs" c="dimmed" lineClamp={2} title={`Calculated from ${r.calc.from}`}>
+                        calculated
+                      </Text>
+                    </Table.Td>
+                  </Table.Tr>
+                );
               return (
                 <Table.Tr key={r.id}>
                   <Table.Td>
                     {r.excluded ? (
                       <Tooltip label={`Left out${r.excluded.by ? ` by ${r.excluded.by}` : ''} on ${formatDate(r.excluded.at.slice(0, 10))}: ${r.excluded.reason}`} multiline w={280}>
                         <span className="result-excluded">{p?.name ?? r.parameterId}</span>
+                      </Tooltip>
+                    ) : r.edited ? (
+                      <Tooltip label={`Changed by hand${r.edited.by ? ` by ${r.edited.by}` : ''} on ${formatDate(r.edited.at.slice(0, 10))}${r.edited.was ? ` – was ${r.edited.was}` : ' (added by hand)'}`} multiline w={280}>
+                        <span>
+                          {p?.name ?? r.parameterId} <span className="edited-mark">✎</span>
+                        </span>
                       </Tooltip>
                     ) : (
                       p?.name ?? r.parameterId
@@ -288,18 +330,36 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
   );
 }
 
-function SortHead({ label, title, sortKey, sort, onSort, onSortDir, onFilter }: { label: string; title?: string; sortKey: SortKey; sort: SortState; onSort: (k: SortKey) => void; onSortDir?: (k: SortKey, dir: SortState['dir']) => void; onFilter?: (k: string) => void }) {
+function SortHead({ label, title, sortKey, sort, onSort, onSortDir, onFilter, onEdit, onRemove, calc }: {
+  label: string;
+  title?: string;
+  sortKey: SortKey;
+  sort: SortState;
+  onSort: (k: SortKey) => void;
+  onSortDir?: (k: SortKey, dir: SortState['dir']) => void;
+  onFilter?: (k: string) => void;
+  onEdit?: (k: string) => void;
+  /** An added column with nothing in it yet: it can come off. */
+  onRemove?: (k: string) => void;
+  calc?: boolean;
+}) {
   const active = sort.key === sortKey;
   return (
     <Group gap={2} wrap="nowrap" align="flex-end">
-      <UnstyledButton className="th-sort" title={title ? `${title} – click to sort` : 'Click to sort'} onClick={() => onSort(sortKey)} aria-label={`Sort by ${title ?? label}`}>
+      <UnstyledButton className="th-sort" title={title ? `${title}${calc ? ' (calculated)' : ''} – click to sort` : 'Click to sort'} onClick={() => onSort(sortKey)} aria-label={`Sort by ${title ?? label}`}>
         {label}
+        {calc && (
+          <Text span className="calc-mark" aria-hidden>
+            {' '}
+            ƒ
+          </Text>
+        )}
         {active && (sort.dir === 'asc' ? <IconArrowUp size={12} style={{ marginLeft: 2, verticalAlign: -1 }} /> : <IconArrowDown size={12} style={{ marginLeft: 2, verticalAlign: -1 }} />)}
       </UnstyledButton>
       {onSortDir && onFilter && (
         <Menu position="bottom-end" withinPortal>
           <Menu.Target>
-            <ActionIcon size={16} variant="subtle" color="gray" aria-label={`Sort or filter ${title ?? label}`}>
+            <ActionIcon size={16} variant="subtle" color="gray" aria-label={`Sort, filter or edit ${title ?? label}`}>
               <IconChevronDown size={12} />
             </ActionIcon>
           </Menu.Target>
@@ -313,6 +373,19 @@ function SortHead({ label, title, sortKey, sort, onSort, onSortDir, onFilter }: 
             <Menu.Item leftSection={<IconFilter size={14} />} onClick={() => onFilter(sortKey)}>
               Filter by value…
             </Menu.Item>
+            {onEdit && (
+              <>
+                <Menu.Divider />
+                <Menu.Item leftSection={calc ? <IconMathFunction size={14} /> : <IconPencil size={14} />} onClick={() => onEdit(sortKey)}>
+                  {calc ? 'Edit the parameter and its formula…' : 'Edit the parameter…'}
+                </Menu.Item>
+              </>
+            )}
+            {onRemove && (
+              <Menu.Item leftSection={<IconX size={14} />} onClick={() => onRemove(sortKey)}>
+                Take this empty column off
+              </Menu.Item>
+            )}
           </Menu.Dropdown>
         </Menu>
       )}
@@ -325,6 +398,88 @@ interface HeadProps {
   onSort: (k: SortKey) => void;
   onSortDir: (k: SortKey, dir: SortState['dir']) => void;
   onFilter: (k: string) => void;
+  onEdit: (k: string) => void;
+  /** Added columns with nothing in them yet: they can come off. */
+  removable: Set<string>;
+  onRemove: (k: string) => void;
+}
+
+/** The cell being typed into, and what typing does. */
+interface CellEditing {
+  at: { sampleId: string; paramId: string } | null;
+  start: (row: PivotRow, p: Parameter) => void;
+  /** `text`: what was typed (null: nothing changed); `move`: where to type next. */
+  commit: (row: PivotRow, p: Parameter, text: string | null, move?: 'next' | 'across' | 'back') => void;
+  cancel: () => void;
+}
+
+/** Typing into a cell: Enter keeps it (and goes on to the next), Tab to the next across, Esc leaves it as it was. */
+function CellInput({ initial, placeholder, label, onDone, onCancel }: { initial: string; placeholder?: string; label: string; onDone: (text: string | null, move?: 'next' | 'across' | 'back') => void; onCancel: () => void }) {
+  const [v, setV] = useState(initial);
+  const done = useRef(false);
+  const ref = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    ref.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    ref.current?.select();
+  }, []);
+  const finish = (move?: 'next' | 'across' | 'back') => {
+    if (done.current) return;
+    done.current = true;
+    onDone(v.trim() === initial.trim() ? null : v, move);
+  };
+  return (
+    <input
+      ref={ref}
+      className="edb-cell-input"
+      autoFocus
+      value={v}
+      placeholder={placeholder}
+      aria-label={label}
+      onChange={(e) => setV(e.currentTarget.value)}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finish('next');
+        } else if (e.key === 'Tab') {
+          e.preventDefault();
+          finish(e.shiftKey ? 'back' : 'across');
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          done.current = true;
+          onCancel();
+        }
+      }}
+      onBlur={() => finish()}
+    />
+  );
+}
+
+/**
+ * A value in the table: click to change it – or, empty, to add one. A calculated value says how it's worked out (a
+ * measured one typed in replaces it); one left out after a QA/QC check stays as it is (in the sample's details).
+ */
+function ValueCell({ row, p, flags, edit, hint }: { row: PivotRow; p: Parameter; flags: Map<string, CellFlag>; edit: CellEditing; hint?: boolean }) {
+  const r = row.cells.get(p.id);
+  if (!r && row.withheld?.get(p.id)?.excluded) return <Withheld r={row.withheld.get(p.id)} p={p} />;
+  const label = `${row.site.code} ${formatDate(row.sample.date)} ${p.name}`;
+  if (edit.at?.sampleId === row.sample.id && edit.at.paramId === p.id)
+    return (
+      <td className="num edb-cell-editing">
+        <CellInput initial={r && !r.calc ? typedText(r) : ''} placeholder={r?.calc ? displayValue(r, p).text : unitLabel(p.unit)} label={label} onDone={(text, move) => edit.commit(row, p, text, move)} onCancel={edit.cancel} />
+      </td>
+    );
+  if (!r)
+    return <td className="editable" onClick={() => edit.start(row, p)} title={hint ? `Click to add ${p.name}` : undefined} aria-label={`${label}: add a value`} />;
+  const f = flags.get(r.id);
+  const tip = r.calc
+    ? `Calculated from ${r.calc.from}\n${p.name} = ${r.calc.formula}\nType a measured value here to replace it.`
+    : [f?.messages.join('\n'), r.text && r.text !== String(r.value) && !r.edited ? `Reported: ${r.text} ${r.unit}` : '', r.comment ? `Comment: ${r.comment}` : '', r.edited ? `Changed by hand${r.edited.by ? ` by ${r.edited.by}` : ''} on ${formatDate(r.edited.at.slice(0, 10))}${r.edited.was ? ` – was ${r.edited.was}` : ' (added by hand)'}` : ''].filter(Boolean).join('\n') || undefined;
+  return (
+    <td className={`num editable ${cellClass(f)} ${r.qualifier === '<' ? 'nd' : ''} ${r.comment ? 'commented' : ''} ${r.calc ? 'calc' : ''} ${r.edited ? 'edited' : ''}`} title={tip} onClick={() => edit.start(row, p)}>
+      {displayValue(r, p).text}
+    </td>
+  );
 }
 
 /** Keeps the second header row (units, dates) right under the first however tall its names wrap, so neither is covered. */
@@ -343,13 +498,20 @@ function useHeaderRows() {
   return ref;
 }
 
-function SamplesAsRows({ rows, columns, flags, onRow, head }: { rows: PivotRow[]; columns: ReturnType<typeof pivot>['columns']; flags: Map<string, CellFlag>; onRow: (s: Sample) => void; head: HeadProps }) {
+function SamplesAsRows({ rows, columns, flags, onRow, head, edit }: { rows: PivotRow[]; columns: ReturnType<typeof pivot>['columns']; flags: Map<string, CellFlag>; onRow: (s: Sample) => void; head: HeadProps; edit: CellEditing }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const v = useVirtualizer({ count: rows.length, getScrollElement: () => parentRef.current, estimateSize: () => 27, overscan: 12 });
   const items = v.getVirtualItems();
   const padTop = items.length ? items[0].start : 0;
   const padBottom = items.length ? v.getTotalSize() - items[items.length - 1].end : 0;
   const headRef = useHeaderRows();
+  // the row being typed into, brought into view (a sample just added is at the bottom; Enter goes down)
+  const typingIn = edit.at?.sampleId;
+  useEffect(() => {
+    if (!typingIn) return;
+    const i = rows.findIndex((r) => r.sample.id === typingIn);
+    if (i >= 0) v.scrollToIndex(i, { align: 'auto' });
+  }, [typingIn, rows]);
   return (
     <div ref={parentRef} style={{ maxHeight: 'calc(100vh - 330px)', minHeight: 300, overflow: 'auto', border: '1px solid var(--edb-grid)', borderRadius: 8 }}>
       <table className="edb-grid">
@@ -363,7 +525,7 @@ function SamplesAsRows({ rows, columns, flags, onRow, head }: { rows: PivotRow[]
             </th>
             {columns.map((p) => (
               <th key={p.id} style={{ maxWidth: 150, whiteSpace: 'normal', minWidth: 84 }}>
-                <SortHead label={p.short ?? p.name} title={p.name} sortKey={p.id} sort={head.sort} onSort={head.onSort} onSortDir={head.onSortDir} onFilter={head.onFilter} />
+                <SortHead label={p.short ?? p.name} title={p.name} sortKey={p.id} sort={head.sort} onSort={head.onSort} onSortDir={head.onSortDir} onFilter={head.onFilter} onEdit={head.onEdit} onRemove={head.removable.has(p.id) ? head.onRemove : undefined} calc={!!p.formula} />
               </th>
             ))}
           </tr>
@@ -384,21 +546,16 @@ function SamplesAsRows({ rows, columns, flags, onRow, head }: { rows: PivotRow[]
           {items.map((it) => {
             const row = rows[it.index];
             return (
-              <tr key={row.sample.id} className="clickable-row" onClick={() => onRow(row.sample)}>
-                <td className="sticky-col tabular" title={row.sample.sampleName}>
+              <tr key={row.sample.id}>
+                <td className="sticky-col tabular open-sample" title={`${row.sample.sampleName ? `${row.sample.sampleName} – ` : ''}open the sample`} onClick={() => onRow(row.sample)}>
                   {formatDate(row.sample.date, { time: true })}
                 </td>
-                <td className="sticky-col-2">{row.site.code}</td>
-                {columns.map((p) => {
-                  const r = row.cells.get(p.id);
-                  if (!r) return <Withheld key={p.id} r={row.withheld?.get(p.id)} p={p} />;
-                  const f = flags.get(r.id);
-                  return (
-                    <td key={p.id} className={`num ${cellClass(f)} ${r.qualifier === '<' ? 'nd' : ''} ${r.comment ? 'commented' : ''}`} title={[f?.messages.join('\n'), r.text && r.text !== String(r.value) ? `Reported: ${r.text} ${r.unit}` : '', r.comment ? `Comment: ${r.comment}` : ''].filter(Boolean).join('\n') || undefined}>
-                      {displayValue(r, p).text}
-                    </td>
-                  );
-                })}
+                <td className="sticky-col-2 open-sample" title="Open the sample" onClick={() => onRow(row.sample)}>
+                  {row.site.code}
+                </td>
+                {columns.map((p) => (
+                  <ValueCell key={p.id} row={row} p={p} flags={flags} edit={edit} hint={it.index === 0} />
+                ))}
               </tr>
             );
           })}
@@ -413,7 +570,7 @@ function SamplesAsRows({ rows, columns, flags, onRow, head }: { rows: PivotRow[]
   );
 }
 
-function ParamsAsRows({ rows, columns, flags, onRow }: { rows: PivotRow[]; columns: ReturnType<typeof pivot>['columns']; flags: Map<string, CellFlag>; onRow: (s: Sample) => void }) {
+function ParamsAsRows({ rows, columns, flags, onRow, onEdit, edit }: { rows: PivotRow[]; columns: ReturnType<typeof pivot>['columns']; flags: Map<string, CellFlag>; onRow: (s: Sample) => void; onEdit: (paramId: string) => void; edit: CellEditing }) {
   const shown = rows.slice(-120);
   const headRef = useHeaderRows();
   return (
@@ -432,7 +589,7 @@ function ParamsAsRows({ rows, columns, flags, onRow }: { rows: PivotRow[]; colum
               </th>
               <th className="sticky-col-2">Unit</th>
               {shown.map((r) => (
-                <th key={r.sample.id} className="clickable-row" onClick={() => onRow(r.sample)}>
+                <th key={r.sample.id} className="clickable-row" title="Open the sample" onClick={() => onRow(r.sample)}>
                   {r.site.code}
                 </th>
               ))}
@@ -448,18 +605,14 @@ function ParamsAsRows({ rows, columns, flags, onRow }: { rows: PivotRow[]; colum
           <tbody>
             {columns.map((p) => (
               <tr key={p.id}>
-                <td className="sticky-col">{p.name}</td>
+                <td className="sticky-col open-sample" title={`Edit ${p.name}${p.formula ? ' and its formula' : ''}`} onClick={() => onEdit(p.id)}>
+                  {p.name}
+                  {p.formula ? <span className="calc-mark"> ƒ</span> : null}
+                </td>
                 <td className="sticky-col-2">{unitLabel(p.unit)}</td>
-                {shown.map((row) => {
-                  const r = row.cells.get(p.id);
-                  if (!r) return <Withheld key={row.sample.id} r={row.withheld?.get(p.id)} p={p} />;
-                  const f = flags.get(r.id);
-                  return (
-                    <td key={row.sample.id} className={`num ${cellClass(f)} ${r.qualifier === '<' ? 'nd' : ''} ${r.comment ? 'commented' : ''}`} title={[f?.messages.join('\n'), r.comment ? `Comment: ${r.comment}` : ''].filter(Boolean).join('\n') || undefined}>
-                      {displayValue(r, p).text}
-                    </td>
-                  );
-                })}
+                {shown.map((row) => (
+                  <ValueCell key={row.sample.id} row={row} p={p} flags={flags} edit={edit} />
+                ))}
               </tr>
             ))}
           </tbody>
@@ -580,6 +733,76 @@ function ImportHistory() {
   );
 }
 
+/** A column to type into: one of the library's parameters the table hasn't got – or a new one. */
+function AddColumnModal({ opened, params, onClose, onPick, onNew }: { opened: boolean; params: Parameter[]; onClose: () => void; onPick: (id: string) => void; onNew: () => void }) {
+  return (
+    <Modal opened={opened} onClose={onClose} title="Add a column" size="md">
+      <Stack gap="sm">
+        <Select
+          label="Parameter"
+          placeholder="Search the parameters…"
+          searchable
+          data={params.map((p) => ({ value: p.id, label: `${p.name}${unitLabel(p.unit) ? ` (${unitLabel(p.unit)})` : ''}${p.formula ? ' – calculated' : ''}` }))}
+          value={null}
+          onChange={(v) => v && onPick(v)}
+          data-autofocus
+          comboboxProps={{ withinPortal: true }}
+          nothingFoundMessage="None by that name – make a new one"
+        />
+        <Text size="xs" c="dimmed">
+          It shows empty, to type values into (a calculated one shows its values). It goes when it’s still empty and you take it off from its heading.
+        </Text>
+        <Group justify="space-between">
+          <Button variant="subtle" leftSection={<IconMathFunction size={16} />} onClick={onNew}>
+            A new parameter…
+          </Button>
+          <Button variant="default" onClick={onClose}>
+            Cancel
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
+}
+
+/** A sample added by hand – a site on a day (and time) – for values not had at the time. */
+function AddSampleModal({ opened, sites, onClose, onAdd }: { opened: boolean; sites: Array<{ id: string; code: string; name?: string }>; onClose: () => void; onAdd: (siteId: string, date: string) => Promise<void> }) {
+  const [siteId, setSiteId] = useState<string | null>(null);
+  const [day, setDay] = useState(new Date().toISOString().slice(0, 10));
+  const [time, setTime] = useState('');
+  const [busy, setBusy] = useState(false);
+  const okTime = !time || /^\d{2}:\d{2}$/.test(time);
+  return (
+    <Modal opened={opened} onClose={onClose} title="Add a sample" size="sm">
+      <Stack gap="sm">
+        <Select label="Site" data={sites.map((s) => ({ value: s.id, label: `${s.code}${s.name ? ` – ${s.name}` : ''}` }))} value={siteId} onChange={setSiteId} searchable data-autofocus comboboxProps={{ withinPortal: true }} />
+        <Group grow>
+          <DateField label="Day" value={day} onChange={(v) => v && setDay(v)} />
+          <TextInput label="Time" placeholder="hh:mm" value={time} onChange={(e) => setTime(e.currentTarget.value)} error={okTime ? undefined : 'hh:mm'} />
+        </Group>
+        <Text size="xs" c="dimmed">
+          Then type its values into its row. A site that has a sample that day already keeps that one – its values go there.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            loading={busy}
+            disabled={!siteId || !day || !okTime}
+            onClick={() => {
+              setBusy(true);
+              void onAdd(siteId!, time ? `${day}T${time}` : day).finally(() => setBusy(false));
+            }}
+          >
+            Add the sample
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
+}
+
 export function DataTab() {
   const data = useProject();
   const { project, sites, params, guidelineSets, setMap, index } = data;
@@ -591,6 +814,12 @@ export function DataTab() {
   const [setIds, setSetIds] = useViewState<string[]>(k('sets'), project.guidelineSetIds, reviveIds((id) => data.setMap.has(id)));
   const [layout, setLayout] = useViewState<'samplesAsRows' | 'parametersAsRows'>(k('layout'), 'samplesAsRows');
   const [selected, setSelected] = useState<Sample | null>(null);
+  // typing into the table; a parameter being made or changed; columns added to type into; a sample added by hand
+  const [cell, setCell] = useState<{ sampleId: string; paramId: string } | null>(null);
+  const [editParam, setEditParam] = useState<{ id: string | null } | null>(null);
+  const [extra, setExtra] = useViewState<string[]>(k('extra'), [], reviveIds((id) => data.paramMap.has(id)));
+  const [addingColumn, setAddingColumn] = useState(false);
+  const [addingSample, setAddingSample] = useState(false);
   const withData = useMemo(() => new Set(index.paramIdsWithData), [index]);
   const paramPresets = useMemo(() => consentPresets(data, withData), [data, withData]);
   const [sort, setSort] = useViewState<SortState>(k('sort'), DEFAULT_SORT);
@@ -617,7 +846,8 @@ export function DataTab() {
   const consentCounts = useMemo(() => countWithData(consent, withData), [consent, withData]);
   const exportIds = noneInView ? [] : shownIds;
 
-  const { columns, rows } = useMemo(() => pivot(data, { siteIds, paramIds: shownIds, start: period.start, end: period.end, withheld: true }), [data, siteIds, shownIds, period]);
+  // samples added by hand show with nothing in them yet; added columns show empty, to type into
+  const { columns, rows } = useMemo(() => pivot(data, { siteIds, paramIds: shownIds, start: period.start, end: period.end, withheld: true, empty: true, alwaysIds: extra }), [data, siteIds, shownIds, period, extra]);
   const flags = useMemo(() => flagResults(data, evaluateAll(data, period.start, period.end), setIds, period.start, period.end), [data, setIds, period]);
   const guidelineNames = setIds.map((id) => setMap.get(id)?.shortName ?? '').filter(Boolean);
   const siteOrder = useMemo(() => new Map(sites.map((s, i) => [s.id, i])), [sites]);
@@ -642,6 +872,53 @@ export function DataTab() {
       }),
     onSortDir: (key, dir) => setSort({ key, dir }),
     onFilter: (paramId) => setDraft({ paramId, op: '>' }),
+    onEdit: (paramId) => setEditParam({ id: paramId }),
+    removable: new Set(extra.filter((id) => !withData.has(id))),
+    onRemove: (paramId) => setExtra(extra.filter((x) => x !== paramId)),
+  };
+  // where typing goes next: down the table (Enter) or across it (Tab), whichever way the table is laid out
+  const after = (sampleId: string, paramId: string, move?: 'next' | 'across' | 'back') => {
+    if (!move) return null;
+    const samples = layout === 'samplesAsRows' ? view : view.slice(-120);
+    const alongSamples = (layout === 'samplesAsRows') === (move === 'next');
+    if (alongSamples) {
+      const i = samples.findIndex((r) => r.sample.id === sampleId) + (move === 'back' ? -1 : 1);
+      return samples[i] ? { sampleId: samples[i].sample.id, paramId } : null;
+    }
+    const j = columns.findIndex((c) => c.id === paramId) + (move === 'back' ? -1 : 1);
+    return columns[j] ? { sampleId, paramId: columns[j].id } : null;
+  };
+  const edit: CellEditing = {
+    at: cell,
+    start: (row, p) => setCell({ sampleId: row.sample.id, paramId: p.id }),
+    cancel: () => setCell(null),
+    commit: (row, p, text, move) => {
+      setCell(after(row.sample.id, p.id, move));
+      if (text === null) return;
+      setCellValue(row.sample, p, text, row.site.code).then(
+        (change) => {
+          if (!change) return;
+          const id = `cell-${row.sample.id}-${p.id}-${Date.now()}`;
+          notifications.show({
+            id,
+            color: 'teal',
+            autoClose: 8000,
+            message: (
+              <Group gap="xs" wrap="nowrap" justify="space-between">
+                <Text size="sm">{change.said}</Text>
+                <Button size="compact-xs" variant="light" style={{ flexShrink: 0 }} onClick={() => void change.undo().then(() => notifications.hide(id))}>
+                  Undo
+                </Button>
+              </Group>
+            ),
+          });
+        },
+        (e: Error) => {
+          notifications.show({ color: 'red', message: e.message });
+          setCell({ sampleId: row.sample.id, paramId: p.id });
+        },
+      );
+    },
   };
   const settings = useSettings();
   const [wordBusy, setWordBusy] = useState(false);
@@ -741,6 +1018,24 @@ export function DataTab() {
             </Popover.Dropdown>
           </Popover>
           <Group gap="sm" ml="auto" wrap="nowrap">
+            <Menu position="bottom-end">
+              <Menu.Target>
+                <Button variant="default" leftSection={<IconPlus size={16} />}>
+                  Add
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item leftSection={<IconCalendarPlus size={16} />} onClick={() => setAddingSample(true)}>
+                  A sample – a site on a day, to type its values in
+                </Menu.Item>
+                <Menu.Item leftSection={<IconColumnInsertRight size={16} />} onClick={() => setAddingColumn(true)}>
+                  A column – a parameter to type values into
+                </Menu.Item>
+                <Menu.Item leftSection={<IconMathFunction size={16} />} onClick={() => setEditParam({ id: null })}>
+                  A new parameter – typed in, or calculated from others
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
             <SegmentedControl
               value={layout}
               onChange={(v) => setLayout(v as typeof layout)}
@@ -827,7 +1122,7 @@ export function DataTab() {
           {consent[consentView === 'all' ? 'consent' : consentView].size ? 'Try another period or sites.' : 'Add the consent conditions on the Compliance tab, and the parameters each sampling schedule requires under Overview → Sampling & reporting.'}
         </EmptyState>
       ) : view.length ? (
-        layout === 'samplesAsRows' ? <SamplesAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} head={head} /> : <ParamsAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} />
+        layout === 'samplesAsRows' ? <SamplesAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} head={head} edit={edit} /> : <ParamsAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} onEdit={(id) => setEditParam({ id })} edit={edit} />
       ) : (
         <EmptyState
           title={rows.length ? 'No samples match the filters' : 'No results match the filters'}
@@ -842,6 +1137,45 @@ export function DataTab() {
       )}
       <ImportHistory />
       <SampleDrawer key={selected?.id ?? 'none'} sample={selected} onClose={() => setSelected(null)} />
+      <ParameterEditor
+        opened={!!editParam}
+        paramId={editParam?.id}
+        bundle={data}
+        onClose={() => setEditParam(null)}
+        onSaved={(p) => {
+          // a new one shows as a column, to type into or see worked out
+          if (!editParam?.id && !extra.includes(p.id)) setExtra([...extra, p.id]);
+        }}
+      />
+      <AddColumnModal
+        opened={addingColumn}
+        params={params.filter((p) => !columns.some((c) => c.id === p.id))}
+        onClose={() => setAddingColumn(false)}
+        onPick={(id) => {
+          setExtra([...extra.filter((x) => x !== id), id]);
+          setAddingColumn(false);
+        }}
+        onNew={() => {
+          setAddingColumn(false);
+          setEditParam({ id: null });
+        }}
+      />
+      <AddSampleModal
+        opened={addingSample}
+        sites={sites}
+        onClose={() => setAddingSample(false)}
+        onAdd={async (siteId, date) => {
+          const site = data.siteMap.get(siteId)!;
+          const { sample, added } = await addSample(project.id, siteId, date, site.code);
+          setAddingSample(false);
+          const shown = date.slice(0, 10) >= period.start && date.slice(0, 10) <= period.end && (!siteIds.length || siteIds.includes(siteId));
+          notifications.show({
+            color: added ? 'teal' : 'blue',
+            message: `${added ? 'Sample added' : `${site.code} has a sample that day already`} – ${shown ? 'click a cell in its row to type a value' : 'it’s outside the period or sites shown'}.`,
+          });
+          if (shown && columns[0]) setCell({ sampleId: sample.id, paramId: columns[0].id });
+        }}
+      />
       <AiInputModal opened={aiOpen} onClose={() => setAiOpen(false)} start={{ period, siteIds, paramIds: exportIds }} />
     </Stack>
   );

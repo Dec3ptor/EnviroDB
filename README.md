@@ -135,6 +135,29 @@ there as they work and show up for the others within seconds.
   app's pages; ↑ ↓ and Enter to go. **Keyboard shortcuts:** ? lists them – *g* then *d*, *p*, *c*, *i*, *l* or
   *s* goes to the Dashboard, Projects, Calendar, Import, Library or Settings; *1–7* switches a project's tabs.
   Never while typing in a field.
+- **Typing values in, on the Data tab.** Click a value to change it, or an empty cell to add one – a number, or
+  `<0.005` for below detection; empty takes it off. Enter keeps it and goes down to the next, Tab across, Esc
+  leaves it as it was. Each change says what it did, with *Undo*, and goes in the project's history; a value
+  changed by hand keeps what it was before (the first value it had – a lab's value is never lost), shown when you
+  hover it (dotted underline) and in the sample's details (✎). The date (or site) opens the sample's details.
+  *Add* (beside *Export*) adds a **sample** – a site on a day, to type its values in – a **column** to type into
+  (a parameter the table hasn't got yet), or a **new parameter**. A column's heading menu has *Edit the
+  parameter…*: its name, unit, group, decimals, the names labs use for it – and a formula.
+- **Calculated parameters.** A parameter with a **formula** is worked out from the sample's other values – e.g.
+  dissolved oxygen in mg/L from DO % saturation and temperature: `[DO %] / 100 * DO_SAT([Temperature])`.
+  Parameters go in square brackets (by name, short name or id), each the sample's value in its own unit; numbers,
+  `+ - * / ^`, brackets and Excel's functions (`ABS SQRT EXP LN LOG10 LOG POWER ROUND MIN MAX AVERAGE IF PI`), plus
+  `DO_SAT(temperature, salinity, pressure)` – oxygen's solubility in mg/L (Benson & Krause, as in APHA and the
+  USGS tables). The formula is checked as you type and shows the values it works out in the project before it's
+  saved. **Ask an AI…** copies what an AI needs to write one (the syntax and the project's parameter names and
+  units – no results, sites or client details): paste it into Copilot, ChatGPT or Claude, say what you want, and
+  paste its formula back. A formula is only ever arithmetic – EnviroDB reads it itself, it's never run as code.
+  Calculated values are worked out as the data is shown and **never stored**: a measured value – from a lab, a
+  phone or typed in – always wins (type one into a calculated cell to replace it), and clearing the formula takes
+  them away. They show in italics (*ƒ* on the heading), and everywhere else as values: graphs, compliance, reports
+  and exports. QA/QC checks leave them out. A formula can use another calculated parameter; one that loops back
+  on itself is left out. On the Library's Parameters page, *Add parameter* and each parameter's *ƒ* button open
+  the same editor.
 - **g/m³ or mg/L.** A project says how it writes concentrations in its details (*Concentrations written as*):
   the same quantity either way. Tables, graphs, reports and exports follow it, and a parameter added from an
   import with no unit takes it. The parameter library's own units stay, so other projects are unaffected.
@@ -606,7 +629,7 @@ has a **ⓘ** that says what it's for and links to the section of this README.
   has a switch under the tabs. Its main action, *Import results*, is top right; less common ones (*Field work…*,
   *Copy for AI input* on a phone, *Download project file*) are under ⋯. Links to the old tabs still work.
 - **Library** – reference data shared by every project: *Guidelines*, *Report templates* and
-  *Parameters* (the analyte dictionary: names, units and the aliases used in lab files). A parameter
+  *Parameters* (the analyte dictionary: names, units and the aliases used in lab files, and any formula). A parameter
   can be deleted from the library, or removed from one project in its Setup tab (▸ *Display units or
   remove*); you're shown first what goes with it – its results in each project, its consent rules,
   the sampling schedules and guideline sets that name it.

@@ -6,6 +6,7 @@ import { db } from '../db/db';
 import type { ConditionAssessment, ConsentCondition, ContinuousSeries, ExceedanceNote, GuidelineSet, ImportBatch, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, SeriesYear, Site } from '../db/types';
 import { isQcSite } from '../lib/qc';
 import { buildIndex, type DataIndex } from '../lib/dataIndex';
+import { withCalculated } from '../lib/calculated';
 import { SERIES_LIGHT } from '../theme';
 import { compareParams } from '../data/parameters';
 import { withProjectUnits } from '../lib/units';
@@ -76,7 +77,9 @@ export function ProjectDataProvider({ projectId, children }: { projectId: string
     const sortedSites = [...sites].sort((a, b) => a.order - b.order || a.code.localeCompare(b.code));
     // the parameters as this project writes them (g/m³ or mg/L)
     const sortedParams = withProjectUnits([...params].sort(compareParams), project.concUnit);
-    const index = buildIndex(samples, results, sortedSites, sortedParams);
+    // the calculated parameters' values, worked out as the data is shown (never stored): every view sees them
+    const allResults = withCalculated(samples, results, sortedParams, project.ndHandling);
+    const index = buildIndex(samples, allResults, sortedSites, sortedParams);
     const monitoringSites = sortedSites.filter((s) => !isQcSite(s));
     const qcSiteIds = new Set(sortedSites.filter((s) => isQcSite(s)).map((s) => s.id));
     const isQc = (s: Sample) => !!s.qc || qcSiteIds.has(s.siteId);
@@ -87,7 +90,7 @@ export function ProjectDataProvider({ projectId, children }: { projectId: string
       sites: monitoringSites,
       siteMap: new Map(sortedSites.map((s) => [s.id, s])),
       samples: byDate.filter((s) => !isQc(s)),
-      results,
+      results: allResults,
       params: sortedParams,
       paramMap: new Map(sortedParams.map((p) => [p.id, p])),
       guidelineSets,

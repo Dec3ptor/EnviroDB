@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import type { Project } from '../db/types';
 import { buildIndex } from '../lib/dataIndex';
+import { withCalculated } from '../lib/calculated';
 import { isQcSite } from '../lib/qc';
 import type { ProjectBundle } from '../lib/analysis';
 import { compareParams } from '../data/parameters';
@@ -62,7 +63,8 @@ export function useAllBundles(): { bundles: ProjectBundle[]; projects: Project[]
         notes: notesBy.get(project.id) ?? [],
         schedules: schBy.get(project.id) ?? [],
         obligations: oblBy.get(project.id) ?? [],
-        index: buildIndex(allSamples, archived ? [] : resultsBy.get(project.id) ?? [], all, pParams),
+        // with the calculated parameters' values, worked out (never stored)
+        index: buildIndex(allSamples, archived ? [] : withCalculated(allSamples, resultsBy.get(project.id) ?? [], pParams, project.ndHandling), all, pParams),
         qc: { sites: qcSites, samples: allSamples.filter(isQc), records: qaBy.get(project.id) ?? [] },
       };
     });

@@ -131,11 +131,16 @@ export interface PivotOptions {
   end: string;
   /** Include results left out after a QA/QC check (in `withheld`). */
   withheld?: boolean;
+  /** Samples with no values too (one added by hand, waiting for them). */
+  empty?: boolean;
+  /** Columns shown even with no values in them yet (to type into). */
+  alwaysIds?: string[];
 }
 
 export function pivot(b: ProjectBundle, opts: PivotOptions): { columns: Parameter[]; rows: PivotRow[] } {
   const siteSet = new Set(opts.siteIds.length ? opts.siteIds : b.sites.map((s) => s.id));
-  const paramFilter = opts.paramIds.length ? new Set(opts.paramIds) : null;
+  const always = opts.alwaysIds ?? [];
+  const paramFilter = opts.paramIds.length ? new Set([...opts.paramIds, ...always]) : null;
   const rows: PivotRow[] = [];
   const used = new Set<string>();
   for (const s of b.samples) {
@@ -157,12 +162,14 @@ export function pivot(b: ProjectBundle, opts: PivotOptions): { columns: Paramete
         withheld.set(r.parameterId, r);
         used.add(r.parameterId);
       }
-    if (cells.size || withheld.size) rows.push(withheld.size ? { sample: s, site, cells, withheld } : { sample: s, site, cells });
+    if (cells.size || withheld.size || opts.empty) rows.push(withheld.size ? { sample: s, site, cells, withheld } : { sample: s, site, cells });
   }
   const siteOrder = new Map(b.sites.map((s, i) => [s.id, i]));
   rows.sort((a, c) => (a.sample.date < c.sample.date ? -1 : a.sample.date > c.sample.date ? 1 : (siteOrder.get(a.site.id) ?? 0) - (siteOrder.get(c.site.id) ?? 0)));
-  const columns = b.params.filter((p) => used.has(p.id) && (!paramFilter || paramFilter.has(p.id)));
-  if (paramFilter) columns.sort((a, c) => opts.paramIds.indexOf(a.id) - opts.paramIds.indexOf(c.id));
+  const columns = b.params.filter((p) => (used.has(p.id) || always.includes(p.id)) && (!paramFilter || paramFilter.has(p.id)));
+  // the ones asked for in their order; columns added to type into after them
+  const at = (id: string) => (opts.paramIds.includes(id) ? opts.paramIds.indexOf(id) : opts.paramIds.length + always.indexOf(id));
+  if (paramFilter) columns.sort((a, c) => at(a.id) - at(c.id));
   return { columns, rows };
 }
 

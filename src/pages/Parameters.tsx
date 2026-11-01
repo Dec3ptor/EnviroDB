@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActionIcon, Autocomplete, Button, Card, Group, NumberInput, Pagination, Select, Table, TagsInput, Text, TextInput, Tooltip } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
+import { IconMathFunction, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
+import { ParameterEditor } from '../components/ParameterEditor';
 import { db } from '../db/db';
 import type { Parameter } from '../db/types';
-import { createParameter, saveParameter } from '../db/repo';
+import { saveParameter } from '../db/repo';
 import { PARAMETER_GROUPS, compareParams } from '../data/parameters';
 import { COMMON_UNITS } from '../lib/units';
 import { PageHeader } from '../components/common';
@@ -16,12 +17,26 @@ import { HELP } from '../components/Onboarding';
 
 // The analyte dictionary: every parameter's name, group, unit and the other names it goes by in lab files.
 
-function ParamRow({ p }: { p: Parameter }) {
+function ParamRow({ p, onOpen }: { p: Parameter; onOpen: (id: string) => void }) {
   const [d, setD, { dirty, reset }] = useEditable(p);
   return (
     <Table.Tr className={dirty ? 'edb-unsaved-row' : undefined}>
       <Table.Td>
-        <TextInput size="xs" value={d.name} onChange={(e) => setD({ ...d, name: e.currentTarget.value })} miw={200} />
+        <TextInput
+          size="xs"
+          value={d.name}
+          onChange={(e) => setD({ ...d, name: e.currentTarget.value })}
+          miw={200}
+          rightSection={
+            p.formula ? (
+              <Tooltip label={`Calculated: ${p.formula}`} multiline w={320}>
+                <Text span className="calc-mark" style={{ cursor: 'default' }}>
+                  ƒ
+                </Text>
+              </Tooltip>
+            ) : undefined
+          }
+        />
       </Table.Td>
       <Table.Td>
         <TextInput size="xs" value={d.short ?? ''} onChange={(e) => setD({ ...d, short: e.currentTarget.value || undefined })} w={90} />
@@ -41,6 +56,11 @@ function ParamRow({ p }: { p: Parameter }) {
       <Table.Td>
         <Group gap={4} wrap="nowrap">
           <SaveIcon dirty={dirty} disabled={!d.name.trim()} onClick={() => saveParameter(d, p).then(reset)} label="Save parameter" />
+          <Tooltip label={p.formula ? 'Its formula, and everything else' : 'Calculate it from others – or change everything else'} openDelay={300}>
+            <ActionIcon variant="subtle" color={p.formula ? undefined : 'gray'} onClick={() => onOpen(p.id)} aria-label={`Open ${p.name}`}>
+              <IconMathFunction size={16} />
+            </ActionIcon>
+          </Tooltip>
           <Tooltip label="Delete parameter…" openDelay={300}>
             <ActionIcon variant="subtle" color="red" onClick={() => confirmDeleteParameter(p)} aria-label={`Delete ${p.name}`}>
               <IconTrash size={16} />
@@ -67,16 +87,15 @@ export function ParametersPage() {
   useEffect(() => setPage(1), [q, group]);
   const per = 25;
   const shown = list.slice((page - 1) * per, page * per);
-  const add = async () => {
-    const p = await createParameter('New parameter', 'mg/L', 'Other');
-    setQ(p.name);
-  };
+  // the one open in full (a formula, a new one)
+  const [open, setOpen] = useState<{ id: string | null } | null>(null);
+  const add = () => setOpen({ id: null });
   return (
     <>
       <SectionNav items={LIBRARY} />
       <PageHeader
         title="Parameters" help={HELP.library}
-        description="The analyte dictionary shared by all projects. Aliases are the names used in lab files and spreadsheets; new ones you match during import are added automatically."
+        description="The analyte dictionary shared by all projects. Aliases are the names used in lab files and spreadsheets; new ones you match during import are added automatically. A parameter can be calculated from others (ƒ): open it to give it a formula."
         actions={
           <Button leftSection={<IconPlus size={16} />} onClick={add}>
             Add parameter
@@ -106,13 +125,14 @@ export function ParametersPage() {
           </Table.Thead>
           <Table.Tbody>
             {shown.map((p) => (
-              <ParamRow key={`${p.id}-${p.aliases.length}-${p.unit}-${p.name}`} p={p} />
+              <ParamRow key={`${p.id}-${p.aliases.length}-${p.unit}-${p.name}-${p.formula ?? ''}`} p={p} onOpen={(id) => setOpen({ id })} />
             ))}
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
       {list.length > per && <Pagination mt="sm" total={Math.ceil(list.length / per)} value={page} onChange={setPage} size="sm" />}
       </Card>
+      <ParameterEditor opened={!!open} paramId={open?.id} onClose={() => setOpen(null)} onSaved={(p) => !open?.id && setQ(p.name)} />
     </>
   );
 }
