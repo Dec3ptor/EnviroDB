@@ -2,7 +2,7 @@
 // camera reads. Both carry the same sealed readings and photos; the readings go first so they arrive within a second.
 
 import { FountainEncoder, FRAME_HEAD, bytesIn, packFrame, readFrame, StreamReceiver, CODE } from './codec';
-import { STREAM, packPhotos, photosOf, readReadings, readingsBytes, seal, unpackPhotos, unseal, withPhotos, type LinkPhoto } from './payload';
+import { STREAM, packPhotos, photosOf, readReadings, readingsBytes, seal, unpackPhotos, unseal, withPhotos, type LinkPhoto, type PhotoMeta } from './payload';
 import { sendBytes } from './rtc';
 import type { FieldResults } from '../model';
 
@@ -121,7 +121,7 @@ export interface Received {
 /** Puts together what arrives – by link or by camera – and opens it with the key. */
 export class Receiver {
   readonly stream: StreamReceiver;
-  private readings: { results: FieldResults; photos: number } | null = null;
+  private readings: { results: FieldResults; photos: number; meta: Map<string, PhotoMeta[]> } | null = null;
   private photos: LinkPhoto[] | null = null;
   private sizes: [number, number] | null = null;
   private buffer: Uint8Array | null = null;
@@ -135,7 +135,7 @@ export class Receiver {
   }
 
   get received(): Received | null {
-    return this.readings ? { results: this.photos ? withPhotos(this.readings.results, this.photos) : this.readings.results, photoCount: this.readings.photos, photos: this.photos } : null;
+    return this.readings ? { results: this.photos ? withPhotos(this.readings.results, this.photos, this.readings.meta) : this.readings.results, photoCount: this.readings.photos, photos: this.photos } : null;
   }
   get complete(): boolean {
     return !!this.readings && (this.readings.photos === 0 || !!this.photos);

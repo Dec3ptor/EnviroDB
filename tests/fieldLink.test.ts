@@ -5,6 +5,7 @@ import { fromSdp, packCode, toSdp, unpackCode, type LinkCode } from '../src/fiel
 import { STREAM, newKey, packPhotos, photosOf, seal, unpackPhotos, unseal } from '../src/field/link/payload';
 import { CODE_SIZES, FrameSchedule, Receiver, blockSizeFor, prepare, type Received } from '../src/field/link/transfer';
 import { checkResults, type FieldResults } from '../src/field/model';
+import { photoBytes } from '../src/field/package';
 
 const bytes = (n: number, seed = 1) => {
   const out = new Uint8Array(n);
@@ -205,8 +206,9 @@ describe('sending the results across', () => {
     expect(answers).toBeGreaterThan(0); // the phone's reply comes round now and then
     const got = r.received!;
     expect(got.photoCount).toBe(2);
-    expect(got.results.visits.map((v) => [v.siteId, v.values, v.photos?.map((p) => p.dataUrl.length)])).toEqual(RESULTS.visits.map((v) => [v.siteId, v.values, v.photos?.map((p) => p.dataUrl.length)]));
-    expect(got.results.visits[0].photos![0].dataUrl).toBe(RESULTS.visits[0].photos![0].dataUrl);
+    // a phone from before 1.29 sent data URLs: the pictures arrive as the same bytes
+    expect(got.results.visits.map((v) => [v.siteId, v.values, v.photos?.map((p) => p.bytes?.length)])).toEqual(RESULTS.visits.map((v) => [v.siteId, v.values, v.photos?.map((p) => photoBytes(p)!.length)]));
+    expect(Array.from(got.results.visits[0].photos![0].bytes!)).toEqual(Array.from(photoBytes(RESULTS.visits[0].photos![0])!));
     // the time it took, near the least it could
     expect(n).toBeLessThan(schedule.needed * 1.9);
     expect(blockSizeFor('medium')).toBe(489);
@@ -239,7 +241,23 @@ describe('sending the results across', () => {
     let reply: string | null = null;
     for (let o = 0; o < all.length; o += 16384) reply = await r.message(all.slice(o, o + 16384).buffer);
     expect(reply && JSON.parse(reply).t).toBe('done');
-    expect(r.received!.results.visits[1].photos![0].dataUrl).toBe(RESULTS.visits[1].photos![0].dataUrl);
+    const got = r.received!.results.visits[1].photos![0];
+    expect(got.type).toBe('image/webp');
+    expect(Array.from(got.bytes!)).toEqual(Array.from(photoBytes(RESULTS.visits[1].photos![0])!));
+  });
+
+  it('carries each photo’s place and time with it (phones from 1.29)', async () => {
+    const key = await newKey();
+    const located = { ...RESULTS, visits: RESULTS.visits.filter((v) => v.photos?.length).map((v, i) => ({ ...v, photos: v.photos!.map((p) => ({ name: p.name, type: i ? 'image/webp' : 'image/jpeg', bytes: photoBytes(p)!, lat: -37.5 - i, lng: 175.25, acc: 4, at: '2026-10-20T09:16:00.000Z' })) })) };
+    const out = await prepare(located, 9, key);
+    const r = new Receiver(9, key, () => undefined);
+    await r.message(JSON.stringify({ t: 'hello', session: 9, sizes: [out.readings.length, out.photos!.length] }));
+    const all = new Uint8Array([...out.readings, ...out.photos!]);
+    for (let o = 0; o < all.length; o += 16384) await r.message(all.slice(o, o + 16384).buffer);
+    const [a, b] = r.received!.results.visits.map((v) => v.photos![0]);
+    expect({ lat: a.lat, lng: a.lng, acc: a.acc, at: a.at, type: a.type }).toEqual({ lat: -37.5, lng: 175.25, acc: 4, at: '2026-10-20T09:16:00.000Z', type: 'image/jpeg' });
+    expect(b.lat).toBe(-38.5);
+    expect(b.bytes!.length).toBe(20_000);
   });
 
   it('a frame is told apart from the codes', () => {

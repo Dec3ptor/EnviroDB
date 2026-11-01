@@ -15,9 +15,9 @@ export type LatLngAcc = { lat: number; lng: number; acc?: number };
 let lastFix: (LatLngAcc & { t: number }) | null = null;
 const fixOf = (p: GeolocationPosition): LatLngAcc => ({ lat: Number(p.coords.latitude.toFixed(6)), lng: Number(p.coords.longitude.toFixed(6)), acc: Math.round(p.coords.accuracy) });
 
-/** Where the phone is now: the place it gave in the last 15 seconds, or a fresh one. */
-export function currentPosition(): Promise<LatLngAcc> {
-  if (lastFix && Date.now() - lastFix.t < 15000) return Promise.resolve(lastFix);
+/** Where the phone is now: the place it gave in the last `maxAgeMs` (15 seconds), or a fresh one. */
+export function currentPosition(maxAgeMs = 15000): Promise<LatLngAcc> {
+  if (lastFix && Date.now() - lastFix.t < maxAgeMs) return Promise.resolve({ lat: lastFix.lat, lng: lastFix.lng, acc: lastFix.acc });
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('This phone can’t give its location here.'));
     navigator.geolocation.getCurrentPosition(
@@ -27,9 +27,14 @@ export function currentPosition(): Promise<LatLngAcc> {
         resolve(fix);
       },
       () => reject(new Error('The location couldn’t be found (is location allowed for the browser?).')),
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: Math.min(10000, maxAgeMs) },
     );
   });
+}
+
+/** The phone's last location, if found in the last `maxAgeMs` (by the map, a photo or the location button). */
+export function recentFix(maxAgeMs = 60000): LatLngAcc | null {
+  return lastFix && Date.now() - lastFix.t <= maxAgeMs ? { lat: lastFix.lat, lng: lastFix.lng, acc: lastFix.acc } : null;
 }
 
 /** Where the phone is, followed while `on`. */

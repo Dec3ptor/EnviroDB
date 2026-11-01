@@ -2,7 +2,7 @@ import { InboxPanel } from '../../components/InboxPanel';
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
 import { Box, Badge, Button, Center, Group, Loader, Menu, Modal, SegmentedControl, Stack, Tabs, Text, ThemeIcon, UnstyledButton, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconSparkles, IconMap, IconDeviceMobile, IconDeviceMobileDown, IconQrcode } from '@tabler/icons-react';
+import { IconCamera, IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconSparkles, IconMap, IconDeviceMobile, IconDeviceMobileDown, IconQrcode } from '@tabler/icons-react';
 import { ProjectDataProvider, useProject } from '../../hooks/useProjectData';
 import { OverviewTab } from './Overview';
 import { DataTab } from './Data';
@@ -19,7 +19,7 @@ import { ImportWizard } from '../Import';
 import { ConsentSetupPage } from './ConsentSetup';
 import { downloadProjectPackage } from '../../db/backup';
 import { AiInputModal } from '../../components/AiInputModal';
-import { FieldResultsModal, FieldSheetModal } from '../../components/FieldSheet';
+import { FieldResultsModal, FieldSheetModal, PhoneAppModal } from '../../components/FieldSheet';
 import { ReceiveFromPhone } from '../../components/ReceiveFromPhone';
 import { FieldCodesModal } from '../../components/FieldCodes';
 import type { FieldResults } from '../../field/model';
@@ -54,9 +54,10 @@ function QaCount() {
   ) : null;
 }
 
-/** Field work for a phone: the three ways, in one place. */
-function FieldWorkModal({ opened, onClose, onPick }: { opened: boolean; onClose: () => void; onPick: (what: 'sheet' | 'codes' | 'receive') => void }) {
+/** Field work for a phone: the ways, in one place. */
+function FieldWorkModal({ opened, onClose, onPick }: { opened: boolean; onClose: () => void; onPick: (what: 'job' | 'sheet' | 'codes' | 'receive') => void }) {
   const choices = [
+    { what: 'job' as const, icon: IconCamera, title: 'Quick job on your phone', text: 'Nothing to plan: start a job on the phone, add a point at each place, take photos and readings – then send it here.' },
     { what: 'sheet' as const, icon: IconDeviceMobile, title: 'Field sheet for a phone', text: 'The day’s sites and readings as a QR code to scan – the phone records the results, with or without a signal.' },
     { what: 'codes' as const, icon: IconQrcode, title: 'Printable field codes', text: 'A PDF of QR codes for the project and each site, to keep in the site folder or fix at the site.' },
     { what: 'receive' as const, icon: IconDeviceMobileDown, title: 'Receive from a phone', text: 'Take a phone’s results straight onto this computer, over Wi-Fi or by camera.' },
@@ -97,7 +98,8 @@ function Header() {
   const [fieldOpen, setFieldOpen] = useState(false);
   const [codesOpen, setCodesOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
-  const [received, setReceived] = useState<{ results: FieldResults; name: string } | null>(null);
+  const [phoneApp, setPhoneApp] = useState(false);
+  const [received, setReceived] = useState<{ results: FieldResults; name: string; smaller: boolean } | null>(null);
   const facts = useMemo(() => ({ project, sites, sampleDates: samples.map((x) => x.date) }), [project, sites, samples]);
   const tab = tabOf(current);
   const views = visibleViews(tab, facts, settings);
@@ -218,15 +220,17 @@ function Header() {
         onClose={() => setFieldWork(false)}
         onPick={(w) => {
           setFieldWork(false);
-          if (w === 'sheet') setFieldOpen(true);
+          if (w === 'job') setPhoneApp(true);
+          else if (w === 'sheet') setFieldOpen(true);
           else if (w === 'codes') setCodesOpen(true);
           else setReceiveOpen(true);
         }}
       />
+      {phoneApp && <PhoneAppModal opened={phoneApp} onClose={() => setPhoneApp(false)} />}
       <FieldSheetModal opened={fieldOpen} onClose={() => setFieldOpen(false)} />
       {codesOpen && <FieldCodesModal opened={codesOpen} onClose={() => setCodesOpen(false)} />}
-      {receiveOpen && <ReceiveFromPhone opened={receiveOpen} onClose={() => setReceiveOpen(false)} onReceived={(results, name) => setReceived({ results, name })} />}
-      {received && <FieldResultsModal results={received.results} fileName={received.name} onClose={() => setReceived(null)} />}
+      {receiveOpen && <ReceiveFromPhone opened={receiveOpen} onClose={() => setReceiveOpen(false)} onReceived={(results, name, smaller) => setReceived({ results, name, smaller })} />}
+      {received && <FieldResultsModal results={received.results} fileName={received.name} smaller={received.smaller} onClose={() => setReceived(null)} />}
     </Stack>
   );
 }

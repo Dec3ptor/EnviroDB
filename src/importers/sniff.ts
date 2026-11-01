@@ -2,6 +2,8 @@
 // them – so the inbox lists lab files and leaves out reports, photos and EnviroDB's own downloads. Nothing is fully
 // read until it's imported (and big files are left unopened: a file kept online only would be downloaded).
 
+import { isJobFileName, RESULTS_FILE } from '../field/package';
+
 export interface Sniffed {
   /** Lab results, or very likely. */
   lab: boolean;
@@ -60,6 +62,16 @@ async function peek(file: File): Promise<{ text: string; ours: boolean } | null>
 /** Whether a file found in a folder is lab results. `path`: where it is (for the folder's name). */
 export async function sniffLabFile(file: File, path = file.name): Promise<Sniffed> {
   const name = file.name;
+  // a phone's field job (by its name: one too big to open is still known) – the project it's for from the results,
+  // which come first in the zip, uncompressed (a locked one doesn't say)
+  const job = async () => {
+    const head = /\.zip$/i.test(name) ? await file.slice(0, 16 * 1024).text() : '';
+    const projectId = head.match(/"project"\s*:\s*\{\s*"id"\s*:\s*"([^"]{1,80})"/)?.[1];
+    return { lab: true, labName: 'Field job', why: 'a field job from a phone', field: { projectId } };
+  };
+  if (isJobFileName(name)) return job();
+  // one renamed on the way: its results come first in the zip, so their name is in its first bytes
+  if (/\.zip$/i.test(name) && (await file.slice(0, 1024).text()).includes(RESULTS_FILE)) return job();
   if (!LAB_EXT.test(name)) return { lab: false, why: 'not a spreadsheet, CSV, PDF or zip' };
   if (/^~\$|^\./.test(name)) return { lab: false, why: 'a temporary file' };
   if (/\.json$/i.test(name)) {

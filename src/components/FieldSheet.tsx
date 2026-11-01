@@ -2,14 +2,14 @@
 // the results file a phone sends back.
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Badge, Button, Checkbox, CopyButton, Grid, Group, Modal, Stack, Switch, Table, Text, TextInput } from '@mantine/core';
+import { Alert, Button, Checkbox, CopyButton, Grid, Group, Modal, Select, Stack, Switch, Table, Text, TextInput } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconCheck, IconCopy, IconDeviceMobile, IconDownload, IconFolder, IconPlus } from '@tabler/icons-react';
 import { useProject } from '../hooks/useProjectData';
 import { useSettings } from '../hooks/useSettings';
 import { ReportSites } from './report/ReportSites';
 import { PopupPicker, type PickerData } from './PopupPicker';
-import { commitField, defaultMeasures, makeSheet, planField } from '../db/field';
+import { commitField, defaultAttach, defaultMeasures, makeSheet, planField } from '../db/field';
 import { lockFile, sheetLink, type FieldResults } from '../field/model';
 import { QrCode } from './QrCode';
 import { MoreOptions } from './common';
@@ -153,14 +153,44 @@ export function FieldSheetModal({ opened, onClose }: { opened: boolean; onClose:
   );
 }
 
+const isJobName = (r: FieldResults) => r.sheet.id.startsWith('job-');
+
+/** EnviroDB field on a phone: a code to scan once (then kept on the home screen); a quick job starts there. */
+export function PhoneAppModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
+  const link = `${location.origin}${location.pathname}#/field`;
+  return (
+    <Modal opened={opened} onClose={onClose} title="EnviroDB field on your phone" size="md" centered>
+      <Stack gap="sm" align="center">
+        <QrCode text={link} size={210} label="QR code to open EnviroDB field" />
+        <Text size="sm" ta="center">
+          Scan it with the phone’s camera, then add the page to the home screen (iPhone: Share → Add to Home Screen; Android: ⋮ → Add to Home screen).
+        </Text>
+        <Text size="sm" c="dimmed" ta="center">
+          For a quick job tap <b>New job</b> on the phone – nothing to set up here first. Photos stay full size, each with where it was taken. Send the job file to the team’s Inbox folder (OneDrive), or drop it on Import.
+        </Text>
+        <CopyButton value={link}>
+          {({ copied, copy }) => (
+            <Button size="xs" variant="default" leftSection={copied ? <IconCheck size={14} /> : <IconCopy size={14} />} onClick={copy}>
+              {copied ? 'Copied' : 'Copy the link'}
+            </Button>
+          )}
+        </CopyButton>
+      </Stack>
+    </Modal>
+  );
+}
+
 /** A phone's results file: what it holds, and adding it to the project. */
-export function FieldResultsModal({ results, fileName, onClose, onAdded }: { results: FieldResults | null; fileName: string; onClose: () => void; onAdded?: (importId: string) => void }) {
+/** `more`: what's still to review after this; `smaller`: came by the flashing code, the photos made smaller. */
+export function FieldResultsModal({ results, fileName, onClose, onAdded, more, smaller }: { results: FieldResults | null; fileName: string; onClose: () => void; onAdded?: (importId: string) => void; more?: string; smaller?: boolean }) {
   const data = useProject();
   const plan = useMemo(() => (results ? planField(data, results) : null), [data, results]);
   const [busy, setBusy] = useState(false);
-  // the phone's new sites and the locations set there: all taken unless unticked
-  const [skipNew, setSkipNew] = useState<Set<string>>(new Set());
+  // each new point: a new site, with one of the project's sites (one nearby to start with), or left out;
+  // the locations set in the field: all taken unless unticked
+  const [pointChoice, setPointChoice] = useState<Record<string, string>>({});
   const [skipLoc, setSkipLoc] = useState<Set<string>>(new Set());
+  const suggested = useMemo(() => (plan ? defaultAttach(plan) : new Map<string, string>()), [plan]);
   if (!results || !plan) return null;
   const toggle = (set: Set<string>, id: string, on: boolean) => {
     const next = new Set(set);
@@ -169,17 +199,24 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded }: { res
     return next;
   };
   const newOnes = plan.newSites.filter((n) => !n.existing);
-  const chosenNew = new Set(newOnes.filter((n) => !skipNew.has(n.field.id)).map((n) => n.field.id));
+  const choiceOf = (id: string) => pointChoice[id] ?? suggested.get(id) ?? 'new';
+  const chosenNew = new Set(newOnes.filter((n) => choiceOf(n.field.id) === 'new').map((n) => n.field.id));
+  const attach = new Map(newOnes.filter((n) => !['new', 'skip'].includes(choiceOf(n.field.id))).map((n) => [n.field.id, choiceOf(n.field.id)]));
   const chosenLoc = new Set(plan.located.filter((l) => !skipLoc.has(l.site.id)).map((l) => l.site.id));
-  const leftOut = new Set(newOnes.filter((n) => !chosenNew.has(n.field.id)).map((n) => n.site.id));
-  const rows = plan.rows.filter((r) => !leftOut.has(r.site.id));
+  const leftOut = new Set(newOnes.filter((n) => choiceOf(n.field.id) === 'skip').map((n) => n.site.id));
+  // the rows as they'll be added: a point joining a site shows as that site
+  const joined = new Map(newOnes.filter((n) => attach.has(n.field.id)).map((n) => [n.site.id, data.siteMap.get(attach.get(n.field.id)!)!]));
+  const rows = plan.rows.filter((r) => !leftOut.has(r.site.id)).map((r) => (joined.get(r.site.id) ? { ...r, site: joined.get(r.site.id)!, from: r.site.code } : { ...r, from: undefined }));
+  const pics = rows.flatMap((r) => r.visit.photos ?? []);
+  // located: by the photo's own position, or (older phones) where the visit was recorded
+  const located = rows.reduce((n, r) => n + (r.visit.photos ?? []).filter((p) => p.lat !== undefined || r.visit.gps).length, 0);
   const where = (lat?: number, lng?: number) => (lat !== undefined && lng !== undefined ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : 'no location');
   const away = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
   const other = results.sheet.project.id && results.sheet.project.id !== data.project.id;
   const add = async () => {
     setBusy(true);
     try {
-      const res = await commitField(data.project.id, plan, fileName, { newSites: chosenNew, located: chosenLoc });
+      const res = await commitField(data.project.id, plan, fileName, { newSites: chosenNew, located: chosenLoc, attach });
       notifications.show({
         color: res.photoError ? 'orange' : 'teal',
         title: `Field results added: ${res.samples} sites, ${res.results} readings`,
@@ -204,40 +241,77 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded }: { res
   const params = [...new Map(rows.flatMap((r) => r.values.map((v) => [v.param.id, v.param]))).values()];
   const warnings = rows.flatMap((r) => r.values.filter((v) => v.warning).map((v) => `${r.site.code} ${v.param.name}: ${fmtNum(v.value)} – ${v.warning}`));
   return (
-    <Modal opened onClose={onClose} title="Field results from a phone" size="xl">
+    <Modal opened onClose={onClose} title={isJobName(results) ? 'A field job from a phone' : 'Field results from a phone'} size="xl">
       <Stack gap="sm">
         <Text size="sm">
           <b>{results.sheet.round || 'Field results'}</b> · {formatDate(results.sheet.date)}
           {results.by ? ` · sampled by ${results.by}` : ''}
           {results.sent ? ` · sent ${formatDate(results.sent.slice(0, 10))}` : ''}
+          {more ? ` · ${more}` : ''}
         </Text>
         {other && (
           <Alert color="orange" variant="light" p="xs">
-            <Text size="sm">This sheet was made for another project ({results.sheet.project.name}). Only the sites this project has are added.</Text>
+            <Text size="sm">
+              This {isJobName(results) ? 'job' : 'sheet'} was made for another project ({results.sheet.project.name}). {isJobName(results) ? 'Its points are added to this one.' : 'Only the sites this project has are added.'}
+            </Text>
           </Alert>
+        )}
+        {!results.sheet.project.id && (
+          <Text size="sm" c="dimmed">
+            Adding to <b>{data.project.name}</b>. The job was started without a project: for another one, close this and choose it under Project.
+          </Text>
         )}
         {plan.newSites.length > 0 && (
           <div>
             <Text size="sm" fw={600} mb={4}>
-              New monitoring points from the field
+              Points from the field
             </Text>
-            <Stack gap={4}>
-              {plan.newSites.map((n) =>
-                n.existing ? (
-                  <Text size="sm" key={n.field.id} c="dimmed">
-                    {n.field.code} – the project has this site already: its readings go to it.
-                  </Text>
-                ) : (
-                  <Checkbox
-                    key={n.field.id}
-                    checked={chosenNew.has(n.field.id)}
-                    onChange={(e) => setSkipNew(toggle(skipNew, n.field.id, e.currentTarget.checked))}
-                    label={`${n.field.code}${n.field.name ? ` – ${n.field.name}` : ''} · ${n.site.type} · ${where(n.field.lat, n.field.lng)}${n.field.acc ? ` (±${n.field.acc} m)` : ''}`}
-                    description={n.field.note}
-                  />
-                ),
-              )}
+            <Stack gap={6}>
+              {plan.newSites.map((n) => {
+                const row = plan.rows.find((r) => r.site.id === n.site.id);
+                const what = [row?.values.length ? `${row.values.length} reading${row.values.length === 1 ? '' : 's'}` : '', row?.visit.photos?.length ? `${row.visit.photos.length} photo${row.visit.photos.length === 1 ? '' : 's'}` : '', row?.visit.notes ? 'notes' : ''].filter(Boolean).join(', ');
+                const label = `${n.field.code}${n.field.name ? ` – ${n.field.name}` : ''}`;
+                if (n.existing)
+                  return (
+                    <Text size="sm" key={n.field.id} c="dimmed">
+                      {label} – the project has this site already: {what || 'what was recorded'} goes to it.
+                    </Text>
+                  );
+                const nearby = n.near.slice(0, 6).map((x) => ({ value: x.site.id, label: `With ${x.site.code} – ${away(x.m)} away` }));
+                const rest = data.sites.filter((x) => !n.near.slice(0, 6).some((y) => y.site.id === x.id)).map((x) => ({ value: x.id, label: `With ${x.code}${x.name ? ` – ${x.name}` : ''}` }));
+                return (
+                  <Group key={n.field.id} gap="sm" wrap="wrap" align="center">
+                    <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                      <Text size="sm" fw={500}>
+                        {label}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {[what, n.field.lat !== undefined ? `${where(n.field.lat, n.field.lng)}${n.field.acc ? ` (±${n.field.acc} m)` : ''}` : 'no location', n.field.note, n.before && data.siteMap.get(n.suggest) ? `with ${data.siteMap.get(n.suggest)!.code} when added before` : ''].filter(Boolean).join(' · ')}
+                      </Text>
+                    </div>
+                    <Select
+                      size="xs"
+                      w={290}
+                      aria-label={`What ${n.field.code} is`}
+                      value={choiceOf(n.field.id)}
+                      onChange={(v) => v && setPointChoice({ ...pointChoice, [n.field.id]: v })}
+                      allowDeselect={false}
+                      searchable
+                      data={[
+                        { group: 'Add', items: [{ value: 'new', label: `A new site, ${n.field.code} (${n.site.type})` }] },
+                        ...(nearby.length || rest.length ? [{ group: 'Part of a site', items: [...nearby, ...rest] }] : []),
+                        { group: 'Or', items: [{ value: 'skip', label: 'Leave it out' }] },
+                      ]}
+                    />
+                  </Group>
+                );
+              })}
             </Stack>
+            {newOnes.some((n) => n.field.auto) && (
+              <Text size="xs" c="dimmed" mt={4}>
+                Points named by the phone (P1, P2 …) a few metres from one of the project’s sites start as part of that site; the others as new sites.
+              </Text>
+            )}
           </div>
         )}
         {plan.located.length > 0 && (
@@ -274,8 +348,16 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded }: { res
               </Table.Thead>
               <Table.Tbody>
                 {rows.map((r) => (
-                  <Table.Tr key={r.site.id}>
-                    <Table.Td fw={600}>{r.site.code}</Table.Td>
+                  <Table.Tr key={`${r.site.id}-${r.from ?? ''}`}>
+                    <Table.Td fw={600}>
+                      {r.site.code}
+                      {r.from ? (
+                        <Text span size="xs" c="dimmed" fw={400}>
+                          {' '}
+                          (from {r.from})
+                        </Text>
+                      ) : null}
+                    </Table.Td>
                     <Table.Td style={{ whiteSpace: 'nowrap' }}>{formatDate(r.date, { time: true })}</Table.Td>
                     {params.map((p) => {
                       const v = r.values.find((x) => x.param.id === p.id);
@@ -287,8 +369,7 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded }: { res
                     })}
                     <Table.Td>
                       <Text size="xs" c="dimmed" lineClamp={2}>
-                        {[r.visit.weather, r.visit.flow && `flow ${r.visit.flow.toLowerCase()}`, r.visit.appearance, r.visit.notes].filter(Boolean).join(' · ')}
-                        {r.visit.photos?.length ? ` · ${r.visit.photos.length} photos` : ''}
+                        {[r.visit.weather, r.visit.flow && `flow ${r.visit.flow.toLowerCase()}`, r.visit.appearance, r.visit.notes, r.visit.photos?.length && `${r.visit.photos.length} photo${r.visit.photos.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
                       </Text>
                     </Table.Td>
                   </Table.Tr>
@@ -299,6 +380,11 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded }: { res
         ) : (
           <Text size="sm" c="dimmed">
             Nothing recorded for this project’s sites.
+          </Text>
+        )}
+        {pics.length > 0 && (
+          <Text size="sm">
+            {pics.length} photo{pics.length === 1 ? '' : 's'}{smaller ? ' (made smaller to come by the flashing code – the phone’s job file has them full size)' : ', full size'}{located ? `, ${located === pics.length ? 'each' : `${located}`} with where ${located === 1 ? 'it was' : 'they were'} taken` : ''} – saved to the shared folder (Field photos) and kept with the samples, ready for report figures.
           </Text>
         )}
         {plan.notSampled.length > 0 && (
@@ -320,17 +406,17 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded }: { res
             Left out: {[plan.unknownSites.length && `${plan.unknownSites.length} sites this project doesn’t have`, plan.unknownParams.length && `readings of ${plan.unknownParams.join(', ')}`].filter(Boolean).join('; ')}.
           </Text>
         )}
+        <Text size="xs" c="dimmed">
+          The readings join each site’s sample for the day; what was seen goes in its notes.
+        </Text>
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
             Cancel
           </Button>
           <Button leftSection={<IconPlus size={16} />} loading={busy} disabled={!rows.length && !chosenNew.size && !chosenLoc.size} onClick={() => void add()}>
-            {rows.length ? `Add ${rows.length} sites’ results` : 'Add'}
+            {rows.length ? `Add ${rows.length} site${rows.length === 1 ? '’s' : 's’'} results` : 'Add'}
           </Button>
         </Group>
-        <Badge variant="light" color="gray" style={{ alignSelf: 'flex-start' }}>
-          The readings join each site’s sample for the day; what was seen goes in its notes; photos go to the shared folder.
-        </Badge>
       </Stack>
     </Modal>
   );

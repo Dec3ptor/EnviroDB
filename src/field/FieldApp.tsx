@@ -2,17 +2,19 @@
 // readings and what was seen – it all stays on the phone, with or without a signal – then send the results back as a
 // file (to the team's OneDrive Inbox folder, or by email), for EnviroDB on the computer to add.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ActionIcon, Alert, Anchor, AppShell, Badge, Button, Card, Center, Chip, FileButton, Group, Loader, Modal, NumberInput, Progress, SegmentedControl, Select, Stack, Text, TextInput, Textarea, Title, UnstyledButton } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { HashRouter, Route, Routes, useLocation, useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { IconArrowLeft, IconCamera, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconDeviceDesktop, IconFileImport, IconKey, IconList, IconLock, IconMap, IconMapPin, IconPlus, IconQrcode, IconSend, IconTrash, IconWifiOff } from '@tabler/icons-react';
-import { addFromCode, addSheet, addSite, addTeamKeys, deleteSheet, fieldDb, forgetTeamKeys, getPref, resultsFileName, resultsOf, saveVisit, setPref, teamKeys, updateSite } from './db';
+import { IconArrowLeft, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconDeviceDesktop, IconFileZip, IconKey, IconList, IconLock, IconMap, IconMapPin, IconPencil, IconPlus, IconQrcode, IconSend, IconTrash, IconWifiOff, IconFileImport } from '@tabler/icons-react';
+import { addFromCode, addSheet, addSite, addTeamKeys, deleteSheet, fieldDb, forgetTeamKeys, getPref, isJob, jobContents, knownProjects, nextPointCode, saveVisit, setPref, teamKeys, updateSite } from './db';
 import { isSetupText, LockedError, readSetupText, showKeyId } from './lock';
-import { currentPosition, LocationPicker, NavigateMenu, SheetMap, type Placed, type SiteStatus } from './FieldMap';
-import { SITE_TYPES } from '../db/types';
-import { APPEARANCE, checkSheet, decodeCode, decodeSheet, distanceM, fieldLinkPath, FLOW, lockFile, newFieldSiteId, NOT_SAMPLED, readingWarning, unlockCode, unlockFile, unlockSheet, WEATHER, type FieldCodeFill, type FieldSheet, type FieldSite, type FieldVisit } from './model';
+import { currentPosition, LocationPicker, NavigateMenu, SheetMap, useMyPosition, type Placed, type SiteStatus } from './FieldMap';
+import { APPEARANCE, checkSheet, decodeCode, decodeSheet, distanceM, fieldLinkPath, FLOW, newFieldSiteId, NOT_SAMPLED, readingWarning, unlockCode, unlockFile, unlockSheet, WEATHER, type FieldCodeFill, type FieldResults, type FieldSheet, type FieldSite, type FieldVisit } from './model';
+import { AddReading, EditPointModal, NewJobModal, PhotoBadge, PhotoSection, photoSizeText, usePhotoCounts } from './JobParts';
+import { jobFileName, jobZip, lockedJob, readyPhotos, withPhotoEntries } from './package';
+import type { LinkPhoto } from './link/payload';
 import { openCamera, scanVideo, stopCamera } from './link/scan';
 import { keepOffline, type OfflineState } from './offline';
 import { LinkPage } from './LinkPage';
@@ -24,6 +26,23 @@ const nowLocal = () => {
 };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const showDate = (d?: string) => (d ? `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}${d.length > 10 ? `, ${d.slice(11, 16)}` : ''}` : '');
+
+// the points added here that are still waiting for the GPS (each is saved with its location when it comes)
+const awaitingFix = new Set<string>();
+const awaitingSubs = new Set<() => void>();
+const markLocating = (id: string, on: boolean) => {
+  if (on) awaitingFix.add(id);
+  else awaitingFix.delete(id);
+  awaitingSubs.forEach((f) => f());
+};
+const useAwaitingFix = (id: string) =>
+  useSyncExternalStore(
+    (f) => {
+      awaitingSubs.add(f);
+      return () => void awaitingSubs.delete(f);
+    },
+    () => awaitingFix.has(id),
+  );
 
 function useOffline(): OfflineState {
   const [state, setState] = useState<OfflineState>('getting-ready');
@@ -86,7 +105,9 @@ function Home({ offline }: { offline: OfflineState }) {
   const navigate = useNavigate();
   const sheets = useLiveQuery(() => fieldDb.sheets.orderBy('addedAt').reverse().toArray(), []);
   const visits = useLiveQuery(() => fieldDb.visits.toArray(), []);
+  const photos = usePhotoCounts();
   const keys = useLiveQuery(() => teamKeys(), []);
+  const [starting, setStarting] = useState(false);
   const openFile = async (f: File | null) => {
     if (!f) return;
     try {
@@ -103,30 +124,40 @@ function Home({ offline }: { offline: OfflineState }) {
     <Stack gap="md">
       <Header title="EnviroDB field" />
       {offline === 'ready' ? (
-        <Text size="xs" c="dimmed">
-          <IconCloudOff size={13} style={{ verticalAlign: -2 }} /> Ready to work with no signal. Records stay on this phone until you send them.
+        <Text size="xs" c="dimmed" mt={-8}>
+          <IconCloudOff size={13} style={{ verticalAlign: -2 }} /> Works with no signal. Everything stays on this phone until you send it.
         </Text>
       ) : offline === 'unsupported' || offline === 'failed' ? (
         <Alert color="orange" variant="light" p="xs">
-          <Text size="xs">This browser can’t keep EnviroDB for use with no signal – open field sheets while you have one. Records still stay on this phone.</Text>
+          <Text size="xs">This browser can’t keep EnviroDB for use with no signal – open jobs while you have one. Records still stay on this phone.</Text>
         </Alert>
       ) : null}
+      <Button size="lg" leftSection={<IconPlus size={20} />} onClick={() => setStarting(true)}>
+        New job
+      </Button>
+      <NewJobModal opened={starting} onClose={() => setStarting(false)} />
       {sheets === undefined ? (
         <Loader size="sm" />
       ) : sheets.length ? (
         sheets.map((s) => {
+          const job = isJob(s.sheet);
           const mine = (visits ?? []).filter((v) => v.sheetId === s.id);
           const done = mine.filter((v) => v.visit.done || v.visit.notSampled).length;
+          const pics = photos.get(s.id)?.n ?? 0;
+          const status = job
+            ? [`${s.sheet.sites.length} point${s.sheet.sites.length === 1 ? '' : 's'}`, pics ? `${pics} photo${pics === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')
+            : `${done} of ${s.sheet.sites.length} sites${pics ? ` · ${pics} photo${pics === 1 ? '' : 's'}` : ''}`;
           return (
             <Card key={s.id} withBorder padding="md" component={Link} to={`/field/s/${encodeURIComponent(s.id)}`} style={{ color: 'inherit', textDecoration: 'none' }}>
               <Group justify="space-between" wrap="nowrap">
                 <div style={{ minWidth: 0 }}>
-                  <Text fw={600}>{s.sheet.project.name}</Text>
+                  <Text fw={600}>{job ? s.sheet.round : s.sheet.project.name}</Text>
                   <Text size="sm" c="dimmed">
-                    {s.sheet.round} · {showDate(s.sheet.date)}
+                    {job ? s.sheet.project.name || 'Project chosen on the computer' : s.sheet.round} · {showDate(s.sheet.date)}
                   </Text>
-                  <Text size="xs" c={done === s.sheet.sites.length ? 'teal' : 'dimmed'} mt={4}>
-                    {done} of {s.sheet.sites.length} sites{s.sentAt ? ` · sent ${showDate(s.sentAt.slice(0, 10))}` : ''}
+                  <Text size="xs" c={!job && done === s.sheet.sites.length ? 'teal' : 'dimmed'} mt={4}>
+                    {status}
+                    {s.sentAt ? ` · sent ${showDate(s.sentAt.slice(0, 10))}` : ''}
                   </Text>
                 </div>
                 <IconChevronRight size={20} />
@@ -135,23 +166,20 @@ function Home({ offline }: { offline: OfflineState }) {
           );
         })
       ) : (
-        <Card withBorder padding="lg">
-          <Text fw={600} mb={4}>
-            No field sheets on this phone yet
-          </Text>
-          <Text size="sm" c="dimmed">
-            On the computer, open the project in EnviroDB and choose <b>Field sheet</b> (in the project’s ⋯ menu). Scan its QR code with this phone’s camera – or open the sheet’s file from OneDrive below. A project’s or a site’s <b>printed field code</b> works too.
-          </Text>
-        </Card>
+        <Text size="sm" c="dimmed" ta="center" px="md">
+          A job holds the photos, locations, readings and notes from a visit. Start one here – or scan a field sheet or a site’s printed code from the computer.
+        </Text>
       )}
-      <ScanCodeButton />
-      <FileButton accept=".json,application/json" onChange={(f) => void openFile(f)}>
-        {(props) => (
-          <Button {...props} variant="default" size="md" leftSection={<IconFileImport size={18} />}>
-            Open a field sheet file
-          </Button>
-        )}
-      </FileButton>
+      <Group grow gap="xs">
+        <ScanCodeButton size="sm" />
+        <FileButton accept=".json,application/json" onChange={(f) => void openFile(f)}>
+          {(props) => (
+            <Button {...props} variant="default" size="sm" leftSection={<IconFileImport size={15} />}>
+              Open a sheet file
+            </Button>
+          )}
+        </FileButton>
+      </Group>
       <Group justify="space-between" gap="xs">
         <Anchor size="xs" c="dimmed" href="./" onClick={(e) => (e.preventDefault(), (location.hash = '#/'), location.reload())}>
           Open the rest of EnviroDB (needs the team’s shared folder)
@@ -357,7 +385,7 @@ function ScanCodeButton({ size = 'md' }: { size?: 'md' | 'sm' }) {
   return (
     <>
       <Button variant="default" size={size} leftSection={<IconQrcode size={size === 'md' ? 18 : 15} />} onClick={() => setOpen(true)}>
-        Scan a printed code
+        Scan a code
       </Button>
       <Modal opened={open} onClose={() => setOpen(false)} title="Scan a field code" centered>
         {open && (
@@ -439,115 +467,18 @@ function CodeScanner({ want = 'link', onLink, onKey }: { want?: 'link' | 'key'; 
 
 // ------------------------------------------------------------ a sheet: its sites
 
-/** Readings taken only in bores. */
-const BORE_ONLY = /^(swl|gw-level|water-level-bgl|stick-up|bore-depth|dtw-bgl|gwl-rl|water-column|purge-vol)$/;
-
-/** A new monitoring point, added on the phone: it goes back to the computer with the results. */
-function AddSiteModal({ opened, sheet, onClose, onAdded }: { opened: boolean; sheet: FieldSheet; onClose: () => void; onAdded: (id: string) => void }) {
-  const [code, setCode] = useState('');
-  const [name, setName] = useState('');
-  const [type, setType] = useState<string>('Surface water');
-  const [note, setNote] = useState('');
-  const [place, setPlace] = useState<Placed | null>(null);
-  const [picking, setPicking] = useState(false);
-  const [locating, setLocating] = useState(false);
-  useEffect(() => {
-    if (!opened) return;
-    setCode('');
-    setName('');
-    setNote('');
-    setPlace(null);
-    // the kind most of the sheet's sites are, to start with
-    const kinds = sheet.sites.map((s) => s.type).filter(Boolean) as string[];
-    setType(kinds[0] ?? 'Surface water');
-  }, [opened]);
-  const taken = sheet.sites.some((s) => s.code.trim().toLowerCase() === code.trim().toLowerCase());
-  const here = () => {
-    setLocating(true);
-    currentPosition().then(
-      (p) => {
-        setLocating(false);
-        setPlace({ ...p, how: 'gps' });
-      },
-      (e: Error) => {
-        setLocating(false);
-        notifications.show({ color: 'orange', message: e.message });
-      },
-    );
-  };
-  const save = async () => {
-    // a bore's readings (water level) aren't asked for at a stream, and the other way round
-    const own = sheet.measures.filter((m) => type === 'Groundwater' || !BORE_ONLY.test(m.id)).map((m) => m.id);
-    const site: FieldSite = {
-      id: newFieldSiteId(),
-      code: code.trim(),
-      name: name.trim() || undefined,
-      type,
-      note: note.trim() || undefined,
-      ...(own.length < sheet.measures.length ? { measures: own } : {}),
-      added: true,
-      ...(place ? { lat: place.lat, lng: place.lng, located: { at: new Date().toISOString(), how: place.how, acc: place.acc } } : {}),
-    };
-    await addSite(sheet.id, site);
-    onAdded(site.id);
-  };
-  return (
-    <Modal opened={opened} onClose={onClose} title="Add a monitoring point" centered>
-      <Stack gap="sm">
-        <TextInput size="md" label="Site code" placeholder="e.g. SW4" value={code} onChange={(e) => setCode(e.currentTarget.value)} error={taken ? 'The sheet already has a site with this code' : undefined} data-autofocus />
-        <TextInput size="md" label="Name" placeholder="e.g. Kōwhai Stream at the ford" value={name} onChange={(e) => setName(e.currentTarget.value)} />
-        <Select size="md" label="Kind" data={SITE_TYPES.filter((t) => t !== 'Quality control')} value={type} onChange={(x) => x && setType(x)} allowDeselect={false} />
-        <Textarea size="md" label="Directions and notes" autosize minRows={2} placeholder="How to get there, what to watch for" value={note} onChange={(e) => setNote(e.currentTarget.value)} />
-        <div>
-          <Text size="sm" fw={500} mb={4}>
-            Location
-          </Text>
-          <Group gap="xs">
-            <Button variant="default" leftSection={<IconCurrentLocation size={16} />} loading={locating} onClick={here}>
-              Where I am
-            </Button>
-            <Button variant="default" leftSection={<IconMap size={16} />} onClick={() => setPicking(true)}>
-              On the map
-            </Button>
-          </Group>
-          <Text size="xs" c="dimmed" mt={4}>
-            {place ? `${place.lat.toFixed(5)}, ${place.lng.toFixed(5)} · ${place.how === 'gps' ? `by GPS${place.acc ? ` ±${place.acc} m` : ''}` : 'placed on the map'}` : 'Not set yet – it can be set later, from the site.'}
-          </Text>
-        </div>
-        <Text size="xs" c="dimmed">
-          The new site goes to the computer with the results, to be added to the project there.
-        </Text>
-        <Group justify="flex-end">
-          <Button variant="default" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button disabled={!code.trim() || taken} onClick={() => void save()}>
-            Add the site
-          </Button>
-        </Group>
-      </Stack>
-      <LocationPicker
-        opened={picking}
-        title={`Location of ${code.trim() || 'the new site'}`}
-        initial={place}
-        others={sheet.sites}
-        onClose={() => setPicking(false)}
-        onSave={(p) => {
-          setPlace(p);
-          setPicking(false);
-        }}
-      />
-    </Modal>
-  );
-}
-
 function SheetPage() {
   const { sheetId = '' } = useParams();
   const stored = useLiveQuery(async () => (await fieldDb.sheets.get(sheetId)) ?? null, [sheetId]);
   const visits = useLiveQuery(() => fieldDb.visits.where('sheetId').equals(sheetId).toArray(), [sheetId]);
+  const projects = useLiveQuery(() => knownProjects(), []) ?? [];
+  const photos = usePhotoCounts(sheetId);
   const navigate = useNavigate();
   const [removing, setRemoving] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [atSite, setAtSite] = useState(false);
+  // on a job, the GPS kept ready: a point added is placed where the phone is now
+  const { me, error: gpsError } = useMyPosition(!!stored && isJob(stored.sheet));
   const [view, setView] = useState<'list' | 'map'>(() => {
     try {
       return sessionStorage.getItem('edb.field.view') === 'map' ? 'map' : 'list';
@@ -566,41 +497,68 @@ function SheetPage() {
   if (stored === undefined || visits === undefined) return <Loader />;
   if (!stored) return <Navigate to="/field" />;
   const sheet = stored.sheet;
+  const job = isJob(sheet);
   const byId = new Map(visits.map((v) => [v.visit.siteId, v.visit]));
   const done = sheet.sites.filter((s) => byId.get(s.id)?.done || byId.get(s.id)?.notSampled).length;
   const statusOf = (id: string): SiteStatus => {
     const v = byId.get(id);
-    return v?.notSampled ? 'notSampled' : v?.done ? 'done' : v && Object.keys(v.values).length ? 'started' : 'todo';
+    return v?.notSampled ? 'notSampled' : v?.done ? 'done' : (v && Object.keys(v.values).length) || photos.get(id) ? 'started' : 'todo';
   };
   const siteLink = (id: string) => `/field/s/${encodeURIComponent(sheet.id)}/${encodeURIComponent(id)}`;
-  const changed = sheet.sites.some((s) => s.added || s.located);
+  const changed = sheet.sites.some((s) => s.added || s.located) || photos.size > 0;
+  // the project's sites this phone knows that aren't on the sheet yet
+  const others = (projects.find((p) => p.project.id === sheet.project.id)?.sites ?? []).filter((s) => !sheet.sites.some((x) => x.id === s.id));
+  /** A new point where the phone is: named P1, P2 … (renamed on its page), located as the GPS finds it. */
+  const addPoint = async () => {
+    setAdding(true);
+    const site: FieldSite = { id: newFieldSiteId(), code: nextPointCode(sheet), type: 'Other', added: true, auto: true };
+    await addSite(sheet.id, site);
+    markLocating(site.id, true);
+    navigate(siteLink(site.id));
+    currentPosition(5000)
+      .then(
+        (p) => updateSite(sheet.id, site.id, { lat: p.lat, lng: p.lng, located: { at: new Date().toISOString(), how: 'gps', acc: p.acc } }),
+        (e: Error) => void notifications.show({ color: 'orange', message: `${e.message} Set the point’s location on the map instead.` }),
+      )
+      .finally(() => markLocating(site.id, false));
+    setAdding(false);
+  };
+  const total = [...photos.values()].reduce((n, p) => n + p.n, 0);
   return (
     <Stack gap="sm">
-      <Header title={sheet.project.name} back="/field" />
+      <Header title={job ? sheet.round : sheet.project.name} back="/field" />
       <Text size="sm" c="dimmed" mt={-12}>
-        {sheet.round} · {showDate(sheet.date)}
+        {job ? sheet.project.name || 'Project chosen on the computer' : sheet.round} · {showDate(sheet.date)}
       </Text>
-      <Progress value={(done / Math.max(1, sheet.sites.length)) * 100} color="teal" size="sm" />
-      <Group justify="space-between">
-        <Text size="xs" c="dimmed">
-          {done} of {sheet.sites.length} sites done
+      {!job && <Progress value={(done / Math.max(1, sheet.sites.length)) * 100} color="teal" size="sm" />}
+      {sheet.sites.length > 0 && (
+        <Group justify="space-between">
+          <Text size="xs" c="dimmed">
+            {job ? `${sheet.sites.length} point${sheet.sites.length === 1 ? '' : 's'}${total ? ` · ${total} photo${total === 1 ? '' : 's'}` : ''}` : `${done} of ${sheet.sites.length} sites done`}
+          </Text>
+          <SegmentedControl
+            size="xs"
+            value={view}
+            onChange={(v) => show(v as 'list' | 'map')}
+            data={[
+              { value: 'list', label: <Group gap={4} wrap="nowrap"><IconList size={14} /> List</Group> },
+              { value: 'map', label: <Group gap={4} wrap="nowrap"><IconMap size={14} /> Map</Group> },
+            ]}
+          />
+        </Group>
+      )}
+      {!sheet.sites.length && (
+        <Text size="sm" c="dimmed">
+          Add a point at each place you photograph or measure – it records where you are. Name it on its page if you like (or use a site’s code).
         </Text>
-        <SegmentedControl
-          size="xs"
-          value={view}
-          onChange={(v) => show(v as 'list' | 'map')}
-          data={[
-            { value: 'list', label: <Group gap={4} wrap="nowrap"><IconList size={14} /> List</Group> },
-            { value: 'map', label: <Group gap={4} wrap="nowrap"><IconMap size={14} /> Map</Group> },
-          ]}
-        />
-      </Group>
-      {view === 'map' && <SheetMap sites={sheet.sites} statusOf={statusOf} onOpen={(id) => navigate(siteLink(id))} />}
-      {view === 'list' && sheet.sites.map((s) => {
+      )}
+      {view === 'map' && sheet.sites.length > 0 && <SheetMap sites={sheet.sites} statusOf={statusOf} onOpen={(id) => navigate(siteLink(id))} />}
+      {(view === 'list' || !sheet.sites.length) && sheet.sites.map((s) => {
         const v = byId.get(s.id);
-        const status = v?.notSampled ? `Not sampled – ${v.notSampled}` : v?.done ? 'Done' : v && Object.keys(v.values).length ? 'Started' : 'To do';
+        const pics = photos.get(s.id)?.n ?? 0;
+        const status = v?.notSampled ? `Not sampled – ${v.notSampled}` : v?.done ? 'Done' : (v && Object.keys(v.values).length) || pics ? 'Started' : 'To do';
         return (
-          <UnstyledButton key={s.id} component={Link} to={`/field/s/${encodeURIComponent(sheet.id)}/${encodeURIComponent(s.id)}`} style={{ display: 'block' }}>
+          <UnstyledButton key={s.id} component={Link} to={siteLink(s.id)} style={{ display: 'block' }}>
             <Card withBorder padding="sm">
               <Group justify="space-between" wrap="nowrap">
                 <div style={{ minWidth: 0 }}>
@@ -618,46 +576,67 @@ function SheetPage() {
                       {sheet.measures.filter((m) => v.values[m.id] !== undefined).map((m) => `${m.name.replace(/\s*\(field\)/i, '')} ${v.values[m.id]}`).join(' · ')}
                     </Text>
                   )}
+                  {s.added && s.lat === undefined && (
+                    <Text size="xs" c="orange">
+                      No location yet
+                    </Text>
+                  )}
                 </div>
                 <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
-                  {s.added && (
+                  <PhotoBadge n={pics} />
+                  {s.added && !job && (
                     <Badge color="violet" variant="light">
                       New
                     </Badge>
                   )}
-                  <Badge color={status === 'Done' ? 'teal' : status.startsWith('Not') ? 'gray' : status === 'Started' ? 'yellow' : 'blue'} variant={status === 'To do' ? 'outline' : 'light'}>
-                    {status.startsWith('Not') ? 'Not sampled' : status}
-                  </Badge>
+                  {/* a job's points: only once marked done (what's recorded shows on the card) */}
+                  {(!job || status === 'Done') && (
+                    <Badge color={status === 'Done' ? 'teal' : status.startsWith('Not') ? 'gray' : status === 'Started' ? 'yellow' : 'blue'} variant={status === 'To do' ? 'outline' : 'light'}>
+                      {status.startsWith('Not') ? 'Not sampled' : status}
+                    </Badge>
+                  )}
                 </Group>
               </Group>
             </Card>
           </UnstyledButton>
         );
       })}
-      <Stack gap="xs">
-        <Button variant="default" size="sm" leftSection={<IconPlus size={15} />} onClick={() => setAdding(true)}>
-          Add a monitoring point
-        </Button>
-        <ScanCodeButton size="sm" />
-      </Stack>
-      <AddSiteModal
-        opened={adding}
-        sheet={sheet}
-        onClose={() => setAdding(false)}
-        onAdded={(id) => {
-          setAdding(false);
-          navigate(siteLink(id));
+      <Button size={job ? 'lg' : 'sm'} variant={job ? 'filled' : 'default'} leftSection={<IconCurrentLocation size={job ? 20 : 15} />} loading={adding} onClick={() => void addPoint()}>
+        Add a point here
+      </Button>
+      {job && (
+        <Text size="xs" c={gpsError ? 'orange' : 'dimmed'} ta="center" mt={-6}>
+          {gpsError ? `${gpsError} Points can be placed on the map instead.` : me ? `Located to ±${me.acc ?? '?'} m` : 'Finding where you are…'}
+        </Text>
+      )}
+      {(others.length > 0 || !job) && (
+        <Group grow gap="xs">
+          {others.length > 0 && (
+            <Button variant="default" size="sm" leftSection={<IconMapPin size={15} />} onClick={() => setAtSite(true)}>
+              At a project site…
+            </Button>
+          )}
+          {!job && <ScanCodeButton size="sm" />}
+        </Group>
+      )}
+      <AtSiteModal
+        opened={atSite}
+        sites={others}
+        onClose={() => setAtSite(false)}
+        onPick={(site) => {
+          setAtSite(false);
+          void addSite(sheet.id, site).then(() => navigate(siteLink(site.id)));
         }}
       />
-      <Button size="md" mt="sm" leftSection={<IconSend size={18} />} onClick={() => navigate(`/field/s/${encodeURIComponent(sheet.id)}/send`)} disabled={!visits.length && !changed}>
-        Send the results
+      <Button size="md" mt="sm" color={job ? 'teal' : undefined} leftSection={<IconSend size={18} />} onClick={() => navigate(`/field/s/${encodeURIComponent(sheet.id)}/send`)} disabled={!visits.length && !changed}>
+        {job ? 'Send the job' : 'Send the results'}
       </Button>
       <Button variant="subtle" color="red" size="xs" leftSection={<IconTrash size={14} />} onClick={() => setRemoving(true)}>
-        Remove this sheet from the phone
+        {job ? 'Remove this job from the phone' : 'Remove this sheet from the phone'}
       </Button>
-      <Modal opened={removing} onClose={() => setRemoving(false)} title="Remove this sheet?" centered>
+      <Modal opened={removing} onClose={() => setRemoving(false)} title={job ? 'Remove this job?' : 'Remove this sheet?'} centered>
         <Text size="sm" mb="md">
-          {stored.sentAt ? 'Its results were sent.' : 'Its results haven’t been sent yet – they’ll be lost.'} The sheet and what was recorded are removed from this phone.
+          {stored.sentAt ? 'It was sent.' : 'It hasn’t been sent yet – what’s recorded will be lost.'} It and everything recorded on it, photos included, are removed from this phone.
         </Text>
         <Group justify="flex-end">
           <Button variant="default" onClick={() => setRemoving(false)}>
@@ -672,28 +651,31 @@ function SheetPage() {
   );
 }
 
-// ------------------------------------------------------------ a site: the readings
-
-function readPhoto(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
-      const c = document.createElement('canvas');
-      c.width = Math.round(img.naturalWidth * k);
-      c.height = Math.round(img.naturalHeight * k);
-      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
-      URL.revokeObjectURL(url);
-      resolve(c.toDataURL('image/jpeg', 0.78));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('That photo couldn’t be read.'));
-    };
-    img.src = url;
-  });
+/** One of the project's sites (from the computer), the nearest first. */
+function AtSiteModal({ opened, sites, onClose, onPick }: { opened: boolean; sites: FieldSite[]; onClose: () => void; onPick: (s: FieldSite) => void }) {
+  const { me } = useMyPosition(opened);
+  const list = useMemo(
+    () =>
+      sites
+        .map((s) => ({ s, d: me && s.lat !== undefined && s.lng !== undefined ? distanceM(me, { lat: s.lat, lng: s.lng }) : null }))
+        .sort((a, b) => (a.d ?? Infinity) - (b.d ?? Infinity) || a.s.code.localeCompare(b.s.code)),
+    [sites, me],
+  );
+  return (
+    <Modal opened={opened} onClose={onClose} title="At which site?" centered>
+      <Stack gap={6}>
+        {list.map(({ s, d }) => (
+          <Button key={s.id} variant="default" justify="space-between" onClick={() => onPick(s)} rightSection={d !== null ? <Text size="xs" c="dimmed">{d >= 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`}</Text> : undefined}>
+            {s.code}
+            {s.name ? ` – ${s.name}` : ''}
+          </Button>
+        ))}
+      </Stack>
+    </Modal>
+  );
 }
+
+// ------------------------------------------------------------ a site: the readings
 
 /** How far the phone was from the site's recorded place: a warning when it looks like the wrong site. */
 function SiteDistance({ gps, site, code }: { gps: { lat: number; lng: number; acc?: number }; site: { lat: number; lng: number }; code: string }) {
@@ -725,6 +707,8 @@ function SitePage() {
   /** Opened by scanning the site's printed code: what it fills in, and what it did. */
   const [scanned, setScanned] = useState<{ fill: FieldCodeFill; did: string[] } | null>(null);
   const [placing, setPlacing] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const finding = useAwaitingFix(siteId);
   // the site's record (a new one when there's none yet); the next site starts from its own
   useEffect(() => {
     if (saved === undefined || (saved && saved.visit.siteId !== siteId) || v?.siteId === siteId) return;
@@ -773,6 +757,7 @@ function SitePage() {
   if (stored === undefined || saved === undefined || !v || v.siteId !== siteId) return <Loader />;
   if (!stored) return <Navigate to="/field" />;
   const sheet = stored.sheet;
+  const job = isJob(sheet);
   const site = sheet.sites.find((s) => s.id === siteId);
   if (!site) return <Navigate to={`/field/s/${encodeURIComponent(sheetId)}`} />;
   const idx = sheet.sites.indexOf(site);
@@ -789,7 +774,23 @@ function SitePage() {
   };
   return (
     <Stack gap="sm">
-      <Header title={`${site.code}${site.name ? ` – ${site.name}` : ''}`} back={back} right={<Text size="xs" c="dimmed">{idx + 1}/{sheet.sites.length}</Text>} />
+      <Header
+        title={`${site.code}${site.name ? ` – ${site.name}` : ''}`}
+        back={back}
+        right={
+          <Group gap={4} wrap="nowrap">
+            {site.added && (
+              <ActionIcon variant="subtle" size="lg" aria-label="Name this point" onClick={() => setEditing(true)}>
+                <IconPencil size={18} />
+              </ActionIcon>
+            )}
+            <Text size="xs" c="dimmed">
+              {idx + 1}/{sheet.sites.length}
+            </Text>
+          </Group>
+        }
+      />
+      {site.added && <EditPointModal opened={editing} sheet={sheet} site={site} onClose={() => setEditing(false)} />}
       <Card withBorder padding="xs">
         {site.note && (
           <Text size="sm" mb={6}>
@@ -810,7 +811,7 @@ function SitePage() {
         ) : (
           <Group gap="xs" wrap="wrap">
             <Text size="sm" c="dimmed">
-              No location yet.
+              {finding ? 'Finding where you are…' : 'No location yet.'}
             </Text>
             <Button size="xs" variant="default" leftSection={<IconMapPin size={14} />} onClick={() => setPlacing(true)}>
               Set the location
@@ -839,15 +840,18 @@ function SitePage() {
           <Text size="sm">Scanned at {site.code}{scanned.did.length ? ` – ${scanned.did.join(' and ')} filled in` : ''}{locating ? ' (finding the location…)' : ''}.</Text>
         </Alert>
       )}
-      <Chip checked={!!v.notSampled} onChange={(on) => update({ notSampled: on ? NOT_SAMPLED[0] : undefined, done: on ? true : v.done })} color="gray">
-        Not sampled
-      </Chip>
+      {job && sheet.observe.photos && <PhotoSection sheetId={sheetId} site={site} onAdded={() => update({ time: v.time ?? nowLocal() })} />}
+      {!site.added && (
+        <Chip checked={!!v.notSampled} onChange={(on) => update({ notSampled: on ? NOT_SAMPLED[0] : undefined, done: on ? true : v.done })} color="gray">
+          Not sampled
+        </Chip>
+      )}
       {v.notSampled ? (
         <SegmentedControl fullWidth data={[...NOT_SAMPLED]} value={NOT_SAMPLED.includes(v.notSampled as (typeof NOT_SAMPLED)[number]) ? v.notSampled : 'Other'} onChange={(x) => update({ notSampled: x })} />
       ) : (
         <>
           <Group gap="xs" align="flex-end" wrap="nowrap">
-            <TextInput type="datetime-local" label="Sampled at" value={v.time ?? ''} onChange={(e) => update({ time: e.currentTarget.value || undefined })} style={{ flex: 1 }} size="md" />
+            <TextInput type="datetime-local" label={job ? 'Time' : 'Sampled at'} value={v.time ?? ''} onChange={(e) => update({ time: e.currentTarget.value || undefined })} style={{ flex: 1 }} size="md" />
             <Button variant="default" size="md" onClick={() => update({ time: nowLocal() })}>
               Now
             </Button>
@@ -876,13 +880,14 @@ function SitePage() {
               />
             );
           })}
+          <AddReading sheet={sheet} />
           {sheet.observe.weather && <Select size="md" label="Weather" data={[...WEATHER]} value={v.weather ?? null} onChange={(x) => update({ weather: x ?? undefined })} clearable />}
           {sheet.observe.flow && <Select size="md" label="Flow" data={[...FLOW]} value={v.flow ?? null} onChange={(x) => update({ flow: x ?? undefined })} clearable />}
           {sheet.observe.appearance && <Select size="md" label="Appearance" data={[...APPEARANCE]} value={v.appearance ?? null} onChange={(x) => update({ appearance: x ?? undefined })} clearable />}
         </>
       )}
       <Textarea size="md" label="Notes" autosize minRows={2} value={v.notes ?? ''} onChange={(e) => update({ notes: e.currentTarget.value || undefined })} placeholder="Colour, odour, anything unusual" />
-      <Group gap="xs">
+      {!site.added && <Group gap="xs">
         <Button variant="default" leftSection={<IconCurrentLocation size={16} />} loading={locating} onClick={locate}>
           {v.gps ? 'Record the location again' : 'Record the location'}
         </Button>
@@ -892,43 +897,9 @@ function SitePage() {
             {v.gps.acc ? ` (±${v.gps.acc} m)` : ''}
           </Text>
         )}
-      </Group>
+      </Group>}
       {v.gps && site.lat !== undefined && site.lng !== undefined && <SiteDistance gps={v.gps} site={{ lat: site.lat, lng: site.lng }} code={site.code} />}
-      {sheet.observe.photos && (
-        <div>
-          <FileButton
-            accept="image/*"
-            capture="environment"
-            onChange={async (f) => {
-              if (!f) return;
-              try {
-                const dataUrl = await readPhoto(f);
-                update({ photos: [...(v.photos ?? []), { name: `${site.code} ${(v.photos?.length ?? 0) + 1}.jpg`, dataUrl }] });
-              } catch (e) {
-                notifications.show({ color: 'red', message: (e as Error).message });
-              }
-            }}
-          >
-            {(props) => (
-              <Button {...props} variant="default" leftSection={<IconCamera size={16} />}>
-                Take a photo
-              </Button>
-            )}
-          </FileButton>
-          {!!v.photos?.length && (
-            <Group gap={6} mt={6}>
-              {v.photos.map((p, i) => (
-                <div key={i} style={{ position: 'relative' }}>
-                  <img src={p.dataUrl} alt={p.name} style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6 }} />
-                  <ActionIcon size="xs" color="red" variant="filled" style={{ position: 'absolute', top: 2, right: 2 }} aria-label="Remove photo" onClick={() => update({ photos: v.photos!.filter((_, j) => j !== i) })}>
-                    <IconTrash size={10} />
-                  </ActionIcon>
-                </div>
-              ))}
-            </Group>
-          )}
-        </div>
-      )}
+      {!job && sheet.observe.photos && <PhotoSection sheetId={sheetId} site={site} onAdded={() => update({ time: v.time ?? nowLocal() })} />}
       <Button size="lg" mt="sm" color="teal" leftSection={<IconCheck size={20} />} onClick={finish}>
         {v.done ? 'Done' : 'Done here'}
         {next ? ` – next: ${next.code}` : ''}
@@ -944,24 +915,32 @@ function SendPage() {
   const navigate = useNavigate();
   const stored = useLiveQuery(async () => (await fieldDb.sheets.get(sheetId)) ?? null, [sheetId]);
   const visits = useLiveQuery(() => fieldDb.visits.where('sheetId').equals(sheetId).toArray(), [sheetId]);
+  const photos = usePhotoCounts(sheetId);
   const [by, setBy] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   useEffect(() => void getPref('name').then(setBy), []);
-  const keys = useLiveQuery(() => teamKeys(), []);
-  // a sheet that came locked goes back locked, with the same key
-  const lockKey = stored?.lockedWith ? keys?.find((k) => k.id === stored.lockedWith) ?? null : null;
-  const results = useMemo(() => (stored && visits ? resultsOf(stored.sheet, visits.map((x) => x.visit), by ?? '') : null), [stored, visits, by]);
   if (stored === null) return <Navigate to="/field" />;
-  if (!stored || !visits || by === null || !results) return <Loader />;
+  if (!stored || !visits || by === null) return <Loader />;
   const sheet = stored.sheet;
-  const missing = sheet.sites.filter((s) => !results.visits.some((v) => v.siteId === s.id && (v.done || v.notSampled)));
-  const send = async () => {
-    await setPref('name', by);
-    // read again here: the keys may not have loaded on screen yet
-    const k = stored.lockedWith ? (await teamKeys()).find((x) => x.id === stored.lockedWith) : undefined;
-    const text = JSON.stringify(k ? await lockFile(results, k) : results);
-    const file = new File([text], resultsFileName(sheet), { type: 'application/json' });
-    const share = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+  const job = isJob(sheet);
+  const byId = new Map(visits.map((x) => [x.visit.siteId, x.visit]));
+  const recorded = sheet.sites.filter((s) => byId.has(s.id) || photos.has(s.id));
+  const missing = job ? [] : sheet.sites.filter((s) => !byId.get(s.id)?.done && !byId.get(s.id)?.notSampled);
+  const pics = [...photos.values()].reduce((a, p) => ({ n: a.n + p.n, size: a.size + p.size }), { n: 0, size: 0 });
+  const big = pics.size > 20 * 1024 * 1024;
+  /** The job file: a zip with everything (photos full size), shared to OneDrive, Teams or email – or saved. */
+  const saveFile = async () => {
+    setSaving(true);
     try {
+      await setPref('name', by);
+      const c = await jobContents(sheet.id, by);
+      if (!c) return;
+      let bytes = await jobZip(c.sheet, c.results, c.photos);
+      // a sheet that came locked goes back locked, with the same key
+      const k = stored.lockedWith ? (await teamKeys()).find((x) => x.id === stored.lockedWith) : undefined;
+      if (k) bytes = await lockedJob(bytes, k);
+      const file = new File([bytes as BlobPart], jobFileName(sheet, !!k), { type: k ? 'application/octet-stream' : 'application/zip' });
+      const share = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
       if (share.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: file.name });
       else {
         const url = URL.createObjectURL(file);
@@ -971,80 +950,78 @@ function SendPage() {
         document.body.append(a);
         a.click();
         a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 3000);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
       }
       await fieldDb.sheets.update(sheet.id, { sentAt: new Date().toISOString() });
-      notifications.show({ color: 'teal', message: 'Results ready – save them to the team’s Inbox folder in OneDrive (or email them to yourself).' });
+      notifications.show({ color: 'teal', message: `Job file ready (${photoSizeText(file.size)}). Save it to the team’s Inbox folder in OneDrive – or send it to yourself and drop it on the computer’s Import page.` });
     } catch (e) {
       if ((e as Error).name !== 'AbortError') notifications.show({ color: 'red', message: (e as Error).message });
+    } finally {
+      setSaving(false);
     }
   };
   return (
     <Stack gap="sm">
-      <Header title="Send the results" back={`/field/s/${encodeURIComponent(sheet.id)}`} />
-      <TextInput size="md" label="Sampled by" placeholder="Your name" value={by} onChange={(e) => setBy(e.currentTarget.value)} />
+      <Header title={job ? 'Send the job' : 'Send the results'} back={`/field/s/${encodeURIComponent(sheet.id)}`} />
+      <TextInput size="md" label="Recorded by" placeholder="Your name" value={by} onChange={(e) => setBy(e.currentTarget.value)} />
       <Card withBorder padding="sm">
-        {sheet.sites.map((s) => {
-          const v = results.visits.find((x) => x.siteId === s.id);
-          return (
-            <Text size="sm" key={s.id}>
-              <b>{s.code}</b>{' '}
-              {!v ? (
-                <Text span c="orange">
-                  nothing recorded
-                </Text>
-              ) : v.notSampled ? (
-                <Text span c="dimmed">
-                  not sampled – {v.notSampled}
-                </Text>
-              ) : (
-                `${Object.keys(v.values).length} readings${v.photos?.length ? `, ${v.photos.length} photos` : ''}${v.done ? '' : ' (not marked done)'}`
-              )}
+        <Stack gap={2}>
+          {(job ? recorded : sheet.sites).map((s) => {
+            const v = byId.get(s.id);
+            const n = photos.get(s.id)?.n ?? 0;
+            const bits = [v && Object.keys(v.values).length ? `${Object.keys(v.values).length} reading${Object.keys(v.values).length === 1 ? '' : 's'}` : '', n ? `${n} photo${n === 1 ? '' : 's'}` : '', v?.notes ? 'notes' : ''].filter(Boolean);
+            return (
+              <Text size="sm" key={s.id}>
+                <b>{s.code}</b>{' '}
+                {v?.notSampled ? (
+                  <Text span c="dimmed">
+                    not sampled – {v.notSampled}
+                  </Text>
+                ) : bits.length ? (
+                  `${bits.join(', ')}${!job && !v?.done ? ' (not marked done)' : ''}`
+                ) : (
+                  <Text span c="orange">
+                    nothing recorded
+                  </Text>
+                )}
+              </Text>
+            );
+          })}
+          {pics.n > 0 && (
+            <Text size="xs" c="dimmed" mt={4}>
+              {pics.n} photo{pics.n === 1 ? '' : 's'} in all, {photoSizeText(pics.size)} – they go full size, each with where it was taken.
             </Text>
-          );
-        })}
+          )}
+        </Stack>
       </Card>
-      {(results.newSites?.length || results.located?.length) && (
-        <Card withBorder padding="sm">
-          {results.newSites?.map((n) => (
-            <Text size="sm" key={n.id}>
-              <b>{n.code}</b> new monitoring point{n.lat !== undefined ? '' : ' (no location yet)'}
-            </Text>
-          ))}
-          {results.located?.map((l) => (
-            <Text size="sm" key={l.siteId}>
-              <b>{sheet.sites.find((x) => x.id === l.siteId)?.code ?? '?'}</b> location set {l.how === 'gps' ? `by GPS${l.acc ? ` (±${l.acc} m)` : ''}` : 'on the map'}
-            </Text>
-          ))}
-        </Card>
-      ) || null}
       {missing.length > 0 && (
         <Alert color="orange" variant="light" p="xs">
           <Text size="sm">
-            {missing.map((s) => s.code).join(', ')} {missing.length === 1 ? 'isn’t' : 'aren’t'} done yet. You can send what you have now and again later – the later file replaces it.
+            {missing.map((s) => s.code).join(', ')} {missing.length === 1 ? 'isn’t' : 'aren’t'} done yet. You can send what you have now and again later – the later one replaces it.
           </Text>
         </Alert>
       )}
+      <Button size="lg" leftSection={<IconFileZip size={20} />} loading={saving} onClick={() => void saveFile()}>
+        Save the job file
+      </Button>
+      <Text size="xs" c="dimmed">
+        One file with everything – photos full size. Choose <b>OneDrive → the team’s Inbox folder</b> and EnviroDB on the computer picks it up there. Or send it in Teams{big ? '' : ' or by email'} and drop it on the computer’s <b>Import</b> page. Needs a signal.
+        {big ? ' At this size it’s too big for most email.' : ''}
+        {stored.lockedWith ? ` Locked with the team key${job ? '' : ', as the sheet came'}: only the team’s computers can open it.` : ''}
+      </Text>
       <Button
-        size="lg"
-        leftSection={<IconDeviceDesktop size={20} />}
+        size="md"
+        variant="default"
+        leftSection={<IconDeviceDesktop size={18} />}
         onClick={() => {
           void setPref('name', by);
           navigate(`/field/s/${encodeURIComponent(sheet.id)}/link`);
         }}
       >
-        Send to the computer
+        Send straight to the computer
       </Button>
       <Text size="xs" c="dimmed">
-        At the computer: scan the code it shows, then hold this phone up to its camera. No signal or file needed – over Wi-Fi when the two can connect, otherwise as a flashing code.
-      </Text>
-      <Button size="md" variant="default" leftSection={<IconSend size={18} />} onClick={() => void send()}>
-        Send as a file instead
-      </Button>
-      <Text size="xs" c="dimmed">
-        Choose OneDrive and the team’s <b>Inbox</b> folder (EnviroDB on the computer picks it up there), or email it to yourself and drop it on the Import page. Needs a signal; the records stay on this phone until you remove the
-        sheet.
-        {lockKey ? ' Locked with the team key, as the sheet came: only the team’s computers can open it.' : ''}
+        Next to the computer, on the same Wi-Fi: on the computer choose <b>Import data → Receive from a phone</b>, then scan its code. No signal needed. If the Wi-Fi keeps them apart, the results go as a flashing code (photos made smaller – save the job file as well for them full size).
       </Text>
       {stored.sentAt && (
         <Text size="xs" c="teal">
@@ -1059,13 +1036,15 @@ function LinkRoute() {
   const { sheetId = '' } = useParams();
   const navigate = useNavigate();
   const stored = useLiveQuery(async () => (await fieldDb.sheets.get(sheetId)) ?? null, [sheetId]);
-  const [ready, setReady] = useState<ReturnType<typeof resultsOf> | null>(null);
+  const [ready, setReady] = useState<{ results: FieldResults; photos: LinkPhoto[] } | null>(null);
   useEffect(() => {
-    // the results as they are now (later changes on this page don't alter what's being sent)
+    // what's recorded now (later changes on this page don't alter what's being sent): photos full size, located
     if (!stored || ready) return;
     void (async () => {
-      const visits = await fieldDb.visits.where('sheetId').equals(sheetId).toArray();
-      setReady(resultsOf(stored.sheet, visits.map((x) => x.visit), (await getPref('name')) ?? ''));
+      const c = await jobContents(sheetId, (await getPref('name')) ?? '');
+      if (!c) return;
+      const out = readyPhotos(c.photos);
+      setReady({ results: withPhotoEntries(c.results, out), photos: out.map((p) => ({ siteId: p.siteId, name: p.name, type: p.type, bytes: p.bytes })) });
     })();
   }, [stored, ready, sheetId]);
   if (stored === null) return <Navigate to="/field" />;
@@ -1073,7 +1052,7 @@ function LinkRoute() {
   return (
     <Stack gap="sm">
       <Header title="Send to the computer" back={back} />
-      {ready ? <LinkPage results={ready} onSent={() => void fieldDb.sheets.update(sheetId, { sentAt: new Date().toISOString() })} onCancel={() => navigate(back)} /> : <Loader />}
+      {ready ? <LinkPage results={ready.results} photos={ready.photos} onSent={() => void fieldDb.sheets.update(sheetId, { sentAt: new Date().toISOString() })} onCancel={() => navigate(back)} /> : <Loader />}
     </Stack>
   );
 }

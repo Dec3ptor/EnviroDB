@@ -11,6 +11,20 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.29.0',
+    date: '2026-11-01',
+    title: 'Quick field jobs from your phone',
+    items: [
+      'Start a job on the phone, with nothing planned on the computer: New job in EnviroDB field – a name, the project if the phone knows it (or leave it to the computer), and any readings to take. At each place, Add a point here places a point where the phone is (P1, P2 …, to name if you like); then photos, readings and notes. The job page says how well the phone is located. To open EnviroDB field on a phone: the project’s ⋯ → Field work… → Quick job on your phone shows a code to scan once.',
+      'Photos are kept full size, as the camera takes them, each with where it was taken – the phone’s GPS, or the camera’s own location for one from the gallery – written into the photo itself, so any photo app or GIS places it.',
+      'One job file with everything: Send the job → Save the job file makes a zip – the results, the photos, the points and photos as spreadsheets (points.csv, photos.csv) and as a map file (points.geojson). Save it to the team’s Inbox folder in OneDrive, where the computer lists it under its project, or drop it on the Import page. A planned round’s results go the same way. A job for another project opens in that project.',
+      'Receive from a phone is now on the Import page too, for sending a job straight across on the same Wi-Fi (photos full size, with their locations).',
+      'On the computer, each point the phone added is shown with what to do with it: one a few metres from a site starts as part of that site (its readings, notes and photos join the site’s sample for the day), the others as new sites where they were taken – or choose another site, or leave it out. Sent again, nothing doubles: each point goes where it went before, and photos already saved are kept.',
+      'Several phone files dropped at once are reviewed one after another.',
+      'A phone set up with the team key locks the jobs started on it, as it does a planned round’s results.',
+    ],
+  },
+  {
     version: '1.28.1',
     date: '2026-10-30',
     title: 'Tighter spacing under tables',

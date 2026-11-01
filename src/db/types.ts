@@ -589,6 +589,8 @@ export interface ImportBatch {
   notes?: string;
   /** Checked and signed off: the results are ready to report. */
   reviewed?: { by: string; on: string };
+  /** A phone's points that joined one of the project's sites (the phone's id → the site): there again if sent again. */
+  fieldPoints?: Record<string, ID>;
 }
 
 /** Something that happened to a project: who did what, when – the project's history. */

@@ -37,6 +37,8 @@ export interface FieldSite {
   preset?: Record<string, number>;
   /** A site added on the phone: a new monitoring point, with its kind (Surface water, Groundwater …). */
   added?: boolean;
+  /** Its code was given by the phone (P1, P2 …), not typed: on the computer it can join a site nearby. */
+  auto?: boolean;
   type?: string;
   /** Its location was set on the phone – by GPS (with how close) or on the map – and goes back with the results. */
   located?: { at: string; how: 'gps' | 'map'; acc?: number };
@@ -79,9 +81,36 @@ export interface FieldVisit {
   notes?: string;
   notSampled?: string;
   gps?: { lat: number; lng: number; acc?: number };
-  photos?: Array<{ name: string; dataUrl: string }>;
+  photos?: FieldPhoto[];
   done?: boolean;
 }
+
+/**
+ * A photo taken in the field: where and when (each photo its own), and the picture – full size, as the camera took
+ * it. In a job file (.zip) the picture is a file beside the results (`file`); over the Wi-Fi link it comes after the
+ * readings (`bytes`, filled in on arrival); results files from before 1.29 carry it as a data URL.
+ */
+export interface FieldPhoto {
+  name: string;
+  /** image/jpeg, image/png or image/webp. */
+  type?: string;
+  /** Where it was taken (by the phone's GPS when the photo was taken, or the camera's own). */
+  lat?: number;
+  lng?: number;
+  acc?: number;
+  /** When it was taken (ISO). */
+  at?: string;
+  /** In a job file: the picture's path in it ('photos/…'). */
+  file?: string;
+  /** The picture itself, once read from a job file or the link (never in JSON). */
+  bytes?: Uint8Array;
+  /** Results files from before 1.29: the picture as a data URL. */
+  dataUrl?: string;
+}
+
+export const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+/** Photos at one site in one go, at most (a results file or job file from outside is checked against it). */
+export const MAX_PHOTOS_PER_SITE = 200;
 
 /** A monitoring point added on the phone. */
 export interface FieldNewSite {
@@ -95,6 +124,8 @@ export interface FieldNewSite {
   acc?: number;
   how?: 'gps' | 'map';
   note?: string;
+  /** Named by the phone (P1, P2 …): on the computer it can join a site nearby instead of becoming one. */
+  auto?: boolean;
 }
 
 /** A site's location, set on the phone. */
@@ -249,6 +280,31 @@ export function checkSheet(x: unknown): FieldSheet {
   };
 }
 
+/** A photo's entry, checked: a picture (data URL, file in the job file, or bytes) and where and when it was taken. */
+function checkPhoto(ph: Record<string, unknown>): FieldPhoto[] {
+  const dataUrl = typeof ph.dataUrl === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(ph.dataUrl) ? ph.dataUrl : undefined;
+  // a file in the job file: under photos/, no way out of it
+  const file = typeof ph.file === 'string' && /^photos\/[^/\\]{1,160}$/.test(ph.file) && !ph.file.includes('..') ? ph.file : undefined;
+  const bytes = ph.bytes instanceof Uint8Array ? ph.bytes : undefined;
+  if (!dataUrl && !file && !bytes) return [];
+  const declared = typeof ph.type === 'string' && (PHOTO_TYPES as readonly string[]).includes(ph.type) ? ph.type : undefined;
+  const type = dataUrl ? /^data:([^;]+)/.exec(dataUrl)![1] : declared ?? 'image/jpeg';
+  const lat = num(ph.lat), lng = num(ph.lng);
+  const located = lat !== undefined && lng !== undefined && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+  const acc = num(ph.acc);
+  return [
+    {
+      name: (str(ph.name, 120) ?? 'photo.jpg').replace(/[\\/:*?"<>|]+/g, '-'),
+      type,
+      ...(located ? { lat, lng, ...(acc !== undefined && acc >= 0 ? { acc } : {}) } : {}),
+      ...(typeof ph.at === 'string' ? { at: ph.at.slice(0, 40) } : {}),
+      ...(file ? { file } : {}),
+      ...(bytes ? { bytes } : {}),
+      ...(dataUrl ? { dataUrl } : {}),
+    },
+  ];
+}
+
 /** Field results read from a file: checked the same way. */
 export function checkResults(x: unknown): FieldResults {
   if (!isObj(x) || x.app !== FIELD_APP || x.kind !== 'field-results') throw new Error('This isn’t an EnviroDB field results file.');
@@ -256,7 +312,7 @@ export function checkResults(x: unknown): FieldResults {
   const p = isObj(sh.project) ? sh.project : {};
   const visits = (Array.isArray(x.visits) ? x.visits : []).filter(isObj).slice(0, 500).map((v): FieldVisit => {
     const g = isObj(v.gps) && num(v.gps.lat) !== undefined && num(v.gps.lng) !== undefined ? { lat: num(v.gps.lat)!, lng: num(v.gps.lng)!, acc: num(v.gps.acc) } : undefined;
-    const photos = (Array.isArray(v.photos) ? v.photos : []).filter(isObj).filter((ph) => typeof ph.dataUrl === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(ph.dataUrl)).slice(0, 20).map((ph) => ({ name: str(ph.name, 120) ?? 'photo.jpg', dataUrl: ph.dataUrl as string }));
+    const photos = (Array.isArray(v.photos) ? v.photos : []).filter(isObj).flatMap(checkPhoto).slice(0, MAX_PHOTOS_PER_SITE);
     return {
       siteId: str(v.siteId, 80) ?? '',
       time: str(v.time, 20),
@@ -278,7 +334,7 @@ export function checkResults(x: unknown): FieldResults {
   const how = (h: unknown) => (h === 'gps' || h === 'map' ? h : undefined);
   const newSites = (Array.isArray(x.newSites) ? x.newSites : []).filter(isObj).slice(0, 100).map((n): FieldNewSite => {
     const at = place(n);
-    return { id: str(n.id, 80) ?? '', code: (str(n.code, 40) ?? '').trim(), name: str(n.name, 120), type: str(n.type, 40), ...(at ? { ...at, how: how(n.how) } : {}), note: str(n.note, 1000) };
+    return { id: str(n.id, 80) ?? '', code: (str(n.code, 40) ?? '').trim(), name: str(n.name, 120), type: str(n.type, 40), ...(at ? { ...at, how: how(n.how) } : {}), note: str(n.note, 1000), ...(n.auto === true ? { auto: true } : {}) };
   });
   const located = (Array.isArray(x.located) ? x.located : []).filter(isObj).slice(0, 200).flatMap((l): FieldLocated[] => {
     const at = place(l);

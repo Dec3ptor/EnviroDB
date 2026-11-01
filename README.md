@@ -444,7 +444,26 @@ there as they work and show up for the others within seconds.
   - EnviroDB doesn't fetch gauges' records itself: councils' data services don't let a web page read them, and
     EnviroDB contacts nothing but its own address and the map services. Download the CSV and add it.
 - **Field mode for phones.** The phone isn't connected to the team's shared folder, so field work goes by a
-  sheet out and a file back:
+  sheet out and a file back – or, for a quick job, just the file back.
+
+  **A quick job** (sent out for some measurements or photos, nothing planned): open *EnviroDB field* on the phone –
+  scan the code in the project's ⋯ → *Field work…* → *Quick job on your phone* once, and add it to the home
+  screen – tap **New job**, give it a name (and the project, if the phone knows it, or leave that to the computer)
+  and pick any readings to take. At each place, **Add a point here**: it's placed where the phone is (the job page
+  says how well, "Located to ±5 m") and named P1, P2 … (name it, or give it a site's code, with the pencil). Then
+  **Take a photo** – full size, as the camera takes it, each with where it was taken (the phone's GPS; a photo from
+  the gallery keeps the camera's own location) – and any readings and notes. **Send the job → Save the job file**
+  makes one zip: the results, the photos with their locations written into them (so any photo app or GIS places
+  them), the points and photos as spreadsheets (*points.csv*, *photos.csv*) and as a map file (*points.geojson*).
+  Save it to the team's **Inbox** folder in OneDrive – EnviroDB on the computer lists it in the lab inbox under its
+  project – or send it in Teams or by email and drop it on the Import page; a job for another project opens in
+  that project. Next to the computer on the same Wi-Fi, *Send straight to the computer* instead (Import data →
+  *Receive from a phone*). On the computer each point is shown with what to do with it: one the phone named a few
+  metres from a site starts as **part of that site** (its readings, notes and photos join the site's sample for
+  the day), the others as **new sites** where they were taken – or choose another site, or leave it out. Sent
+  again, nothing doubles: each point goes where it went before, and photos already saved are kept.
+
+  For a monitoring round:
   1. On the computer, *Field sheet for a phone* (the project's ⋯ menu → *Field work…*; field mode is switched
      on in *Settings → Team → Features*) makes the round's sheet: the sites (with
      their locations, for directions), the readings to take (the project's field parameters to start with), last
@@ -462,20 +481,21 @@ there as they work and show up for the others within seconds.
      added (*Add a monitoring point*: code, name, kind, directions, and its place by GPS or on the map), with
      readings taken there like any other site. Map pictures need a signal; with none, the sites and where you are
      still show, and the phone's map app finds the way.
-  4. *Send the results* makes a results file: save it to the team's **Inbox** folder in OneDrive (or email it to
-     yourself and drop it on the Import page). EnviroDB on the computer lists it in the lab inbox; adding it puts
+  4. *Send the results → Save the job file* makes one file with everything (photos full size, with where each was
+     taken): save it to the team's **Inbox** folder in OneDrive (or send it to yourself and drop it on the Import page). EnviroDB on the computer lists it in the lab inbox; adding it puts
      each site's readings in the day's sample (the lab's results for that day join the same sample), what was seen
      in the sample's notes, the photos in the shared folder (*Field photos*), and marks the round sampled on the
      monitoring calendar. Sent again, it replaces what it added. **New sites and locations set in the field** are
      listed first, each to tick: added, a new site joins the project (with its kind, directions and place) and a
      moved site shows how far it moves; a new site with a code the project already has goes to that site instead,
      and the same file added twice doesn't add a site twice.
-  5. Or, with no file at all: on the computer, *Receive from a phone* (project ⋯ → *Field work…*) shows a code and turns on
-     the webcam; on the phone, *Send the results → Send to the computer*, scan the code, then hold the phone up to
-     the webcam. Where the phone and computer can reach each other over Wi-Fi, everything goes straight across in
+  5. Or, with no file at all: on the computer, *Receive from a phone* (Import data, or project ⋯ → *Field work…*)
+     shows a code and turns on the webcam; on the phone, *Send the results → Send straight to the computer*, scan
+     the code, then hold the phone up to the webcam. Where the phone and computer can reach each other over Wi-Fi, everything goes straight across in
      a second or two, photos at full size. Where the network keeps devices apart (as office networks often do),
      the phone flashes the results as a stream of QR codes the webcam reads instead: the readings in a second or
-     two, then the photos (made smaller, about 60 KB each – a few seconds a photo). The phone remembers a network
+     two, then the photos (made smaller, about 60 KB each – a few seconds a photo; save the job file as well for
+     them full size). The phone remembers a network
      where Wi-Fi didn't work and goes to the flashing code sooner. Then the same review and *Add* as a file.
   6. **Printable field codes** (project ⋯ → *Field work…*) make a PDF of QR codes to take into the field instead of the
      computer's screen: the **project's code** (a cover page, with how to use them and the sites) and a **code for
@@ -490,7 +510,8 @@ there as they work and show up for the others within seconds.
      (site name, project, readings, location, directions and notes).
   7. **The team key** (optional, off unless turned on: *Settings → Field codes: team key*) locks field sheets'
      QR codes, links and files, and printed field codes, so they open only on phones set up for the team; the
-     results those phones send back as a file are locked too, and open only in the workspace. Each phone is set
+     results those phones send back as a file are locked too, and open only in the workspace (and so are the jobs
+     started on them). Each phone is set
      up once: *Set up a phone* shows a code that opens the phone's *Team key* page, then – only when asked – the
      key itself, which that page scans (it isn't a link, so the phone's own camera app never opens it). A locked
      sheet or code scanned on a phone that isn't set up says only that it's locked, with *Set up this phone*;

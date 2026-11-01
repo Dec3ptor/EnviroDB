@@ -2,8 +2,9 @@
 // with the key the phone read from the computer's screen (AES-GCM), so only that computer can open it, and any change
 // on the way stops it opening.
 
-import { fromBase64, gunzip, gzip, toBase64 } from '../../lib/issued';
-import { checkResults, type FieldResults } from '../model';
+import { gunzip, gzip } from '../../lib/issued';
+import { checkResults, type FieldPhoto, type FieldResults } from '../model';
+import { photoBytes } from '../package';
 
 /** The two things sent: the readings (small, first) and the photos. */
 export const STREAM = { readings: 0, photos: 1 } as const;
@@ -40,16 +41,34 @@ export async function unseal(raw: Uint8Array, session: number, stream: number, s
 
 // ------------------------------------------------------------ the readings
 
-/** The results without their photos (they follow on their own), compressed. */
+/** What's known of a photo before its picture arrives: its name, where and when. */
+export type PhotoMeta = Omit<FieldPhoto, 'bytes' | 'dataUrl' | 'file'>;
+
+/** The results without their pictures (they follow on their own) – each photo's name, place and time kept – compressed. */
 export async function readingsBytes(results: FieldResults): Promise<Uint8Array> {
-  const bare = { ...results, visits: results.visits.map(({ photos, ...v }) => ({ ...v, photoCount: photos?.length ?? 0 })) };
+  const bare = {
+    ...results,
+    visits: results.visits.map(({ photos, ...v }) => ({
+      ...v,
+      photoCount: photos?.length ?? 0,
+      ...(photos?.length ? { photoMeta: photos.map(({ bytes: _b, dataUrl: _d, file: _f, ...meta }) => (void _b, void _d, void _f, meta)) } : {}),
+    })),
+  };
   return gzip(JSON.stringify(bare));
 }
 
-export async function readReadings(bytes: Uint8Array): Promise<{ results: FieldResults; photos: number }> {
+export async function readReadings(bytes: Uint8Array): Promise<{ results: FieldResults; photos: number; meta: Map<string, PhotoMeta[]> }> {
   const raw = JSON.parse(await gunzip(bytes));
-  const photos = Array.isArray(raw?.visits) ? raw.visits.reduce((n: number, v: { photoCount?: unknown }) => n + (typeof v?.photoCount === 'number' ? v.photoCount : 0), 0) : 0;
-  return { results: checkResults(raw), photos };
+  const visits: Array<{ siteId?: unknown; photoCount?: unknown; photoMeta?: unknown }> = Array.isArray(raw?.visits) ? raw.visits : [];
+  const photos = visits.reduce((n, v) => n + (typeof v?.photoCount === 'number' ? v.photoCount : 0), 0);
+  // each photo's name, place and time (phones before 1.29 sent none): checked as a photo would be
+  const meta = new Map<string, PhotoMeta[]>();
+  for (const v of visits) {
+    if (typeof v?.siteId !== 'string' || !Array.isArray(v.photoMeta)) continue;
+    const checked = checkResults({ app: raw.app, kind: raw.kind, v: 1, sheet: {}, sent: '', visits: [{ siteId: v.siteId, values: {}, photos: v.photoMeta.map((m: unknown) => ({ ...(m as object), bytes: new Uint8Array(0) })) }] }).visits[0]?.photos ?? [];
+    meta.set(v.siteId, checked.map(({ bytes: _b, ...m }) => (void _b, m)));
+  }
+  return { results: checkResults(raw), photos, meta };
 }
 
 // ------------------------------------------------------------ the photos
@@ -67,8 +86,8 @@ const PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 export function photosOf(results: FieldResults): LinkPhoto[] {
   return results.visits.flatMap((v) =>
     (v.photos ?? []).flatMap((p) => {
-      const m = /^data:(image\/(?:jpeg|png|webp));base64,(.*)$/.exec(p.dataUrl);
-      return m ? [{ siteId: v.siteId, name: p.name, type: m[1], bytes: fromBase64(m[2]) }] : [];
+      const bytes = photoBytes(p);
+      return bytes ? [{ siteId: v.siteId, name: p.name, type: p.type ?? 'image/jpeg', bytes }] : [];
     }),
   );
 }
@@ -136,13 +155,15 @@ export function unpackPhotos(bytes: Uint8Array): LinkPhoto[] {
   return out;
 }
 
-/** The results with their photos back in place. */
-export function withPhotos(results: FieldResults, photos: LinkPhoto[]): FieldResults {
+/** The results with their photos back in place: each picture with its name, place and time. */
+export function withPhotos(results: FieldResults, photos: LinkPhoto[], meta: Map<string, PhotoMeta[]> = new Map()): FieldResults {
   return checkResults({
     ...results,
     visits: results.visits.map((v) => {
       const mine = photos.filter((p) => p.siteId === v.siteId);
-      return mine.length ? { ...v, photos: mine.map((p) => ({ name: p.name, dataUrl: `data:${p.type};base64,${toBase64(p.bytes)}` })) } : v;
+      const known = meta.get(v.siteId) ?? [];
+      const base = (n: string) => n.replace(/\.\w{2,5}$/, '').toLowerCase();
+      return mine.length ? { ...v, photos: mine.map((p) => ({ ...(known.find((m) => base(m.name) === base(p.name)) ?? {}), name: p.name, type: p.type, bytes: p.bytes })) } : v;
     }),
   });
 }

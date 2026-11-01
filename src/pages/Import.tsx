@@ -2,7 +2,7 @@ import { InboxPanel } from '../components/InboxPanel';
 import { QC_SITE_TYPE, looksLikeQc } from '../lib/qa';
 import { projectQa } from '../hooks/useQa';
 import { useSettings } from '../hooks/useSettings';
-import { markInboxImported, takeInboxImport, useInbox, type InboxCandidate } from '../sync/inbox';
+import { markInboxImported, queueFieldResults, takeInboxImport, useInbox, type InboxCandidate, type QueuedField } from '../sync/inbox';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Anchor, Badge, Button, Card, Checkbox, Group, Modal, NumberInput, Paper, ScrollArea, SegmentedControl, Select, SimpleGrid, Stack, Stepper, Table, Text, TextInput, ThemeIcon, Title, Tooltip, Autocomplete, Loader, Center, Progress,
@@ -12,7 +12,7 @@ import { notifications } from '@mantine/notifications';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  IconAlertTriangle, IconArrowBackUp, IconArrowLeft, IconArrowRight, IconCheck, IconChecks, IconCircleCheck, IconFileSpreadsheet, IconPlus, IconUpload, IconX, IconBolt, IconFileReport, IconTable, IconShieldCheck, IconBulb,
+  IconAlertTriangle, IconArrowBackUp, IconArrowLeft, IconArrowRight, IconCheck, IconChecks, IconCircleCheck, IconFileSpreadsheet, IconPlus, IconUpload, IconX, IconBolt, IconFileReport, IconTable, IconShieldCheck, IconBulb, IconDeviceMobileDown,
 } from '@tabler/icons-react';
 import { forgetLayout, plansChanged, rememberLayouts, withRememberedLayouts } from '../importers/layouts';
 import type { ImportLayout } from '../db/types';
@@ -38,14 +38,17 @@ import { evaluateAll } from '../lib/analysis';
 import { fmtNum } from '../lib/values';
 import { guessGroup, PARAMETER_GROUPS } from '../data/parameters';
 import { NewProjectButton } from './Projects';
-import { checkResults, unlockFile, type FieldResults } from '../field/model';
+import { checkResults, unlockFile } from '../field/model';
 import { LockedError, showKeyId } from '../field/lock';
+import { isJobFileName, looksLikeJob, readJobFile } from '../field/package';
+import { ReceiveFromPhone } from '../components/ReceiveFromPhone';
 import { teamKeysOf } from '../components/TeamKey';
 import { FieldResultsModal } from '../components/FieldSheet';
 import { IMPORTING, SectionNav } from '../components/Shell';
 import { deleteImport, setReviewed } from '../db/repo';
 import { modals } from '@mantine/modals';
 import { HELP } from '../components/Onboarding';
+import { useFeatures } from '../hooks/useFeatures';
 
 const ACCEPT = {
   'application/pdf': ['.pdf'],
@@ -59,6 +62,8 @@ const ACCEPT = {
   'text/plain': ['.txt', '.tsv'],
   'application/vnd.oasis.opendocument.spreadsheet': ['.ods'],
   'application/json': ['.json'],
+  // a phone's field job, locked with the team key
+  'application/octet-stream': ['.locked'],
 };
 
 const EXAMPLES = [
@@ -336,7 +341,8 @@ function ImportFollowUp({ importId, fileName, results, onUndone }: { importId: s
   );
 }
 
-export function ImportWizard(_props: { projectId: string }) {
+/** `onProject`: open another project's import (a phone's job for it); else its own Import tab. */
+export function ImportWizard({ onProject }: { projectId: string; onProject?: (projectId: string) => void }) {
   const data = useProject();
   const { project, params } = data;
   // quality control sites too: duplicates and blanks are imported to them
@@ -387,17 +393,57 @@ export function ImportWizard(_props: { projectId: string }) {
   const { queued } = useInbox();
   useEffect(() => {
     const taken = takeInboxImport(project.id);
-    if (taken?.files.length) {
+    if (taken?.field?.length) setFields((cur) => [...cur, ...taken.field!]);
+    else if (taken?.files.length) {
       fromInbox.current = taken.from;
       void load(taken.files, true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, queued]);
 
-  // a phone's field results: reviewed and added on their own
-  const [field, setField] = useState<{ results: FieldResults; name: string; inbox: InboxCandidate[] } | null>(null);
+  // a phone's field results: reviewed and added on their own, one after another
+  const [fields, setFields] = useState<QueuedField[]>([]);
+  const on = useFeatures();
+  const field = fields[0] ?? null;
+  const [receiving, setReceiving] = useState(false);
+  /**
+   * Results read: reviewed here – or, all for another of the projects here (a phone's job for it), there. `stay`:
+   * here, whatever they say (the project chosen for them in the inbox, or lab files with them).
+   */
+  const review = async (list: QueuedField[], stay = false) => {
+    if (!list.length) return;
+    const ids = [...new Set(list.map((f) => f.results.sheet.project.id))];
+    const there = ids.length === 1 && ids[0] && ids[0] !== project.id && !stay ? await db.projects.get(ids[0]) : undefined;
+    if (there?.status === 'active') {
+      queueFieldResults(there.id, list);
+      notifications.show({ message: `${list.length === 1 ? list[0].name : `${list.length} field jobs`} ${list.length === 1 ? 'is' : 'are'} for ${there.name}: opened there.` });
+      if (onProject) onProject(there.id);
+      else navigate(`/projects/${there.id}/import`);
+      return;
+    }
+    setFields((cur) => [...cur, ...list]);
+  };
   const load = async (all: Array<File | InputFile>, inbox = false) => {
     if (!inbox) fromInbox.current = [];
+    // a phone's field job (a zip – or locked – with the photos full size), even one renamed on the way
+    const bytesOf = async (f: File | InputFile) => new Uint8Array(f instanceof File ? await f.arrayBuffer() : f.data);
+    const jobs: Array<File | InputFile> = [];
+    for (const f of all) if (isJobFileName(f.name) || (/\.(zip|locked)$/i.test(f.name) && (await looksLikeJob(await bytesOf(f))))) jobs.push(f);
+    const read: QueuedField[] = [];
+    const inboxOf = (name: string) => fromInbox.current.filter((c) => c.name === name);
+    for (const f of jobs) {
+      try {
+        const { results } = await readJobFile(await bytesOf(f), teamKeysOf(await getSettings()));
+        read.push({ results, name: f.name, inbox: inboxOf(f.name) });
+      } catch (e) {
+        const locked = e instanceof LockedError && e.reason === 'no-key';
+        notifications.show({
+          title: locked ? `${f.name} is locked with another team key` : `${f.name} couldn’t be read`,
+          message: locked ? `It’s locked with a team key (${showKeyId((e as LockedError).keyId)}) this workspace doesn’t have – was the phone set up from another workspace?` : (e as Error).message,
+          color: 'red',
+        });
+      }
+    }
     const isJson = (f: File | InputFile) => /\.json$/i.test(f.name);
     for (const f of all.filter(isJson)) {
       try {
@@ -410,7 +456,7 @@ export function ImportWizard(_props: { projectId: string }) {
         // locked with the team key: opened with the workspace's keys
         const { content } = await unlockFile(raw, teamKeysOf(await getSettings()));
         const results = checkResults(content);
-        setField({ results, name: f.name, inbox: fromInbox.current.filter((c) => c.name === f.name) });
+        read.push({ results, name: f.name, inbox: inboxOf(f.name) });
       } catch (e) {
         const locked = e instanceof LockedError && e.reason === 'no-key';
         notifications.show({
@@ -420,7 +466,8 @@ export function ImportWizard(_props: { projectId: string }) {
         });
       }
     }
-    const files = all.filter((f) => !isJson(f));
+    const files = all.filter((f) => !isJson(f) && !jobs.includes(f));
+    await review(read, inbox || files.length > 0);
     if (!files.length) return;
     setLoading(true);
     try {
@@ -590,15 +637,18 @@ export function ImportWizard(_props: { projectId: string }) {
         <Stack>
           {field && (
             <FieldResultsModal
+              key={`${field.name}-${fields.length}`}
               results={field.results}
               fileName={field.name}
-              onClose={() => setField(null)}
+              onClose={() => setFields((cur) => cur.slice(1))}
               onAdded={(importId) => {
                 if (field.inbox.length) void markInboxImported(field.inbox, project.id, importId);
               }}
+              more={fields.length > 1 ? `${fields.length - 1} more to review after this one` : undefined}
+              smaller={field.smaller}
             />
           )}
-          <Dropzone onDrop={(files) => files.length && load(files)} accept={ACCEPT} loading={loading} multiple maxSize={80 * 1024 * 1024} onReject={() => notifications.show({ message: 'Please choose Excel, CSV or PDF lab reports, or a zip of them', color: 'red' })}>
+          <Dropzone onDrop={(files) => files.length && load(files)} accept={ACCEPT} loading={loading} multiple maxSize={1024 * 1024 * 1024} onReject={() => notifications.show({ message: 'Please choose Excel, CSV or PDF lab reports, a zip of them, or a phone’s field job', color: 'red' })}>
             <Group justify="center" gap="xl" mih={180} style={{ pointerEvents: 'none' }}>
               <Dropzone.Accept>
                 <IconUpload size={48} stroke={1.5} />
@@ -614,7 +664,7 @@ export function ImportWizard(_props: { projectId: string }) {
                   Drop lab results or a monitoring spreadsheet here
                 </Text>
                 <Text size="sm" c="dimmed" mt={4}>
-                  Lab files from Hill Labs, ALS and Linnaeus – Excel, CSV or PDF reports, several at once or the zip they came in – master sheets, long tables, or a phone’s field results
+                  Lab files from Hill Labs, ALS and Linnaeus – Excel, CSV or PDF reports, several at once or the zip they came in – master sheets, long tables, or a phone’s field job
                 </Text>
                 <Text size="sm" c="dimmed">
                   Importing into <b>{project.name}</b>
@@ -640,6 +690,20 @@ export function ImportWizard(_props: { projectId: string }) {
               </Button>
             ))}
           </Group>
+          {on('field') && (
+            <Group gap="xs">
+              <Text size="sm" c="dimmed">
+                Phone beside you?
+              </Text>
+              <Button size="compact-sm" variant="light" leftSection={<IconDeviceMobileDown size={14} />} onClick={() => setReceiving(true)}>
+                Receive from a phone
+              </Button>
+              <Text size="xs" c="dimmed">
+                On the same Wi-Fi: a field job straight across, photos full size.
+              </Text>
+            </Group>
+          )}
+          {receiving && <ReceiveFromPhone opened={receiving} onClose={() => setReceiving(false)} onReceived={(results, name, smaller) => void review([{ results, name, inbox: [], smaller }])} />}
         </Stack>
       )}
 
@@ -1305,7 +1369,7 @@ export function ImportPage() {
           <Select label="Project" data={projects.map((p) => ({ value: p.id, label: p.code ? `${p.name} (${p.code})` : p.name }))} value={projectId} onChange={setProjectId} w={420} searchable allowDeselect={false} />
           {projectId && (
             <ProjectDataProvider key={projectId} projectId={projectId}>
-              <ImportWizard projectId={projectId} />
+              <ImportWizard projectId={projectId} onProject={setProjectId} />
             </ProjectDataProvider>
           )}
         </>

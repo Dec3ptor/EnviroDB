@@ -6,13 +6,14 @@
 import { useSyncExternalStore } from 'react';
 import { db, getSettings } from '../db/db';
 import type { InboxFile, Project } from '../db/types';
+import type { FieldResults } from '../field/model';
 import { sniffLabFile } from '../importers/sniff';
 import { handleFolder, type DirectoryHandle, type WorkspaceFolder } from './folder';
 import { currentWorkspaceFolder, getWorkspaceState } from './workspace';
 
 /** The workspace's inbox folder. */
 export const INBOX_DIR = 'Inbox';
-const LAB_EXT = /\.(csv|tsv|txt|xlsx|xlsm|xls|pdf|zip|json)$/i;
+const LAB_EXT = /\.(csv|tsv|txt|xlsx|xlsm|xls|pdf|zip|json|locked)$/i;
 /** Folders not worth looking in. */
 const SKIP_DIR = /^(\.|~|_old$|old$|superseded$|archive[sd]?$|photos?$|images?$|cad$|gis$|drawings?$|node_modules$)/i;
 const MAX_DEPTH = 6;
@@ -310,7 +311,16 @@ export const markInboxImported = (list: InboxCandidate[], projectId: string, imp
 
 // ------------------------------------------------------------ handing files to the import
 
-let pending: { projectId: string; files: File[]; from: InboxCandidate[] } | null = null;
+/** A phone's results, read already: reviewed one after another. `inbox`: the inbox files they came from. */
+export interface QueuedField {
+  results: FieldResults;
+  name: string;
+  inbox: InboxCandidate[];
+  /** Came by the flashing code: the photos made smaller. */
+  smaller?: boolean;
+}
+
+let pending: { projectId: string; files: File[]; from: InboxCandidate[]; field?: QueuedField[] } | null = null;
 
 /** Files from the inbox for a project's import (taken by the import page as it opens). */
 export function queueInboxImport(projectId: string, from: InboxCandidate[]): void {
@@ -318,7 +328,13 @@ export function queueInboxImport(projectId: string, from: InboxCandidate[]): voi
   set({ queued: state.queued + 1 });
 }
 
-export function takeInboxImport(projectId: string): { files: File[]; from: InboxCandidate[] } | null {
+/** A phone's results for another project's import: opened there to review. */
+export function queueFieldResults(projectId: string, field: QueuedField[]): void {
+  pending = { projectId, files: [], from: field.flatMap((f) => f.inbox), field };
+  set({ queued: state.queued + 1 });
+}
+
+export function takeInboxImport(projectId: string): { files: File[]; from: InboxCandidate[]; field?: QueuedField[] } | null {
   if (!pending || pending.projectId !== projectId) return null;
   const p = pending;
   pending = null;

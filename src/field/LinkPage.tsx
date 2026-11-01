@@ -1,7 +1,7 @@
 // Sending a round's results to the computer with no file: scan the code on the computer's screen, then show the
 // phone's reply code to the computer's webcam. If the two can connect over Wi-Fi, everything goes straight across at
 // full size; if the network keeps them apart, the phone flashes the results as a stream of codes the webcam reads –
-// the readings first, then the photos (made smaller so they go quickly).
+// the readings first, then the photos (made smaller so they go quickly; the job file carries them full size).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Group, Loader, Progress, SegmentedControl, Stack, Switch, Text } from '@mantine/core';
@@ -13,33 +13,33 @@ import { openCamera, scanVideo, stopCamera } from './link/scan';
 import { answerLink, opened } from './link/rtc';
 import { packCode, unpackCode, type LinkCode } from './link/signal';
 import { CODE } from './link/codec';
-import { photosOf, type LinkPhoto } from './link/payload';
+import type { LinkPhoto } from './link/payload';
 import { CODE_SIZES, FrameSchedule, prepare, sendOverLink, type CodeSize, type Outgoing } from './link/transfer';
 
 type Phase = 'scan' | 'joining' | 'answer' | 'link' | 'stream' | 'sent';
 
-/** Photos made smaller for the flashing code: 1024 px across at most, WebP where the phone makes it (else JPEG). */
-async function smallerPhotos(results: FieldResults): Promise<LinkPhoto[]> {
+/** Photos made smaller for the flashing code: 1024 px across at most, JPEG (the computer writes their location in). */
+async function smallerPhotos(photos: LinkPhoto[]): Promise<LinkPhoto[]> {
   const out: LinkPhoto[] = [];
-  for (const v of results.visits)
-    for (const p of v.photos ?? []) {
-      try {
-        const img = new Image();
-        img.src = p.dataUrl;
-        await img.decode();
-        const scale = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
-        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const blob = (await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/webp', 0.6))) ?? null;
-        const use = blob?.type === 'image/webp' ? blob : await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.65));
-        if (use) out.push({ siteId: v.siteId, name: p.name.replace(/\.\w+$/, '') + (use.type === 'image/webp' ? '.webp' : '.jpg'), type: use.type, bytes: new Uint8Array(await use.arrayBuffer()) });
-      } catch {
-        const full = photosOf({ ...results, visits: [{ ...v, photos: [p] }] })[0];
-        if (full) out.push(full);
-      }
+  for (const p of photos) {
+    const url = URL.createObjectURL(new Blob([p.bytes as BlobPart], { type: p.type }));
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      const scale = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const use = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.62));
+      out.push(use ? { siteId: p.siteId, name: p.name.replace(/\.\w+$/, '.jpg'), type: 'image/jpeg', bytes: new Uint8Array(await use.arrayBuffer()) } : p);
+    } catch {
+      out.push(p);
+    } finally {
+      URL.revokeObjectURL(url);
     }
+  }
   return out;
 }
 
@@ -60,7 +60,7 @@ function useScreenOn(on: boolean) {
   }, [on]);
 }
 
-export function LinkPage({ results, onSent, onCancel }: { results: FieldResults; onSent: () => void; onCancel: () => void }) {
+export function LinkPage({ results, photos, onSent, onCancel }: { results: FieldResults; photos: LinkPhoto[]; onSent: () => void; onCancel: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [phase, setPhase] = useState<Phase>('scan');
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +111,7 @@ export function LinkPage({ results, onSent, onCancel }: { results: FieldResults;
             setPhase('answer');
             setStarted(Date.now());
             const key = offer.key!;
-            const [whole, smaller] = await Promise.all([prepare(results, offer.session, key), smallerPhotos(results).then((p) => prepare(results, offer.session, key, p))]);
+            const [whole, smaller] = await Promise.all([prepare(results, offer.session, key, photos), smallerPhotos(photos).then((p) => prepare(results, offer.session, key, p))]);
             setFull(whole);
             setSmall(smaller);
             // 2a. straight over Wi-Fi, when it connects
@@ -178,7 +178,7 @@ export function LinkPage({ results, onSent, onCancel }: { results: FieldResults;
       {phase === 'scan' && (
         <>
           <Text size="sm">
-            On the computer, open the project and choose <b>⋯ → Receive from a phone</b>. Point this camera at the code it shows.
+            On the computer, choose <b>Import data → Receive from a phone</b> (or a project’s <b>⋯ → Field work → Receive from a phone</b>). Point this camera at the code it shows.
           </Text>
           <video ref={videoRef} muted playsInline aria-label="This phone’s camera" style={{ width: '100%', borderRadius: 8, background: '#000', aspectRatio: '3 / 4', objectFit: 'cover' }} />
         </>

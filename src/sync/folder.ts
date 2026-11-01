@@ -141,8 +141,8 @@ export function handleFolder(root: DirectoryHandle): WorkspaceFolder {
 }
 
 /** A folder held in memory – for tests. `files` maps paths to their content. */
-export function memoryFolder(name = 'Workspace'): WorkspaceFolder & { files: Map<string, { text: string; lastModified: number }>; offline: boolean } {
-  const files = new Map<string, { text: string; lastModified: number }>();
+export function memoryFolder(name = 'Workspace'): WorkspaceFolder & { files: Map<string, { text: string; lastModified: number; bytes?: Uint8Array }>; offline: boolean } {
+  const files = new Map<string, { text: string; lastModified: number; bytes?: Uint8Array }>();
   let clock = Date.now();
   const check = () => {
     if (folder.offline) throw Object.assign(new Error('The folder is not available'), { name: 'NotReadableError' });
@@ -166,7 +166,7 @@ export function memoryFolder(name = 'Workspace'): WorkspaceFolder & { files: Map
     async info(path: string) {
       check();
       const f = files.get(path);
-      return f ? { lastModified: f.lastModified, size: new TextEncoder().encode(f.text).length } : null;
+      return f ? { lastModified: f.lastModified, size: f.bytes ? f.bytes.length : new TextEncoder().encode(f.text).length } : null;
     },
     async read(path: string) {
       check();
@@ -176,7 +176,7 @@ export function memoryFolder(name = 'Workspace'): WorkspaceFolder & { files: Map
     async file(path: string) {
       check();
       const f = files.get(path);
-      return f ? new File([f.text], path.split('/').pop() ?? path, { lastModified: f.lastModified }) : null;
+      return f ? new File([(f.bytes ?? f.text) as BlobPart], path.split('/').pop() ?? path, { lastModified: f.lastModified }) : null;
     },
     async write(path: string, text: string) {
       check();
@@ -184,7 +184,8 @@ export function memoryFolder(name = 'Workspace'): WorkspaceFolder & { files: Map
     },
     async writeBlob(path: string, data: Blob) {
       check();
-      files.set(path, { text: `[${data.type || 'binary'}, ${data.size} bytes]`, lastModified: (clock = Math.max(clock + 1, Date.now())) });
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      files.set(path, { text: `[${data.type || 'binary'}, ${data.size} bytes]`, bytes, lastModified: (clock = Math.max(clock + 1, Date.now())) });
     },
     async remove(path: string) {
       check();

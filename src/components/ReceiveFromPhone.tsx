@@ -18,7 +18,8 @@ type Phase = 'starting' | 'waiting' | 'connecting' | 'link' | 'camera' | 'failed
 
 const OLDER_CODE = 'The phone is sending for an older code. On the phone, tap Stop, then Send to the computer again and scan the code on this screen.';
 
-export function ReceiveFromPhone({ opened: isOpen, onClose, onReceived }: { opened: boolean; onClose: () => void; onReceived: (results: FieldResults, name: string) => void }) {
+/** `onReceived`: the results, a name for them, and whether they came by the flashing code (photos made smaller). */
+export function ReceiveFromPhone({ opened: isOpen, onClose, onReceived }: { opened: boolean; onClose: () => void; onReceived: (results: FieldResults, name: string, smaller: boolean) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [phase, setPhase] = useState<Phase>('starting');
   const [error, setError] = useState<string | null>(null);
@@ -29,10 +30,11 @@ export function ReceiveFromPhone({ opened: isOpen, onClose, onReceived }: { open
   const [wifiBlocked, setWifiBlocked] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const finish = useRef<(r: Received) => void>(() => undefined);
+  const byCamera = useRef(false);
 
   const name = (r: Received) => `Phone – ${r.results.sheet.project.code || r.results.sheet.project.name} – ${r.results.sheet.date}`;
   finish.current = (r: Received) => {
-    onReceived(r.results, name(r));
+    onReceived(r.results, name(r), byCamera.current);
     onClose();
   };
 
@@ -45,6 +47,7 @@ export function ReceiveFromPhone({ opened: isOpen, onClose, onReceived }: { open
     let answered = false;
     let blockedTimer = 0;
     setPhase('starting');
+    byCamera.current = false;
     setError(null);
     setOffer(null);
     setGot(null);
@@ -108,6 +111,7 @@ export function ReceiveFromPhone({ opened: isOpen, onClose, onReceived }: { open
                   setWifiBlocked(true);
                 }, 9000);
               } else if (kind === 'frame') {
+                byCamera.current = true;
                 setPhase((p) => (p === 'link' ? p : 'camera'));
                 setProblem((x) => (x === OLDER_CODE ? null : x));
               } else if (kind === 'other') setProblem(OLDER_CODE);
