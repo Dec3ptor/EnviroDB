@@ -76,7 +76,9 @@ describe('a job started on the phone', () => {
     expect(c.results.newSites!.map((n) => [n.code, n.auto])).toEqual([['P1', true], ['P2', true]]);
     expect(c.photos.map((p) => p.name)).toEqual(['P1 1.jpg', 'P1 2.jpg', 'P2 1.jpg']);
     expect(c.photos[1]).toMatchObject({ lat: near.lat, acc: 5 });
-    expect(Array.from(c.photos[0].bytes)).toEqual(Array.from(jpeg('camera'))); // as the camera took it
+    // kept as the camera took it, read only when it goes
+    expect(c.photos[0].bytes).toBeUndefined();
+    expect(Array.from(new Uint8Array(await c.photos[0].blob!.arrayBuffer()))).toEqual(Array.from(jpeg('camera')));
   });
 
   it('on a phone set up with the team key, a job goes locked with it', async () => {
@@ -106,7 +108,7 @@ describe('the job file', () => {
     const c = (await jobContents(job.id, 'Sam'))!;
     const zipBytes = await jobZip(c.sheet, c.results, c.photos);
     const zip = await JSZip.loadAsync(zipBytes);
-    expect(Object.keys(zip.files).sort()).toEqual(['Read me.txt', 'photos.csv', 'photos/', 'photos/P1 1.jpg', 'photos/P1 2.jpg', 'photos/P2 1.jpg', 'points.csv', 'points.geojson', RESULTS_FILE].sort());
+    expect(Object.keys(zip.files).sort()).toEqual(['Read me.txt', 'photos.csv', 'photos/P1 1.jpg', 'photos/P1 2.jpg', 'photos/P2 1.jpg', 'points.csv', 'points.geojson', RESULTS_FILE].sort());
     // each photo carries where it was taken; the camera's own location is kept
     const p11 = await zip.file('photos/P1 1.jpg')!.async('uint8array');
     expect(readPhotoInfo(p11).gps!.lat).toBeCloseTo(c.photos[0].lat!, 6);
@@ -186,7 +188,8 @@ describe('adding a job on the computer', () => {
     expect(p1.near[0].site.code).toBe('US1');
     expect(p1.near[0].m).toBeLessThan(NEAR_M);
     expect(p1.suggest).toBe(us1.id);
-    expect(p2.suggest).toBe('new');
+    // photos only, far from any site: kept with the project to start with (made a new site here, below)
+    expect(p2.suggest).toBe('project');
     const attach = defaultAttach(plan);
     expect([...attach]).toEqual([['p1', us1.id]]);
     const res = await commitField(projectId, plan, 'job.zip', { attach, newSites: new Set(['p2']) });

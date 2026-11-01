@@ -2,14 +2,15 @@
 // point – full size, each with where it was taken – and naming a point or adding a reading on the spot.
 
 import { useEffect, useMemo, useState } from 'react';
-import { ActionIcon, Badge, Button, Chip, FileButton, Group, Image, Modal, Select, SimpleGrid, Stack, Text, TextInput, Textarea, UnstyledButton } from '@mantine/core';
+import { ActionIcon, Badge, Button, Chip, FileButton, Group, Image, Modal, Select, SimpleGrid, Stack, Text, TextInput, Textarea, UnstyledButton, type ButtonProps } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from 'react-router-dom';
 import { IconCamera, IconCurrentLocation, IconMapPin, IconPhoto, IconTrash } from '@tabler/icons-react';
-import { addMeasure, addPhoto, fieldDb, getPref, knownProjects, newJob, removePhoto, setPhotoGps, updateSite, type StoredPhoto } from './db';
+import { addMeasure, addPhoto, addPhotosByPlace, fieldDb, getPref, knownProjects, newJob, removePhoto, setPhotoGps, updateSite, type GalleryPhoto, type StoredPhoto } from './db';
 import { currentPosition, recentFix, useMyPosition } from './FieldMap';
 import type { FieldMeasure, FieldSheet, FieldSite } from './model';
+import { localTime, takenOf } from './places';
 import { SITE_TYPES } from '../db/types';
 import { BUILT_IN_PARAMETERS } from '../data/parameters';
 import { unitLabel } from '../lib/units';
@@ -244,13 +245,24 @@ function PhotoViewer({ photo, onClose }: { photo: StoredPhoto | null; onClose: (
  * The photos at a site or point: taken with the camera at full size, each with where it was taken (the phone's
  * GPS, followed while this is on screen) – or added from the gallery, with the camera's own location if it kept one.
  */
-export function PhotoSection({ sheetId, site, onAdded }: { sheetId: string; site: FieldSite; onAdded: () => void }) {
+export function PhotoSection({ sheetId, site, onAdded, followGps = true, onPlaced }: {
+  sheetId: string;
+  site: FieldSite;
+  /** A photo added (`taken`: when, for one from the gallery – local time). */
+  onAdded: (taken?: string) => void;
+  /** Keep the phone's GPS going for photos taken here (not for a point made from photos already taken). */
+  followGps?: boolean;
+  /** A photo from the gallery with the camera's location, added to a point with none yet: the point can go there. */
+  onPlaced?: (gps: NonNullable<StoredPhoto['gps']>, taken: string) => void;
+}) {
   const photos = useLiveQuery(() => fieldDb.photos.where('[sheetId+siteId]').equals([sheetId, site.id]).sortBy('at'), [sheetId, site.id]);
-  const { me, error } = useMyPosition(true);
+  const { me, error } = useMyPosition(followGps);
   const [busy, setBusy] = useState(0);
   const [open, setOpen] = useState<StoredPhoto | null>(null);
   const add = async (files: File[], from: 'camera' | 'gallery') => {
     if (!files.length) return;
+    // the first photos at a point with none: one from the gallery with the camera's location can place it
+    let mayPlace = !photos?.length;
     setBusy((n) => n + files.length);
     if (!persisted) {
       persisted = true;
@@ -267,9 +279,14 @@ export function PhotoSection({ sheetId, site, onAdded }: { sheetId: string; site
         if (fix) [gps, gpsFrom] = [fix, 'phone'];
         const taken = from === 'gallery' ? (info.taken ? new Date(info.taken) : new Date(f.lastModified || Date.now())) : new Date();
         const id = await addPhoto({ sheetId, siteId: site.id, blob, type: blob.type, size: blob.size, thumb: await thumbOf(blob), at: (Number.isNaN(taken.getTime()) ? new Date() : taken).toISOString(), ...(gps ? { gps, gpsFrom } : {}) });
+        const when = info.taken ?? localTime(taken);
+        if (mayPlace && from === 'gallery' && gps && gpsFrom === 'camera') {
+          mayPlace = false;
+          onPlaced?.(gps, when);
+        }
         // no fix yet: the location follows when the phone has it
         if (from === 'camera' && !gps) void currentPosition().then((p) => setPhotoGps(id, p, 'phone')).catch(() => undefined);
-        onAdded();
+        onAdded(from === 'gallery' ? when : undefined);
       } catch (e) {
         notifications.show({ color: 'red', message: (e as Error).message });
       } finally {
@@ -296,8 +313,9 @@ export function PhotoSection({ sheetId, site, onAdded }: { sheetId: string; site
           )}
         </FileButton>
       </Group>
-      <Text size="xs" c={error ? 'orange' : 'dimmed'}>
-        <IconCurrentLocation size={12} style={{ verticalAlign: -1 }} /> {error ? `${error} Photos are kept without a location.` : me ? `Photos are located to ±${me.acc ?? '?'} m.` : 'Finding the location for photos…'} Full size, as the camera takes them.
+      <Text size="xs" c={followGps && error ? 'orange' : 'dimmed'}>
+        <IconCurrentLocation size={12} style={{ verticalAlign: -1 }} />{' '}
+        {!followGps ? 'Photos keep the location the camera wrote into them.' : error ? `${error} Photos are kept without a location.` : me ? `Photos are located to ±${me.acc ?? '?'} m.` : 'Finding the location for photos…'} Full size, as the camera takes them.
       </Text>
       {!!photos?.length && (
         <>
@@ -321,6 +339,116 @@ export function PhotoSection({ sheetId, site, onAdded }: { sheetId: string; site
       )}
       <PhotoViewer photo={open} onClose={() => setOpen(null)} />
     </Stack>
+  );
+}
+
+// ------------------------------------------------------------ photos already taken
+
+/** Photos picked from the gallery, read: each kept as taken, with where and when the camera says it was. */
+async function readGallery(files: File[], onEach?: (done: number) => void): Promise<{ photos: GalleryPhoto[]; failed: string[] }> {
+  const photos: GalleryPhoto[] = [];
+  const failed: string[] = [];
+  for (const [i, f] of files.entries()) {
+    try {
+      // what the camera wrote, from the photo as picked (a HEIC turned into a JPEG loses it; a damaged one says nothing)
+      const head = /jpe?g$/i.test(f.type) || /\.jpe?g$/i.test(f.name) ? new Uint8Array(await f.slice(0, 256 * 1024).arrayBuffer()) : null;
+      let info: ReturnType<typeof readPhotoInfo> = {};
+      try {
+        if (head) info = readPhotoInfo(head);
+      } catch {
+        // kept without it
+      }
+      const blob = await keepPhoto(f);
+      photos.push({ blob, type: blob.type, size: blob.size, thumb: await thumbOf(blob), ...(info.gps ? { gps: info.gps } : {}), taken: takenOf(info.taken, f) });
+    } catch (e) {
+      failed.push((e as Error).message);
+    }
+    onEach?.(i + 1);
+  }
+  return { photos, failed };
+}
+
+/**
+ * Photos already taken – back at the office, say – added to a job: each with the point where it was taken (a point
+ * that day within a few steps, or a new one placed by the photo's own location, never by where the phone is now).
+ */
+export async function addFromGallery(sheetId: string, files: File[], onEach?: (done: number) => void): Promise<string | undefined> {
+  if (!persisted) {
+    persisted = true;
+    void navigator.storage?.persist?.().catch(() => undefined);
+  }
+  const { photos, failed } = await readGallery(files, onEach);
+  if (failed.length) notifications.show({ color: 'red', message: failed.slice(0, 2).join(' ') });
+  if (!photos.length) return undefined;
+  const r = await addPhotosByPlace(sheetId, photos);
+  const { placedPoints } = r;
+  notifications.show({
+    color: r.unplaced ? 'orange' : 'teal',
+    message:
+      `${r.added} photo${r.added === 1 ? '' : 's'} added${placedPoints > 0 ? ` – ${placedPoints === 1 ? 'one point' : `${placedPoints} points`}, each where its photos were taken` : ''}.` +
+      (r.unplaced ? ` ${r.unplaced} had no location (a phone’s browser can take it off): choose where ${r.unplaced === 1 ? 'it goes' : 'they go'} on the computer.` : ''),
+    autoClose: r.unplaced ? 9000 : 4000,
+  });
+  return r.firstPoint;
+}
+
+/** The button for photos already taken: picks them, reads them, adds them (and says how far it's got). */
+export function GalleryButton({ onFiles, label = 'Photos from the gallery', ...props }: { onFiles: (files: File[], onEach: (done: number) => void) => Promise<unknown>; label?: string } & Omit<ButtonProps, 'onClick' | 'children'>) {
+  const [busy, setBusy] = useState<{ done: number; of: number } | null>(null);
+  return (
+    <FileButton
+      accept="image/*"
+      multiple
+      onChange={(files) => {
+        if (!files?.length) return;
+        setBusy({ done: 0, of: files.length });
+        void onFiles(files, (done) => setBusy({ done, of: files.length })).finally(() => setBusy(null));
+      }}
+    >
+      {(fb) => (
+        <Button {...props} {...fb} leftSection={<IconPhoto size={18} />} loading={!!busy} loaderProps={{ type: 'dots' }}>
+          {busy ? `${busy.done} of ${busy.of}…` : label}
+        </Button>
+      )}
+    </FileButton>
+  );
+}
+
+/** A job's name and project, to change. */
+export function EditJobModal({ opened, sheet, onClose }: { opened: boolean; sheet: FieldSheet; onClose: () => void }) {
+  const projects = useLiveQuery(() => knownProjects(), []) ?? [];
+  const [name, setName] = useState(sheet.round);
+  const [projectId, setProjectId] = useState(sheet.project.id);
+  useEffect(() => {
+    if (!opened) return;
+    setName(sheet.round);
+    setProjectId(sheet.project.id);
+  }, [opened]);
+  const save = async () => {
+    const project = projectId ? (projects.find((p) => p.project.id === projectId)?.project ?? sheet.project) : { id: '', name: '' };
+    await fieldDb.transaction('rw', fieldDb.sheets, async () => {
+      const cur = await fieldDb.sheets.get(sheet.id);
+      if (cur) await fieldDb.sheets.put({ ...cur, sheet: { ...cur.sheet, round: name.trim() || cur.sheet.round, project } });
+    });
+    onClose();
+  };
+  const options = [{ value: '', label: 'Choose on the computer' }, ...projects.map((p) => ({ value: p.project.id, label: p.project.code ? `${p.project.name} (${p.project.code})` : p.project.name }))];
+  if (sheet.project.id && !projects.some((p) => p.project.id === sheet.project.id)) options.push({ value: sheet.project.id, label: sheet.project.name });
+  return (
+    <Modal opened={opened} onClose={onClose} title="This job" centered>
+      <Stack gap="sm">
+        <TextInput size="md" label="What’s the job?" value={name} onChange={(e) => setName(e.currentTarget.value)} />
+        <Select size="md" label="Project" data={options} value={projectId} onChange={(v) => setProjectId(v ?? '')} allowDeselect={false} />
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => void save()} disabled={!name.trim()}>
+            Save
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }
 

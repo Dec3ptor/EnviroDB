@@ -7,7 +7,7 @@ import { Alert, Anchor, Badge, Button, Checkbox, Group, Modal, ScrollArea, Segme
 import { useIntersection } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconCamera } from '@tabler/icons-react';
-import type { FigureImage, Sample, Site } from '../../db/types';
+import type { FigureImage, ImportBatch, Sample, Site } from '../../db/types';
 import { photoAsFigure, photoCaption, photoName, photosFor, projectPhotos, type FieldPhoto } from '../../lib/photos';
 import { formatDate, formatDateLong } from '../../lib/dates';
 import { usePhotoUrl } from '../../hooks/usePhotoUrl';
@@ -22,7 +22,7 @@ function PhotoTile({ photo, site, chosen, added, onToggle }: { photo: FieldPhoto
     if (entry?.isIntersecting) setSeen(true);
   }, [entry?.isIntersecting]);
   const url = usePhotoUrl(photo.path, seen);
-  const label = `${site?.code ?? 'Site'} ${formatDate(day(photo))} – ${photoName(photo.path)}`;
+  const label = `${site?.code ?? photo.label ?? 'Site'} ${formatDate(day(photo))} – ${photoName(photo.path)}`;
   return (
     <UnstyledButton
       ref={ref}
@@ -52,7 +52,7 @@ function PhotoTile({ photo, site, chosen, added, onToggle }: { photo: FieldPhoto
       </div>
       <Group gap={4} mt={4} wrap="nowrap" justify="space-between">
         <Text size="xs" fw={600} truncate>
-          {site?.code ?? '?'}
+          {site?.code ?? photo.label ?? '?'}
           {site?.name ? (
             <Text span size="xs" c="dimmed" fw={400}>
               {' '}
@@ -71,9 +71,11 @@ function PhotoTile({ photo, site, chosen, added, onToggle }: { photo: FieldPhoto
   );
 }
 
-export function FieldPhotoPicker({ samples, sites, period, siteIds, images, onAdd }: {
+export function FieldPhotoPicker({ samples, sites, imports, period, siteIds, images, onAdd }: {
   samples: Sample[];
   sites: Site[];
+  /** The project's imports: the photos kept with the project (no site) are on them. */
+  imports?: ImportBatch[];
   period: { start: string; end: string; label?: string };
   /** The sites the report covers (none: every site). */
   siteIds?: string[] | null;
@@ -83,7 +85,7 @@ export function FieldPhotoPicker({ samples, sites, period, siteIds, images, onAd
 }) {
   const siteMap = useMemo(() => new Map(sites.map((s) => [s.id, s])), [sites]);
   const order = useMemo(() => new Map(sites.map((s, i) => [s.id, i])), [sites]);
-  const all = useMemo(() => projectPhotos(samples, order), [samples, order]);
+  const all = useMemo(() => projectPhotos(samples, order, imports), [samples, order, imports]);
   const inReport = useMemo(() => photosFor(all, period, siteIds), [all, period, siteIds]);
   const added = useMemo(() => new Set(images.map((im) => im.from).filter((p): p is string => !!p)), [images]);
   const [open, setOpen] = useState(false);
@@ -120,7 +122,7 @@ export function FieldPhotoPicker({ samples, sites, period, siteIds, images, onAd
     const failed: string[] = [];
     for (const p of list) {
       try {
-        out.push(await photoAsFigure(p, photoCaption(siteMap.get(p.siteId), p.date)));
+        out.push(await photoAsFigure(p, photoCaption(siteMap.get(p.siteId), p.date, p.label)));
       } catch (e) {
         failed.push((e as Error).message);
       }
@@ -158,7 +160,7 @@ export function FieldPhotoPicker({ samples, sites, period, siteIds, images, onAd
               ]}
             />
             <Text size="xs" c="dimmed">
-              {scope === 'report' ? `${period.label ?? `${formatDate(period.start)} – ${formatDate(period.end)}`}${where}` : 'Every photo kept with the project’s samples'}
+              {scope === 'report' ? `${period.label ?? `${formatDate(period.start)} – ${formatDate(period.end)}`}${where}` : 'Every photo kept with the project – at its sites, and its own'}
             </Text>
           </Group>
           {!shown.length ? (

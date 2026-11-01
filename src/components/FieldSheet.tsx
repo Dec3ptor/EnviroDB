@@ -9,7 +9,7 @@ import { useProject } from '../hooks/useProjectData';
 import { useSettings } from '../hooks/useSettings';
 import { ReportSites } from './report/ReportSites';
 import { PopupPicker, type PickerData } from './PopupPicker';
-import { commitField, defaultAttach, defaultMeasures, makeSheet, planField } from '../db/field';
+import { commitField, defaultMeasures, makeSheet, planField } from '../db/field';
 import { lockFile, sheetLink, type FieldResults } from '../field/model';
 import { QrCode } from './QrCode';
 import { MoreOptions } from './common';
@@ -154,6 +154,8 @@ export function FieldSheetModal({ opened, onClose }: { opened: boolean; onClose:
 }
 
 const isJobName = (r: FieldResults) => r.sheet.id.startsWith('job-');
+/** Photos dropped on the Import page (not from a phone). */
+const isPhotosName = (r: FieldResults) => r.sheet.id.startsWith('photos-');
 
 /** EnviroDB field on a phone: a code to scan once (then kept on the home screen); a quick job starts there. */
 export function PhoneAppModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
@@ -186,11 +188,10 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded, more, s
   const data = useProject();
   const plan = useMemo(() => (results ? planField(data, results) : null), [data, results]);
   const [busy, setBusy] = useState(false);
-  // each new point: a new site, with one of the project's sites (one nearby to start with), or left out;
-  // the locations set in the field: all taken unless unticked
+  // each new point: a new site, with one of the project's sites (one nearby to start with), its photos kept with the
+  // project (no site), or left out; the locations set in the field: all taken unless unticked
   const [pointChoice, setPointChoice] = useState<Record<string, string>>({});
   const [skipLoc, setSkipLoc] = useState<Set<string>>(new Set());
-  const suggested = useMemo(() => (plan ? defaultAttach(plan) : new Map<string, string>()), [plan]);
   if (!results || !plan) return null;
   const toggle = (set: Set<string>, id: string, on: boolean) => {
     const next = new Set(set);
@@ -199,11 +200,14 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded, more, s
     return next;
   };
   const newOnes = plan.newSites.filter((n) => !n.existing);
-  const choiceOf = (id: string) => pointChoice[id] ?? suggested.get(id) ?? 'new';
+  const choiceOf = (id: string) => pointChoice[id] ?? newOnes.find((n) => n.field.id === id)?.suggest ?? 'new';
   const chosenNew = new Set(newOnes.filter((n) => choiceOf(n.field.id) === 'new').map((n) => n.field.id));
-  const attach = new Map(newOnes.filter((n) => !['new', 'skip'].includes(choiceOf(n.field.id))).map((n) => [n.field.id, choiceOf(n.field.id)]));
+  const attach = new Map(newOnes.filter((n) => !['new', 'skip', 'project'].includes(choiceOf(n.field.id))).map((n) => [n.field.id, choiceOf(n.field.id)]));
+  const toProject = new Set(newOnes.filter((n) => n.photosOnly && choiceOf(n.field.id) === 'project').map((n) => n.field.id));
   const chosenLoc = new Set(plan.located.filter((l) => !skipLoc.has(l.site.id)).map((l) => l.site.id));
-  const leftOut = new Set(newOnes.filter((n) => choiceOf(n.field.id) === 'skip').map((n) => n.site.id));
+  const leftOut = new Set(newOnes.filter((n) => ['skip', 'project'].includes(choiceOf(n.field.id))).map((n) => n.site.id));
+  // the photos kept with the project
+  const projectPics = plan.rows.filter((r) => newOnes.some((n) => n.site.id === r.site.id && toProject.has(n.field.id))).reduce((k, r) => k + (r.visit.photos?.length ?? 0), 0);
   // the rows as they'll be added: a point joining a site shows as that site
   const joined = new Map(newOnes.filter((n) => attach.has(n.field.id)).map((n) => [n.site.id, data.siteMap.get(attach.get(n.field.id)!)!]));
   const rows = plan.rows.filter((r) => !leftOut.has(r.site.id)).map((r) => (joined.get(r.site.id) ? { ...r, site: joined.get(r.site.id)!, from: r.site.code } : { ...r, from: undefined }));
@@ -216,15 +220,15 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded, more, s
   const add = async () => {
     setBusy(true);
     try {
-      const res = await commitField(data.project.id, plan, fileName, { newSites: chosenNew, located: chosenLoc, attach });
+      const res = await commitField(data.project.id, plan, fileName, { newSites: chosenNew, located: chosenLoc, attach, project: toProject });
       notifications.show({
         color: res.photoError ? 'orange' : 'teal',
-        title: `Field results added: ${res.samples} sites, ${res.results} readings`,
+        title: res.results ? `Field results added: ${res.samples} site${res.samples === 1 ? '' : 's'}, ${res.results} reading${res.results === 1 ? '' : 's'}` : `${res.photos} photo${res.photos === 1 ? '' : 's'} added`,
         message:
           [
             res.sitesAdded ? `${res.sitesAdded} new site${res.sitesAdded === 1 ? '' : 's'} added.` : '',
             res.located ? `${res.located} location${res.located === 1 ? '' : 's'} set.` : '',
-            res.photos ? `${res.photos} photos saved to the shared folder (Field photos).` : '',
+            res.photos ? (res.results ? `${res.photos} photo${res.photos === 1 ? '' : 's'} saved to the shared folder (Field photos)` : `Saved to the shared folder (Field photos)`) + (res.samples && !res.results ? `, ${res.photos - res.projectPhotos} with ${res.samples === 1 ? 'a site’s sample' : `${res.samples} sites’ samples`}` : '') + (res.projectPhotos ? `, ${res.projectPhotos} kept with the project – choose them for a report’s figures` : '') + '.' : '',
             res.photoError ?? '',
           ]
             .filter(Boolean)
@@ -241,12 +245,13 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded, more, s
   const params = [...new Map(rows.flatMap((r) => r.values.map((v) => [v.param.id, v.param]))).values()];
   const warnings = rows.flatMap((r) => r.values.filter((v) => v.warning).map((v) => `${r.site.code} ${v.param.name}: ${fmtNum(v.value)} – ${v.warning}`));
   return (
-    <Modal opened onClose={onClose} title={isJobName(results) ? 'A field job from a phone' : 'Field results from a phone'} size="xl">
+    <Modal opened onClose={onClose} title={isPhotosName(results) ? 'Photos to add' : isJobName(results) ? 'A field job from a phone' : 'Field results from a phone'} size="xl">
       <Stack gap="sm">
         <Text size="sm">
-          <b>{results.sheet.round || 'Field results'}</b> · {formatDate(results.sheet.date)}
-          {results.by ? ` · sampled by ${results.by}` : ''}
-          {results.sent ? ` · sent ${formatDate(results.sent.slice(0, 10))}` : ''}
+          <b>{isPhotosName(results) ? `${results.visits.reduce((n, v) => n + (v.photos?.length ?? 0), 0)} photos` : results.sheet.round || 'Field results'}</b> · {isPhotosName(results) ? 'from ' : ''}
+          {formatDate(results.sheet.date)}
+          {results.by && !isPhotosName(results) ? ` · sampled by ${results.by}` : ''}
+          {results.sent && !isPhotosName(results) ? ` · sent ${formatDate(results.sent.slice(0, 10))}` : ''}
           {more ? ` · ${more}` : ''}
         </Text>
         {other && (
@@ -258,13 +263,13 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded, more, s
         )}
         {!results.sheet.project.id && (
           <Text size="sm" c="dimmed">
-            Adding to <b>{data.project.name}</b>. The job was started without a project: for another one, close this and choose it under Project.
+            Adding to <b>{data.project.name}</b>. {isPhotosName(results) ? 'For' : 'The job was started without a project: for'} another one, close this and choose it under Project.
           </Text>
         )}
         {plan.newSites.length > 0 && (
           <div>
             <Text size="sm" fw={600} mb={4}>
-              Points from the field
+              {isPhotosName(results) ? 'Where the photos were taken' : 'Points from the field'}
             </Text>
             <Stack gap={6}>
               {plan.newSites.map((n) => {
@@ -300,7 +305,7 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded, more, s
                       data={[
                         { group: 'Add', items: [{ value: 'new', label: `A new site, ${n.field.code} (${n.site.type})` }] },
                         ...(nearby.length || rest.length ? [{ group: 'Part of a site', items: [...nearby, ...rest] }] : []),
-                        { group: 'Or', items: [{ value: 'skip', label: 'Leave it out' }] },
+                        { group: 'Or', items: [...(n.photosOnly ? [{ value: 'project', label: 'With the project – no site' }] : []), { value: 'skip', label: 'Leave it out' }] },
                       ]}
                     />
                   </Group>
@@ -309,7 +314,9 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded, more, s
             </Stack>
             {newOnes.some((n) => n.field.auto) && (
               <Text size="xs" c="dimmed" mt={4}>
-                Points named by the phone (P1, P2 …) a few metres from one of the project’s sites start as part of that site; the others as new sites.
+                {newOnes.some((n) => n.photosOnly)
+                  ? 'Photos taken a few metres from one of the project’s sites start as part of that site (they join its sample for the day); the others are kept with the project – no site – ready for report figures. Choose a site or a new one for any of them.'
+                  : 'Points named by the phone (P1, P2 …) a few metres from one of the project’s sites start as part of that site; the others as new sites.'}
               </Text>
             )}
           </div>
@@ -325,7 +332,7 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded, more, s
                   key={l.site.id}
                   checked={chosenLoc.has(l.site.id)}
                   onChange={(e) => setSkipLoc(toggle(skipLoc, l.site.id, e.currentTarget.checked))}
-                  label={`${l.site.code}: ${l.movedM === null ? `had no location – now ${where(l.lat, l.lng)}` : `moved ${away(l.movedM)}, to ${where(l.lat, l.lng)}`} · ${l.how === 'gps' ? `by GPS${l.acc ? ` ±${l.acc} m` : ''}` : 'placed on the map'}`}
+                  label={`${l.site.code}: ${l.movedM === null ? `had no location – now ${where(l.lat, l.lng)}` : `moved ${away(l.movedM)}, to ${where(l.lat, l.lng)}`} · ${l.how === 'gps' ? `by GPS${l.acc ? ` ±${l.acc} m` : ''}` : l.how === 'photo' ? 'from its photos' : 'placed on the map'}`}
                 />
               ))}
             </Stack>
@@ -337,7 +344,7 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded, more, s
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Site</Table.Th>
-                  <Table.Th>Sampled</Table.Th>
+                  <Table.Th>{params.length ? 'Sampled' : 'Taken'}</Table.Th>
                   {params.map((p) => (
                     <Table.Th key={p.id} ta="right">
                       {p.short || p.name}
@@ -384,7 +391,12 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded, more, s
         )}
         {pics.length > 0 && (
           <Text size="sm">
-            {pics.length} photo{pics.length === 1 ? '' : 's'}{smaller ? ' (made smaller to come by the flashing code – the phone’s job file has them full size)' : ', full size'}{located ? `, ${located === pics.length ? 'each' : `${located}`} with where ${located === 1 ? 'it was' : 'they were'} taken` : ''} – saved to the shared folder (Field photos) and kept with the samples, ready for report figures.
+            {pics.length} photo{pics.length === 1 ? '' : 's'}{smaller ? ' (made smaller to come by the flashing code – the phone’s job file has them full size)' : ', full size'}{located ? `, ${located === pics.length ? (pics.length === 1 ? '' : 'each ') : `${located} `}with where ${located === 1 ? 'it was' : 'they were'} taken` : ''} – saved to the shared folder (Field photos) and kept with the samples, ready for report figures.
+          </Text>
+        )}
+        {projectPics > 0 && (
+          <Text size="sm">
+            {projectPics} photo{projectPics === 1 ? '' : 's'} kept with the project – no site: saved to the shared folder (Field photos/{data.project.code || data.project.name}), ready for report figures.
           </Text>
         )}
         {plan.notSampled.length > 0 && (
@@ -406,15 +418,17 @@ export function FieldResultsModal({ results, fileName, onClose, onAdded, more, s
             Left out: {[plan.unknownSites.length && `${plan.unknownSites.length} sites this project doesn’t have`, plan.unknownParams.length && `readings of ${plan.unknownParams.join(', ')}`].filter(Boolean).join('; ')}.
           </Text>
         )}
-        <Text size="xs" c="dimmed">
-          The readings join each site’s sample for the day; what was seen goes in its notes.
-        </Text>
+        {params.length > 0 && (
+          <Text size="xs" c="dimmed">
+            The readings join each site’s sample for the day; what was seen goes in its notes.
+          </Text>
+        )}
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
             Cancel
           </Button>
-          <Button leftSection={<IconPlus size={16} />} loading={busy} disabled={!rows.length && !chosenNew.size && !chosenLoc.size} onClick={() => void add()}>
-            {rows.length ? `Add ${rows.length} site${rows.length === 1 ? '’s' : 's’'} results` : 'Add'}
+          <Button leftSection={<IconPlus size={16} />} loading={busy} disabled={!rows.length && !chosenNew.size && !chosenLoc.size && !projectPics} onClick={() => void add()}>
+            {rows.length ? `Add ${rows.length} site${rows.length === 1 ? '’s' : 's’'} ${rows.every((r) => !r.values.length) ? 'photos' : 'results'}${projectPics ? ' and the project’s photos' : ''}` : projectPics ? `Add ${projectPics} photo${projectPics === 1 ? '' : 's'} to the project` : 'Add'}
           </Button>
         </Group>
       </Stack>

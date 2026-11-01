@@ -452,9 +452,11 @@ there as they work and show up for the others within seconds.
   and pick any readings to take. At each place, **Add a point here**: it's placed where the phone is (the job page
   says how well, "Located to ±5 m") and named P1, P2 … (name it, or give it a site's code, with the pencil). Then
   **Take a photo** – full size, as the camera takes it, each with where it was taken (the phone's GPS; a photo from
-  the gallery keeps the camera's own location) – and any readings and notes. **Send the job → Save the job file**
-  makes one zip: the results, the photos with their locations written into them (so any photo app or GIS places
-  them), the points and photos as spreadsheets (*points.csv*, *photos.csv*) and as a map file (*points.geojson*).
+  the gallery keeps the camera's own location) – and any readings and notes. The pencil on a job's page names it or
+  chooses its project. **Send the job → Save the job file** puts one zip together (a photo at a time, so a big job
+  fits on a phone), then *Send or save…* opens the phone's share sheet (or *Download*): the results, the photos with
+  their locations written into them (so any photo app or GIS places them), the points and photos as spreadsheets
+  (*points.csv*, *photos.csv*) and as a map file (*points.geojson*).
   Save it to the team's **Inbox** folder in OneDrive – EnviroDB on the computer lists it in the lab inbox under its
   project – or send it in Teams or by email and drop it on the Import page; a job for another project opens in
   that project. Next to the computer on the same Wi-Fi, *Send straight to the computer* instead (Import data →
@@ -462,6 +464,20 @@ there as they work and show up for the others within seconds.
   metres from a site starts as **part of that site** (its readings, notes and photos join the site's sample for
   the day), the others as **new sites** where they were taken – or choose another site, or leave it out. Sent
   again, nothing doubles: each point goes where it went before, and photos already saved are kept.
+
+  **Photos already taken** (back at the office, say): *Photos from the gallery* – on EnviroDB field's home page, or
+  in a job – makes the points from the photos themselves: those taken the same day within a few steps of each other
+  make one point, placed by the location the camera wrote into them – never where the phone is now (the phone's GPS
+  isn't used for them at all) – its time when the first was taken. Photos without a location make one point a day.
+  A phone's browser often takes the location out of photos picked from its gallery (iPhones do), so the surest way
+  for photos already taken is the computer: drop them on the **Import** page – from the phone's camera roll in
+  OneDrive, a camera's card or an email – and they're grouped the same way, read from the photos as taken. On the
+  computer, photos taken by one of the project's sites join its sample for the day; the others are **kept with the
+  project** – no site: in its *Field photos* folder, and in a report's *Choose from field photos* – rather than made
+  into sites (choose a site, a new site, or *Leave it out* for any of them). A point the phone named takes the
+  location of its first photo from the gallery. HEIC photos can't be read by a browser on a computer: set the phone
+  to save JPEG (on an iPhone, Settings → Camera → Formats → Most Compatible), or send them from EnviroDB field, which
+  turns them into JPEGs.
 
   For a monitoring round:
   1. On the computer, *Field sheet for a phone* (the project's ⋯ menu → *Field work…*; field mode is switched

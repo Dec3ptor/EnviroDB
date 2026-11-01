@@ -7,13 +7,13 @@ import { ActionIcon, Alert, Anchor, AppShell, Badge, Button, Card, Center, Chip,
 import { notifications } from '@mantine/notifications';
 import { HashRouter, Route, Routes, useLocation, useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { IconArrowLeft, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconDeviceDesktop, IconFileZip, IconKey, IconList, IconLock, IconMap, IconMapPin, IconPencil, IconPlus, IconQrcode, IconSend, IconTrash, IconWifiOff, IconFileImport } from '@tabler/icons-react';
-import { addFromCode, addSheet, addSite, addTeamKeys, deleteSheet, fieldDb, forgetTeamKeys, getPref, isJob, jobContents, knownProjects, nextPointCode, saveVisit, setPref, teamKeys, updateSite } from './db';
+import { IconArrowLeft, IconCheck, IconChevronRight, IconCloudOff, IconCurrentLocation, IconDeviceDesktop, IconFileZip, IconKey, IconList, IconLock, IconMap, IconMapPin, IconPencil, IconPlus, IconQrcode, IconSend, IconTrash, IconWifiOff, IconFileImport, IconShare, IconDownload } from '@tabler/icons-react';
+import { addFromCode, addSheet, addSite, addTeamKeys, deleteSheet, fieldDb, forgetTeamKeys, getPref, isJob, jobContents, knownProjects, newJob, nextPointCode, saveVisit, setPref, teamKeys, updateSite } from './db';
 import { isSetupText, LockedError, readSetupText, showKeyId } from './lock';
 import { currentPosition, LocationPicker, NavigateMenu, SheetMap, useMyPosition, type Placed, type SiteStatus } from './FieldMap';
 import { APPEARANCE, checkSheet, decodeCode, decodeSheet, distanceM, fieldLinkPath, FLOW, newFieldSiteId, NOT_SAMPLED, readingWarning, unlockCode, unlockFile, unlockSheet, WEATHER, type FieldCodeFill, type FieldResults, type FieldSheet, type FieldSite, type FieldVisit } from './model';
-import { AddReading, EditPointModal, NewJobModal, PhotoBadge, PhotoSection, photoSizeText, usePhotoCounts } from './JobParts';
-import { jobFileName, jobZip, lockedJob, readyPhotos, withPhotoEntries } from './package';
+import { AddReading, addFromGallery, EditJobModal, EditPointModal, GalleryButton, NewJobModal, PhotoBadge, PhotoSection, photoSizeText, usePhotoCounts } from './JobParts';
+import { jobFileName, jobZip, jobZipBlob, lockedJob, readyPhotos, withPhotoEntries } from './package';
 import type { LinkPhoto } from './link/payload';
 import { openCamera, scanVideo, stopCamera } from './link/scan';
 import { keepOffline, type OfflineState } from './offline';
@@ -108,6 +108,13 @@ function Home({ offline }: { offline: OfflineState }) {
   const photos = usePhotoCounts();
   const keys = useLiveQuery(() => teamKeys(), []);
   const [starting, setStarting] = useState(false);
+  /** Photos already taken (back at the office, say): a job of them, each placed where it was taken. */
+  const fromGallery = async (files: File[], onEach: (done: number) => void) => {
+    const job = await newJob('Photos', null, [], await getPref('name'));
+    // none of them could be read: no empty job left behind
+    if (!(await addFromGallery(job.id, files, onEach))) return void (await deleteSheet(job.id));
+    navigate(`/field/s/${encodeURIComponent(job.id)}`);
+  };
   const openFile = async (f: File | null) => {
     if (!f) return;
     try {
@@ -135,6 +142,7 @@ function Home({ offline }: { offline: OfflineState }) {
       <Button size="lg" leftSection={<IconPlus size={20} />} onClick={() => setStarting(true)}>
         New job
       </Button>
+      <GalleryButton size="md" variant="light" mt={-6} onFiles={fromGallery} />
       <NewJobModal opened={starting} onClose={() => setStarting(false)} />
       {sheets === undefined ? (
         <Loader size="sm" />
@@ -167,7 +175,7 @@ function Home({ offline }: { offline: OfflineState }) {
         })
       ) : (
         <Text size="sm" c="dimmed" ta="center" px="md">
-          A job holds the photos, locations, readings and notes from a visit. Start one here – or scan a field sheet or a site’s printed code from the computer.
+          A job holds the photos, locations, readings and notes from a visit. Start one here – or scan a field sheet or a site’s printed code from the computer. Back at the office? Photos from the gallery makes a job of photos already taken, each placed where it was taken.
         </Text>
       )}
       <Group grow gap="xs">
@@ -477,8 +485,11 @@ function SheetPage() {
   const [removing, setRemoving] = useState(false);
   const [adding, setAdding] = useState(false);
   const [atSite, setAtSite] = useState(false);
-  // on a job, the GPS kept ready: a point added is placed where the phone is now
-  const { me, error: gpsError } = useMyPosition(!!stored && isJob(stored.sheet));
+  const [editingJob, setEditingJob] = useState(false);
+  // on a job out in the field (a point added where the phone is), the GPS kept ready for the next – not for one of
+  // photos already taken, back at the office
+  const [wantGps, setWantGps] = useState(false);
+  const { me, error: gpsError } = useMyPosition(!!stored && isJob(stored.sheet) && (wantGps || stored.sheet.sites.some((x) => !x.fromPhotos)));
   const [view, setView] = useState<'list' | 'map'>(() => {
     try {
       return sessionStorage.getItem('edb.field.view') === 'map' ? 'map' : 'list';
@@ -513,11 +524,15 @@ function SheetPage() {
     setAdding(true);
     const site: FieldSite = { id: newFieldSiteId(), code: nextPointCode(sheet), type: 'Other', added: true, auto: true };
     await addSite(sheet.id, site);
+    setWantGps(true);
     markLocating(site.id, true);
     navigate(siteLink(site.id));
     currentPosition(5000)
-      .then(
-        (p) => updateSite(sheet.id, site.id, { lat: p.lat, lng: p.lng, located: { at: new Date().toISOString(), how: 'gps', acc: p.acc } }),
+      .then(async (p) => {
+        // placed by a photo from the gallery meanwhile: that stays
+        const now = (await fieldDb.sheets.get(sheet.id))?.sheet.sites.find((x) => x.id === site.id);
+        if (now?.located?.how !== 'photo') await updateSite(sheet.id, site.id, { lat: p.lat, lng: p.lng, located: { at: new Date().toISOString(), how: 'gps', acc: p.acc } });
+      },
         (e: Error) => void notifications.show({ color: 'orange', message: `${e.message} Set the point’s location on the map instead.` }),
       )
       .finally(() => markLocating(site.id, false));
@@ -526,7 +541,18 @@ function SheetPage() {
   const total = [...photos.values()].reduce((n, p) => n + p.n, 0);
   return (
     <Stack gap="sm">
-      <Header title={job ? sheet.round : sheet.project.name} back="/field" />
+      <Header
+        title={job ? sheet.round : sheet.project.name}
+        back="/field"
+        right={
+          job ? (
+            <ActionIcon variant="subtle" size="lg" aria-label="Name this job, or choose its project" onClick={() => setEditingJob(true)}>
+              <IconPencil size={18} />
+            </ActionIcon>
+          ) : undefined
+        }
+      />
+      {job && <EditJobModal opened={editingJob} sheet={sheet} onClose={() => setEditingJob(false)} />}
       <Text size="sm" c="dimmed" mt={-12}>
         {job ? sheet.project.name || 'Project chosen on the computer' : sheet.round} · {showDate(sheet.date)}
       </Text>
@@ -549,7 +575,7 @@ function SheetPage() {
       )}
       {!sheet.sites.length && (
         <Text size="sm" c="dimmed">
-          Add a point at each place you photograph or measure – it records where you are. Name it on its page if you like (or use a site’s code).
+          Add a point at each place you photograph or measure – it records where you are. Name it on its page if you like (or use a site’s code). Back at the office, Photos from the gallery places each photo where it was taken instead.
         </Text>
       )}
       {view === 'map' && sheet.sites.length > 0 && <SheetMap sites={sheet.sites} statusOf={statusOf} onOpen={(id) => navigate(siteLink(id))} />}
@@ -577,8 +603,8 @@ function SheetPage() {
                     </Text>
                   )}
                   {s.added && s.lat === undefined && (
-                    <Text size="xs" c="orange">
-                      No location yet
+                    <Text size="xs" c={s.fromPhotos ? 'dimmed' : 'orange'}>
+                      {s.fromPhotos ? 'Photos without a location' : 'No location yet'}
                     </Text>
                   )}
                 </div>
@@ -604,21 +630,20 @@ function SheetPage() {
       <Button size={job ? 'lg' : 'sm'} variant={job ? 'filled' : 'default'} leftSection={<IconCurrentLocation size={job ? 20 : 15} />} loading={adding} onClick={() => void addPoint()}>
         Add a point here
       </Button>
-      {job && (
+      {job && (me || gpsError || wantGps) && (
         <Text size="xs" c={gpsError ? 'orange' : 'dimmed'} ta="center" mt={-6}>
           {gpsError ? `${gpsError} Points can be placed on the map instead.` : me ? `Located to ±${me.acc ?? '?'} m` : 'Finding where you are…'}
         </Text>
       )}
-      {(others.length > 0 || !job) && (
-        <Group grow gap="xs">
-          {others.length > 0 && (
-            <Button variant="default" size="sm" leftSection={<IconMapPin size={15} />} onClick={() => setAtSite(true)}>
-              At a project site…
-            </Button>
-          )}
-          {!job && <ScanCodeButton size="sm" />}
-        </Group>
-      )}
+      <Group grow gap="xs">
+        {job && <GalleryButton size="sm" variant="default" onFiles={(files, onEach) => addFromGallery(sheet.id, files, onEach)} />}
+        {others.length > 0 && (
+          <Button variant="default" size="sm" leftSection={<IconMapPin size={15} />} onClick={() => setAtSite(true)}>
+            At a project site…
+          </Button>
+        )}
+        {!job && <ScanCodeButton size="sm" />}
+      </Group>
       <AtSiteModal
         opened={atSite}
         sites={others}
@@ -725,6 +750,20 @@ function SitePage() {
       return next;
     });
   };
+  /** A photo added: the visit's time, if it has none – when the photo was taken (one from the gallery), or now. */
+  const touch = (taken?: string) =>
+    setV((cur) => {
+      if (cur?.time) return cur;
+      const next = { ...(cur ?? { siteId, values: {} }), time: taken?.slice(0, 16) ?? nowLocal() };
+      void saveVisit(sheetId, next);
+      return next;
+    });
+  /** A point named by the phone, its first photo from the gallery carrying the camera's location: the point goes there. */
+  const placeByPhoto = async (gps: { lat: number; lng: number; acc?: number }, taken: string) => {
+    const at = new Date(taken);
+    await updateSite(sheetId, siteId, { lat: gps.lat, lng: gps.lng, located: { at: (Number.isNaN(at.getTime()) ? new Date() : at).toISOString(), how: 'photo', ...(gps.acc !== undefined ? { acc: gps.acc } : {}) }, fromPhotos: true });
+    markLocating(siteId, false);
+  };
   const locate = () => {
     setLocating(true);
     currentPosition().then(
@@ -805,13 +844,13 @@ function SitePage() {
             </Button>
             <Text size="xs" c="dimmed">
               {site.lat.toFixed(5)}, {site.lng.toFixed(5)}
-              {site.located ? ' · set on this phone' : ''}
+              {site.located ? (site.located.how === 'photo' ? ' · from its photos' : ' · set on this phone') : ''}
             </Text>
           </Group>
         ) : (
           <Group gap="xs" wrap="wrap">
             <Text size="sm" c="dimmed">
-              {finding ? 'Finding where you are…' : 'No location yet.'}
+              {finding ? 'Finding where you are…' : site.fromPhotos ? 'Its photos came without a location.' : 'No location yet.'}
             </Text>
             <Button size="xs" variant="default" leftSection={<IconMapPin size={14} />} onClick={() => setPlacing(true)}>
               Set the location
@@ -840,7 +879,7 @@ function SitePage() {
           <Text size="sm">Scanned at {site.code}{scanned.did.length ? ` – ${scanned.did.join(' and ')} filled in` : ''}{locating ? ' (finding the location…)' : ''}.</Text>
         </Alert>
       )}
-      {job && sheet.observe.photos && <PhotoSection sheetId={sheetId} site={site} onAdded={() => update({ time: v.time ?? nowLocal() })} />}
+      {job && sheet.observe.photos && <PhotoSection sheetId={sheetId} site={site} onAdded={touch} followGps={!site.fromPhotos} onPlaced={site.auto ? (gps, taken) => void placeByPhoto(gps, taken) : undefined} />}
       {!site.added && (
         <Chip checked={!!v.notSampled} onChange={(on) => update({ notSampled: on ? NOT_SAMPLED[0] : undefined, done: on ? true : v.done })} color="gray">
           Not sampled
@@ -899,7 +938,7 @@ function SitePage() {
         )}
       </Group>}
       {v.gps && site.lat !== undefined && site.lng !== undefined && <SiteDistance gps={v.gps} site={{ lat: site.lat, lng: site.lng }} code={site.code} />}
-      {!job && sheet.observe.photos && <PhotoSection sheetId={sheetId} site={site} onAdded={() => update({ time: v.time ?? nowLocal() })} />}
+      {!job && sheet.observe.photos && <PhotoSection sheetId={sheetId} site={site} onAdded={touch} />}
       <Button size="lg" mt="sm" color="teal" leftSection={<IconCheck size={20} />} onClick={finish}>
         {v.done ? 'Done' : 'Done here'}
         {next ? ` – next: ${next.code}` : ''}
@@ -918,6 +957,9 @@ function SendPage() {
   const photos = usePhotoCounts(sheetId);
   const [by, setBy] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState('');
+  // the job file, put together and waiting to be sent or saved (a phone opens its share sheet only straight from a tap)
+  const [built, setBuilt] = useState<File | null>(null);
   useEffect(() => void getPref('name').then(setBy), []);
   if (stored === null) return <Navigate to="/field" />;
   if (!stored || !visits || by === null) return <Loader />;
@@ -928,37 +970,49 @@ function SendPage() {
   const missing = job ? [] : sheet.sites.filter((s) => !byId.get(s.id)?.done && !byId.get(s.id)?.notSampled);
   const pics = [...photos.values()].reduce((a, p) => ({ n: a.n + p.n, size: a.size + p.size }), { n: 0, size: 0 });
   const big = pics.size > 20 * 1024 * 1024;
-  /** The job file: a zip with everything (photos full size), shared to OneDrive, Teams or email – or saved. */
-  const saveFile = async () => {
+  /** The job file: a zip with everything (photos full size), put together a photo at a time. */
+  const buildFile = async () => {
     setSaving(true);
+    setProgress('');
     try {
       await setPref('name', by);
       const c = await jobContents(sheet.id, by);
       if (!c) return;
-      let bytes = await jobZip(c.sheet, c.results, c.photos);
       // a sheet that came locked goes back locked, with the same key
       const k = stored.lockedWith ? (await teamKeys()).find((x) => x.id === stored.lockedWith) : undefined;
-      if (k) bytes = await lockedJob(bytes, k);
-      const file = new File([bytes as BlobPart], jobFileName(sheet, !!k), { type: k ? 'application/octet-stream' : 'application/zip' });
-      const share = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
-      if (share.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: file.name });
-      else {
-        const url = URL.createObjectURL(file);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = file.name;
-        document.body.append(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
-      }
-      await fieldDb.sheets.update(sheet.id, { sentAt: new Date().toISOString() });
-      notifications.show({ color: 'teal', message: `Job file ready (${photoSizeText(file.size)}). Save it to the team’s Inbox folder in OneDrive – or send it to yourself and drop it on the computer’s Import page.` });
+      const blob = k ? new Blob([(await lockedJob(await jobZip(c.sheet, c.results, c.photos), k)) as BlobPart]) : await jobZipBlob(c.sheet, c.results, c.photos, (done, of) => setProgress(`${done} of ${of} photos`));
+      setBuilt(new File([blob], jobFileName(sheet, !!k), { type: k ? 'application/octet-stream' : 'application/zip' }));
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') notifications.show({ color: 'red', message: (e as Error).message });
+      notifications.show({ color: 'red', message: (e as Error).message });
     } finally {
       setSaving(false);
+      setProgress('');
     }
+  };
+  const canShare = (f: File) => !!(navigator as Navigator & { canShare?: (d: ShareData) => boolean }).canShare?.({ files: [f] });
+  const sent = async (f: File) => {
+    await fieldDb.sheets.update(sheet.id, { sentAt: new Date().toISOString() });
+    notifications.show({ color: 'teal', message: `${f.name.replace(/\.envirodb-field\.\w+$/, '')} (${photoSizeText(f.size)}): save it to the team’s Inbox folder in OneDrive – or send it to yourself and drop it on the computer’s Import page.` });
+  };
+  /** The phone's share sheet: OneDrive, Teams, email, Files … */
+  const share = async (f: File) => {
+    try {
+      await navigator.share({ files: [f], title: f.name });
+      await sent(f);
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') notifications.show({ color: 'red', message: (e as Error).message });
+    }
+  };
+  const download = (f: File) => {
+    const url = URL.createObjectURL(f);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = f.name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    void sent(f);
   };
   return (
     <Stack gap="sm">
@@ -1001,9 +1055,34 @@ function SendPage() {
           </Text>
         </Alert>
       )}
-      <Button size="lg" leftSection={<IconFileZip size={20} />} loading={saving} onClick={() => void saveFile()}>
-        Save the job file
-      </Button>
+      {built ? (
+        <Card withBorder padding="sm">
+          <Text size="sm" fw={600}>
+            Job file ready · {photoSizeText(built.size)}
+          </Text>
+          <Group grow gap="xs" mt="xs">
+            {canShare(built) && (
+              <Button size="md" leftSection={<IconShare size={18} />} onClick={() => void share(built)}>
+                Send or save…
+              </Button>
+            )}
+            <Button size="md" variant={canShare(built) ? 'default' : 'filled'} leftSection={<IconDownload size={18} />} onClick={() => download(built)}>
+              Download
+            </Button>
+          </Group>
+        </Card>
+      ) : (
+        <>
+          <Button size="lg" leftSection={<IconFileZip size={20} />} loading={saving} onClick={() => void buildFile()}>
+            Save the job file
+          </Button>
+          {saving && progress && (
+            <Text size="xs" c="dimmed" ta="center" mt={-6}>
+              Putting it together: {progress}
+            </Text>
+          )}
+        </>
+      )}
       <Text size="xs" c="dimmed">
         One file with everything – photos full size. Choose <b>OneDrive → the team’s Inbox folder</b> and EnviroDB on the computer picks it up there. Or send it in Teams{big ? '' : ' or by email'} and drop it on the computer’s <b>Import</b> page. Needs a signal.
         {big ? ' At this size it’s too big for most email.' : ''}
@@ -1022,6 +1101,7 @@ function SendPage() {
       </Button>
       <Text size="xs" c="dimmed">
         Next to the computer, on the same Wi-Fi: on the computer choose <b>Import data → Receive from a phone</b>, then scan its code. No signal needed. If the Wi-Fi keeps them apart, the results go as a flashing code (photos made smaller – save the job file as well for them full size).
+        {pics.size > 150 * 1024 * 1024 ? ' For this many photos, the job file is the better way.' : ''}
       </Text>
       {stored.sentAt && (
         <Text size="xs" c="teal">
@@ -1043,8 +1123,8 @@ function LinkRoute() {
     void (async () => {
       const c = await jobContents(sheetId, (await getPref('name')) ?? '');
       if (!c) return;
-      const out = readyPhotos(c.photos);
-      setReady({ results: withPhotoEntries(c.results, out), photos: out.map((p) => ({ siteId: p.siteId, name: p.name, type: p.type, bytes: p.bytes })) });
+      const out = await readyPhotos(c.photos);
+      setReady({ results: withPhotoEntries(c.results, out), photos: out.map((p) => ({ siteId: p.siteId, name: p.name, type: p.type, bytes: p.bytes! })) });
     })();
   }, [stored, ready, sheetId]);
   if (stored === null) return <Navigate to="/field" />;

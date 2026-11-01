@@ -4,7 +4,7 @@
 
 import { db } from '../db/db';
 import { logAudit } from '../db/audit';
-import type { FigureImage, Project, Sample, Site } from '../db/types';
+import type { FigureImage, ImportBatch, Project, Sample, Site } from '../db/types';
 import { formatDateLong } from './dates';
 import { uid } from './ids';
 import { currentWorkspaceFolder } from '../sync/workspace';
@@ -102,17 +102,30 @@ export const photoName = (path: string) => path.split('/').pop() ?? path;
 
 // ------------------------------------------------------------ photos for reports
 
-/** One of the project's photos: where it is, and the sample, site and day it's of. */
+/** One of the project's photos: where it is, and the sample, site and day it's of – or, kept with the project at no site, what it's of. */
 export interface FieldPhoto {
   path: string;
+  /** None for a photo kept with the project. */
   sampleId: string;
   siteId: string;
-  /** The sample's date (and time). */
+  /** The sample's date (and time), or when the photo was taken. */
   date: string;
+  /** A photo kept with the project: what it's of. */
+  label?: string;
 }
 
-/** The project's photos, from its samples' notes: the latest day first, then the sites in their order, then as taken. */
-export function projectPhotos(samples: Array<Pick<Sample, 'id' | 'siteId' | 'date' | 'notes'>>, siteOrder: Map<string, number> = new Map()): FieldPhoto[] {
+/** The day a photo kept with the project was taken: local, from when it was taken – or its folder's name. */
+function projectPhotoDate(p: { path: string; at?: string }): string {
+  const d = p.at ? new Date(p.at) : null;
+  if (d && !Number.isNaN(d.getTime())) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return /\/(\d{4}-\d{2}-\d{2})\//.exec(p.path)?.[1] ?? '';
+}
+
+/**
+ * The project's photos – from its samples' notes, and those kept with the project at no site (from its imports):
+ * the latest day first, then the sites in their order (the project's own after), then as taken.
+ */
+export function projectPhotos(samples: Array<Pick<Sample, 'id' | 'siteId' | 'date' | 'notes'>>, siteOrder: Map<string, number> = new Map(), imports: Array<Pick<ImportBatch, 'photos'>> = []): FieldPhoto[] {
   const seen = new Set<string>();
   const out: Array<FieldPhoto & { n: number }> = [];
   for (const s of samples)
@@ -121,20 +134,27 @@ export function projectPhotos(samples: Array<Pick<Sample, 'id' | 'siteId' | 'dat
       seen.add(path);
       out.push({ path, sampleId: s.id, siteId: s.siteId, date: s.date, n: out.length });
     });
+  for (const b of imports)
+    for (const p of b.photos ?? []) {
+      if (seen.has(p.path)) continue;
+      seen.add(p.path);
+      const date = projectPhotoDate(p);
+      if (date) out.push({ path: p.path, sampleId: '', siteId: '', date, label: p.label, n: out.length });
+    }
   const day = (p: FieldPhoto) => p.date.slice(0, 10);
-  const order = (p: FieldPhoto) => siteOrder.get(p.siteId) ?? Number.MAX_SAFE_INTEGER;
+  const order = (p: FieldPhoto) => (p.siteId ? (siteOrder.get(p.siteId) ?? Number.MAX_SAFE_INTEGER - 1) : Number.MAX_SAFE_INTEGER);
   return out.sort((a, b) => (day(a) !== day(b) ? (day(a) < day(b) ? 1 : -1) : order(a) - order(b) || a.n - b.n)).map(({ n: _n, ...p }) => (void _n, p));
 }
 
-/** The photos a report is about: those in its period and, when it covers only some sites, at those sites. */
+/** The photos a report is about: those in its period and, when it covers only some sites, at those sites (and the project's own). */
 export function photosFor(photos: FieldPhoto[], period: { start: string; end: string }, siteIds?: string[] | null): FieldPhoto[] {
   const sites = siteIds?.length ? new Set(siteIds) : null;
-  return photos.filter((p) => p.date.slice(0, 10) >= period.start && p.date.slice(0, 10) <= period.end && (!sites || sites.has(p.siteId)));
+  return photos.filter((p) => p.date.slice(0, 10) >= period.start && p.date.slice(0, 10) <= period.end && (!sites || !p.siteId || sites.has(p.siteId)));
 }
 
-/** A caption for a photo in a report: the site and the day ("GW1 – Monitoring bore BH1, 25 October 2026"). */
-export function photoCaption(site: Pick<Site, 'code' | 'name'> | undefined, date: string): string {
-  const where = site ? `${site.code}${site.name ? ` – ${site.name}` : ''}` : 'Site photo';
+/** A caption for a photo in a report: the site (or what a project's photo is of) and the day ("GW1 – Monitoring bore BH1, 25 October 2026"). */
+export function photoCaption(site: Pick<Site, 'code' | 'name'> | undefined, date: string, label?: string): string {
+  const where = site ? `${site.code}${site.name ? ` – ${site.name}` : ''}` : (label ?? 'Site photo');
   return `${where}, ${formatDateLong(date.slice(0, 10))}`;
 }
 

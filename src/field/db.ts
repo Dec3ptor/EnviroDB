@@ -2,7 +2,8 @@
 // apart from the team's data – the phone isn't connected to the shared folder – until the results are sent.
 
 import Dexie, { type Table } from 'dexie';
-import { codeSheet, FIELD_APP, mergeSheets, type FieldCode, type FieldMeasure, type FieldResults, type FieldSheet, type FieldSite, type FieldVisit } from './model';
+import { codeSheet, FIELD_APP, mergeSheets, newFieldSiteId, type FieldCode, type FieldMeasure, type FieldResults, type FieldSheet, type FieldSite, type FieldVisit } from './model';
+import { groupByPlace, type PlacedAt } from './places';
 import { mergeKeys, parseKeys, type TeamKey } from './lock';
 import type { OutPhoto } from './package';
 import { APP_VERSION } from '../lib/version';
@@ -231,9 +232,78 @@ export async function jobContents(sheetId: string, by: string): Promise<{ sheet:
     const code = stored.sheet.sites.find((s) => s.id === p.siteId)?.code ?? 'Photo';
     const n = (count.get(p.siteId) ?? 0) + 1;
     count.set(p.siteId, n);
-    out.push({ siteId: p.siteId, name: `${code} ${n}.${EXT[p.type] ?? 'jpg'}`, type: p.type, bytes: new Uint8Array(await p.blob.arrayBuffer()), ...(p.gps ? { lat: p.gps.lat, lng: p.gps.lng, ...(p.gps.acc !== undefined ? { acc: p.gps.acc } : {}) } : {}), at: p.at });
+    // the picture as kept: read when it goes (a phone can't hold a big job's photos all at once)
+    out.push({ siteId: p.siteId, name: `${code} ${n}.${EXT[p.type] ?? 'jpg'}`, type: p.type, blob: p.blob, ...(p.gps ? { lat: p.gps.lat, lng: p.gps.lng, ...(p.gps.acc !== undefined ? { acc: p.gps.acc } : {}) } : {}), at: p.at });
   }
   return { sheet: stored.sheet, results, photos: out, lockedWith: stored.lockedWith };
+}
+
+/** A photo already taken (from the gallery), ready to keep: the picture, and where and when the camera says it was taken. */
+export interface GalleryPhoto {
+  blob: Blob;
+  type: string;
+  size: number;
+  thumb: string;
+  gps?: PlacedAt;
+  /** Local time, 'YYYY-MM-DDTHH:mm:ss'. */
+  taken: string;
+}
+
+/** A local time ('YYYY-MM-DDTHH:mm:ss') as an ISO moment. */
+const isoOf = (local: string) => {
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+};
+
+/**
+ * Photos already taken, each kept with where it was taken: a point of the job that day within a few steps, or a new
+ * point placed by the photos themselves – never by where the phone is now. Photos without a location make one point
+ * a day. A point's time is when its first photo was taken; a job started from photos takes the day of the first.
+ */
+export async function addPhotosByPlace(sheetId: string, photos: GalleryPhoto[]): Promise<{ added: number; points: number; joined: number; placed: number; unplaced: number; placedPoints: number; firstPoint?: string }> {
+  return fieldDb.transaction('rw', [fieldDb.sheets, fieldDb.visits, fieldDb.photos], async () => {
+    const stored = await fieldDb.sheets.get(sheetId);
+    if (!stored) throw new Error('The job isn’t on this phone any more.');
+    const visits = new Map((await fieldDb.visits.where('sheetId').equals(sheetId).toArray()).map((v) => [v.visit.siteId, v.visit]));
+    const sites = stored.sheet.sites;
+    const existing = sites.map((x) => ({ id: x.id, day: (visits.get(x.id)?.time ?? stored.sheet.date).slice(0, 10), ...(x.lat !== undefined && x.lng !== undefined ? { at: { lat: x.lat, lng: x.lng } } : {}) }));
+    const places = groupByPlace(photos, (p) => ({ gps: p.gps, taken: p.taken }), existing);
+    const made: FieldSite[] = [];
+    for (const place of places) {
+      if (place.id) continue;
+      const first = place.items[0];
+      const site: FieldSite = {
+        id: newFieldSiteId(),
+        code: nextPointCode({ ...stored.sheet, sites: [...sites, ...made] }),
+        type: 'Other',
+        added: true,
+        auto: true,
+        fromPhotos: true,
+        ...(place.at ? { lat: place.at.lat, lng: place.at.lng, located: { at: isoOf(first.taken), how: 'photo' as const, ...(place.at.acc !== undefined ? { acc: place.at.acc } : {}) } } : {}),
+      };
+      made.push(site);
+      place.id = site.id;
+    }
+    const firstDay = places.map((p) => p.day).sort()[0];
+    await fieldDb.sheets.put({ ...stored, sheet: { ...stored.sheet, sites: [...sites, ...made], ...(!sites.length && firstDay ? { date: firstDay } : {}) } });
+    for (const place of places) {
+      for (const p of place.items) await fieldDb.photos.put({ id: `${sheetId}|${place.id}|${crypto.getRandomValues(new Uint32Array(2)).join('')}`, sheetId, siteId: place.id!, blob: p.blob, type: p.type, size: p.size, thumb: p.thumb, at: isoOf(p.taken), ...(p.gps ? { gps: p.gps, gpsFrom: 'camera' as const } : {}) });
+      // the point's time: when its first photo was taken (unless it has one)
+      const cur = visits.get(place.id!) ?? { siteId: place.id!, values: {} };
+      if (!cur.time) await saveVisit(sheetId, { ...cur, time: place.items[0].taken.slice(0, 16) });
+    }
+    const located = (x: GalleryPhoto) => !!x.gps;
+    return {
+      added: photos.length,
+      points: made.length,
+      joined: places.filter((p) => !made.some((m) => m.id === p.id)).length,
+      placed: photos.filter(located).length,
+      unplaced: photos.filter((x) => !located(x)).length,
+      // the points the photos with a location went to
+      placedPoints: places.filter((p) => p.at).length,
+      firstPoint: places[0]?.id,
+    };
+  });
 }
 
 export async function saveVisit(sheetId: string, visit: FieldVisit): Promise<void> {

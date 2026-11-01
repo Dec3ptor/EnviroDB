@@ -21,6 +21,9 @@ export interface FieldMeasure {
   optional?: boolean;
 }
 
+/** How a place was found: the phone's GPS, a tap on the map, or the location the camera wrote into its photos. */
+export type LocatedHow = 'gps' | 'map' | 'photo';
+
 export interface FieldSite {
   id: string;
   code: string;
@@ -39,9 +42,11 @@ export interface FieldSite {
   added?: boolean;
   /** Its code was given by the phone (P1, P2 …), not typed: on the computer it can join a site nearby. */
   auto?: boolean;
+  /** Made from photos already taken (from the gallery): placed by them, not by where the phone is. */
+  fromPhotos?: boolean;
   type?: string;
-  /** Its location was set on the phone – by GPS (with how close) or on the map – and goes back with the results. */
-  located?: { at: string; how: 'gps' | 'map'; acc?: number };
+  /** Its location was set on the phone – by GPS (with how close), on the map, or by its photos – and goes back with the results. */
+  located?: { at: string; how: LocatedHow; acc?: number };
 }
 
 export interface FieldSheet {
@@ -122,7 +127,7 @@ export interface FieldNewSite {
   lat?: number;
   lng?: number;
   acc?: number;
-  how?: 'gps' | 'map';
+  how?: LocatedHow;
   note?: string;
   /** Named by the phone (P1, P2 …): on the computer it can join a site nearby instead of becoming one. */
   auto?: boolean;
@@ -134,7 +139,7 @@ export interface FieldLocated {
   lat: number;
   lng: number;
   acc?: number;
-  how: 'gps' | 'map';
+  how: LocatedHow;
   at: string;
 }
 
@@ -331,8 +336,8 @@ export function checkResults(x: unknown): FieldResults {
     const lat = num(o.lat), lng = num(o.lng);
     return lat !== undefined && lng !== undefined && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng, acc: num(o.acc) } : null;
   };
-  const how = (h: unknown) => (h === 'gps' || h === 'map' ? h : undefined);
-  const newSites = (Array.isArray(x.newSites) ? x.newSites : []).filter(isObj).slice(0, 100).map((n): FieldNewSite => {
+  const how = (h: unknown): LocatedHow | undefined => (h === 'gps' || h === 'map' || h === 'photo' ? h : undefined);
+  const newSites = (Array.isArray(x.newSites) ? x.newSites : []).filter(isObj).slice(0, 500).map((n): FieldNewSite => {
     const at = place(n);
     return { id: str(n.id, 80) ?? '', code: (str(n.code, 40) ?? '').trim(), name: str(n.name, 120), type: str(n.type, 40), ...(at ? { ...at, how: how(n.how) } : {}), note: str(n.note, 1000), ...(n.auto === true ? { auto: true } : {}) };
   });

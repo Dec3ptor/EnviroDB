@@ -41,6 +41,7 @@ import { NewProjectButton } from './Projects';
 import { checkResults, unlockFile } from '../field/model';
 import { LockedError, showKeyId } from '../field/lock';
 import { isJobFileName, looksLikeJob, readJobFile } from '../field/package';
+import { PHOTO_FILE, photosAsResults } from '../field/photoImport';
 import { ReceiveFromPhone } from '../components/ReceiveFromPhone';
 import { teamKeysOf } from '../components/TeamKey';
 import { FieldResultsModal } from '../components/FieldSheet';
@@ -64,6 +65,11 @@ const ACCEPT = {
   'application/json': ['.json'],
   // a phone's field job, locked with the team key
   'application/octet-stream': ['.locked'],
+  // photos, from the phone's camera roll or a camera: each placed where it was taken
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/png': ['.png'],
+  'image/webp': ['.webp'],
+  'image/heic': ['.heic', '.heif'],
 };
 
 const EXAMPLES = [
@@ -466,8 +472,23 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
         });
       }
     }
-    const files = all.filter((f) => !isJson(f) && !jobs.includes(f));
-    await review(read, inbox || files.length > 0);
+    // photos (from the phone's camera roll in OneDrive, say): grouped by where they were taken, reviewed like a job
+    const pics = all.filter((f) => PHOTO_FILE.test(f.name));
+    if (pics.length) {
+      const dropped = await Promise.all(pics.map(async (f) => ({ name: f.name, bytes: await bytesOf(f), ...(f instanceof File ? { lastModified: f.lastModified } : {}) })));
+      const { results, skipped } = photosAsResults(dropped, (await getSettings()).author || undefined);
+      if (skipped.length)
+        notifications.show({
+          color: 'orange',
+          title: `${skipped.length} photo${skipped.length === 1 ? '' : 's'} can’t be read here (HEIC)`,
+          message: `${skipped.slice(0, 3).join(', ')}${skipped.length > 3 ? ' …' : ''} – save them as JPEG (on an iPhone: Settings → Camera → Formats → Most Compatible; OneDrive can upload them as JPEG too), or send them from EnviroDB field on the phone, which turns them into JPEGs.`,
+          autoClose: 15000,
+        });
+      if (results) read.push({ results, name: `${pics.length - skipped.length} photo${pics.length - skipped.length === 1 ? '' : 's'}`, inbox: [] });
+    }
+    const files = all.filter((f) => !isJson(f) && !jobs.includes(f) && !pics.includes(f));
+    // photos dropped here are for the project chosen here
+    await review(read, inbox || files.length > 0 || pics.length > 0);
     if (!files.length) return;
     setLoading(true);
     try {
@@ -648,7 +669,7 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
               smaller={field.smaller}
             />
           )}
-          <Dropzone onDrop={(files) => files.length && load(files)} accept={ACCEPT} loading={loading} multiple maxSize={1024 * 1024 * 1024} onReject={() => notifications.show({ message: 'Please choose Excel, CSV or PDF lab reports, a zip of them, or a phone’s field job', color: 'red' })}>
+          <Dropzone onDrop={(files) => files.length && load(files)} accept={ACCEPT} loading={loading} multiple maxSize={1024 * 1024 * 1024} onReject={() => notifications.show({ message: 'Please choose Excel, CSV or PDF lab reports, a zip of them, a phone’s field job, or photos', color: 'red' })}>
             <Group justify="center" gap="xl" mih={180} style={{ pointerEvents: 'none' }}>
               <Dropzone.Accept>
                 <IconUpload size={48} stroke={1.5} />
@@ -664,7 +685,7 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
                   Drop lab results or a monitoring spreadsheet here
                 </Text>
                 <Text size="sm" c="dimmed" mt={4}>
-                  Lab files from Hill Labs, ALS and Linnaeus – Excel, CSV or PDF reports, several at once or the zip they came in – master sheets, long tables, or a phone’s field job
+                  Lab files from Hill Labs, ALS and Linnaeus – Excel, CSV or PDF reports, several at once or the zip they came in – master sheets, long tables, a phone’s field job, or photos (each placed where it was taken)
                 </Text>
                 <Text size="sm" c="dimmed">
                   Importing into <b>{project.name}</b>

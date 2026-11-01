@@ -11,6 +11,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.30.0',
+    date: '2026-11-01',
+    title: 'Photos already taken, placed where they were taken',
+    items: [
+      'Photos from the gallery – on EnviroDB field’s home page, or in a job – for photos already taken (back at the office, say): the points come from the photos themselves. Those taken the same day within a few steps of each other make one point, placed by the location the camera wrote into them – never where the phone is now – its time when the first was taken. Photos without a location make one point a day. The phone’s GPS isn’t used for them at all.',
+      'Or drop photos on the computer’s Import page – from the phone’s camera roll in OneDrive, a camera’s card, an email. They’re grouped the same way, read from the photos as taken: the surest way, as a phone’s browser often takes the location out of photos picked from its gallery.',
+      'Kept with the project: photos taken by one of the project’s sites join its sample for the day; the others are kept with the project, at no site – in its Field photos folder and in a report’s Choose from field photos – instead of becoming sites. Any of them can go to a site, a new site, or be left out. Sent or dropped again, each goes where it went before.',
+      'A photo’s own location always wins: one with the camera’s location keeps it, and a point named by the phone takes the location of its first photo from the gallery.',
+      'The phone’s GPS is used only when wanted: once you add a point where you are, or take a photo at a point out in the field.',
+      'The pencil on a job’s page names it or chooses its project.',
+      'Big jobs fit on a phone: the job file is put together a photo at a time, then Send or save… opens the phone’s share sheet (on an iPhone it opens only straight from a tap) – or Download.',
+      'A phone’s job of photos only no longer marks the round sampled on the monitoring calendar.',
+    ],
+  },
+  {
     version: '1.29.0',
     date: '2026-11-01',
     title: 'Quick field jobs from your phone',

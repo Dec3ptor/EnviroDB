@@ -589,8 +589,25 @@ export interface ImportBatch {
   notes?: string;
   /** Checked and signed off: the results are ready to report. */
   reviewed?: { by: string; on: string };
-  /** A phone's points that joined one of the project's sites (the phone's id → the site): there again if sent again. */
+  /**
+   * A phone's points that joined one of the project's sites (the phone's id → the site), or whose photos were kept
+   * with the project ('@project'): there again if sent again.
+   */
   fieldPoints?: Record<string, ID>;
+  /** Photos kept with the project, at no site: where each is in the shared folder, what of, when and where taken. */
+  photos?: ProjectPhoto[];
+}
+
+/** A photo kept with a project but no site (a phone's photos from somewhere that isn't a monitoring site). */
+export interface ProjectPhoto {
+  path: string;
+  /** What it's of: the point's name on the phone, or the job's. */
+  label: string;
+  /** When it was taken (ISO). */
+  at?: string;
+  lat?: number;
+  lng?: number;
+  note?: string;
 }
 
 /** Something that happened to a project: who did what, when – the project's history. */

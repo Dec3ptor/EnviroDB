@@ -8,6 +8,7 @@ import { lock, lockedWith, unlock, type TeamKey } from './lock';
 import { unlockFile } from './model';
 import { withPhotoGps } from '../lib/exif';
 import { fromBase64 } from '../lib/issued';
+import { ZipWriter } from '../lib/zip';
 
 export const JOB_SUFFIX = '.envirodb-field.zip';
 export const LOCKED_SUFFIX = '.envirodb-field.locked';
@@ -15,16 +16,16 @@ export const LOCKED_SUFFIX = '.envirodb-field.locked';
 export const RESULTS_FILE = 'results.envirodb-field.json';
 const MAGIC = new TextEncoder().encode('EnviroDB-field-job-locked-1\n');
 
-/** A job file, by its name (a zip renamed keeps the suffix; one kept elsewhere may not – see looksLikeJob). */
 /** A job file's name – kept as the phone named it, or with " (1)" added on the way (a second download, say). */
 export const isJobFileName = (name: string) => /\.envirodb-field(?:\s*\(\d+\))?\.(zip|locked)$/i.test(name);
 
-/** A photo on the phone, ready to go: whose it is, where and when, and the picture. */
+/** A photo on the phone, ready to go: whose it is, where and when, and the picture – as kept (read when it's needed) or its bytes. */
 export interface OutPhoto {
   siteId: string;
   name: string;
   type: string;
-  bytes: Uint8Array;
+  blob?: Blob;
+  bytes?: Uint8Array;
   lat?: number;
   lng?: number;
   acc?: number;
@@ -34,8 +35,8 @@ export interface OutPhoto {
 const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 const safe = (s: string) => s.normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim() || 'photo';
 
-/** The photos with their locations written in (JPEGs without the camera's own) and names unique in the job file. */
-export function readyPhotos(photos: OutPhoto[]): OutPhoto[] {
+/** The photos with names unique in the job file. */
+export function namedPhotos(photos: OutPhoto[]): OutPhoto[] {
   const taken = new Set<string>();
   return photos.map((p) => {
     const ext = EXT[p.type] ?? 'jpg';
@@ -43,9 +44,21 @@ export function readyPhotos(photos: OutPhoto[]): OutPhoto[] {
     let name = `${base}.${ext}`;
     for (let i = 2; taken.has(name.toLowerCase()); i++) name = `${base} (${i}).${ext}`;
     taken.add(name.toLowerCase());
-    const bytes = p.lat !== undefined && p.lng !== undefined ? withPhotoGps(p.bytes, { lat: p.lat, lng: p.lng, acc: p.acc }, p.at) : p.bytes;
-    return { ...p, name, bytes };
+    return { ...p, name };
   });
+}
+
+/** A photo's picture, with where it was taken written in (a JPEG that has the camera's own location keeps it). */
+export async function photoWithGps(p: OutPhoto): Promise<Uint8Array> {
+  const bytes = p.bytes ?? new Uint8Array(await p.blob!.arrayBuffer());
+  return p.lat !== undefined && p.lng !== undefined ? withPhotoGps(bytes, { lat: p.lat, lng: p.lng, acc: p.acc }, p.at) : bytes;
+}
+
+/** The photos named, each read with its location written in (all at once: for the link, which sends them together). */
+export async function readyPhotos(photos: OutPhoto[]): Promise<OutPhoto[]> {
+  const out: OutPhoto[] = [];
+  for (const p of namedPhotos(photos)) out.push({ ...p, blob: undefined, bytes: await photoWithGps(p) });
+  return out;
 }
 
 /** The results with each visit's photos as entries naming their files (and where and when each was taken). */
@@ -129,21 +142,30 @@ const README = (sheet: FieldSheet, results: FieldResults, photos: number) =>
     .filter((l, i, a) => l || a[i - 1])
     .join('\r\n');
 
-/** The job file (a zip): the results, the photos at full size with their locations, and the points as files to open. */
+/**
+ * The job file (a zip): the results, the photos at full size with their locations, and the points as files to open.
+ * Built a photo at a time, so a job with hundreds of photos fits on a phone; `onPhoto` hears how far it's got.
+ */
+export async function jobZipBlob(sheet: FieldSheet, results: FieldResults, photos: OutPhoto[], onPhoto?: (done: number, of: number) => void): Promise<Blob> {
+  const named = namedPhotos(photos);
+  const withFiles = withPhotoEntries(results, named);
+  const zip = new ZipWriter();
+  // first, and stored as it is: the inbox reads which project it's for from the file's start
+  await zip.add(RESULTS_FILE, JSON.stringify(withFiles, null, 1));
+  for (const [i, p] of named.entries()) {
+    await zip.add(`photos/${p.name}`, await photoWithGps(p), p.at && !Number.isNaN(Date.parse(p.at)) ? new Date(p.at) : undefined);
+    onPhoto?.(i + 1, named.length);
+  }
+  await zip.add('points.csv', '\ufeff' + pointsCsv(sheet, withFiles));
+  await zip.add('photos.csv', '\ufeff' + photosCsv(sheet, withFiles));
+  await zip.add('points.geojson', pointsGeoJson(sheet, withFiles));
+  await zip.add('Read me.txt', README(sheet, withFiles, named.length));
+  return zip.finish();
+}
+
+/** The job file as bytes (to lock it with the team key). */
 export async function jobZip(sheet: FieldSheet, results: FieldResults, photos: OutPhoto[]): Promise<Uint8Array> {
-  const ready = readyPhotos(photos);
-  const withFiles = withPhotoEntries(results, ready);
-  const JSZip = (await import('jszip')).default;
-  const zip = new JSZip();
-  // first, and not compressed: the inbox reads which project it's for from the file's start
-  zip.file(RESULTS_FILE, JSON.stringify(withFiles, null, 1), { compression: 'STORE' });
-  // pictures are already compressed: stored as they are
-  for (const p of ready) zip.file(`photos/${p.name}`, p.bytes, { compression: 'STORE', date: p.at && !Number.isNaN(Date.parse(p.at)) ? new Date(p.at) : undefined });
-  zip.file('points.csv', '﻿' + pointsCsv(sheet, withFiles));
-  zip.file('photos.csv', '﻿' + photosCsv(sheet, withFiles));
-  zip.file('points.geojson', pointsGeoJson(sheet, withFiles));
-  zip.file('Read me.txt', README(sheet, withFiles, ready.length));
-  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  return new Uint8Array(await (await jobZipBlob(sheet, results, photos)).arrayBuffer());
 }
 
 /** The job file locked with the team key: a header EnviroDB knows, then the zip locked. */
@@ -161,10 +183,19 @@ export const isLockedJob = (b: Uint8Array) => startsWith(b, MAGIC);
 /** The team key a locked job file needs (its fingerprint). */
 export const lockedJobKey = (b: Uint8Array) => lockedWith(b.subarray(MAGIC.length));
 
+/** The name of a zip's first file (from its first bytes). */
+export function firstZipEntry(head: Uint8Array): string | null {
+  if (!isZip(head) || head.length < 30) return null;
+  const n = new DataView(head.buffer, head.byteOffset, head.byteLength).getUint16(26, true);
+  return head.length >= 30 + n ? new TextDecoder().decode(head.subarray(30, 30 + n)) : null;
+}
+
 /** Whether a zip is a job file (looked at by what's inside, for one renamed on the way). */
 export async function looksLikeJob(bytes: Uint8Array): Promise<boolean> {
   if (isLockedJob(bytes)) return true;
   if (!isZip(bytes)) return false;
+  // the results come first in a job file
+  if (firstZipEntry(bytes.subarray(0, 1024)) === RESULTS_FILE) return true;
   try {
     const JSZip = (await import('jszip')).default;
     const zip = await JSZip.loadAsync(bytes);

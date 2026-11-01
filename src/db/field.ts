@@ -5,7 +5,7 @@
 import { db, getSettings } from './db';
 import { SITE_TYPES, type ImportBatch, type Parameter, type Result, type Sample, type Site, type SiteType } from './types';
 import type { ProjectBundle } from '../lib/analysis';
-import { distanceM, FIELD_APP, readingWarning, type FieldCode, type FieldCodeFill, type FieldMeasure, type FieldNewSite, type FieldResults, type FieldSheet, type FieldVisit } from '../field/model';
+import { distanceM, FIELD_APP, readingWarning, type FieldCode, type FieldCodeFill, type FieldMeasure, type FieldNewSite, type FieldPhoto, type FieldResults, type FieldSheet, type FieldVisit, type LocatedHow } from '../field/model';
 import { stableId, uid } from '../lib/ids';
 import { roundedNztm, siteLatLng } from '../lib/nztm';
 import { convert, unitLabel } from '../lib/units';
@@ -154,9 +154,20 @@ export interface FieldPlan {
    * Monitoring points added on the phone: the site to add – or, when the project has a site with the same code (or
    * the file was added before), that site, which their readings go to.
    */
-  newSites: Array<{ field: FieldNewSite; site: Site; existing: boolean; near: Array<{ site: Site; m: number }>; suggest: string | 'new'; /** joined that site when added before */ before?: boolean }>;
+  newSites: Array<{
+    field: FieldNewSite;
+    site: Site;
+    existing: boolean;
+    near: Array<{ site: Site; m: number }>;
+    /** To start with: one of the project's sites (its id), a new site, or – photos only – kept with the project. */
+    suggest: string | 'new' | 'project';
+    /** Went there when the job was added before. */
+    before?: boolean;
+    /** Only photos (and notes) were recorded there – no readings: they can be kept with the project, with no site. */
+    photosOnly: boolean;
+  }>;
   /** Locations set on the phone: where, and how far that moves the site (null: it had no location). */
-  located: Array<{ site: Site; lat: number; lng: number; acc?: number; how: 'gps' | 'map'; movedM: number | null }>;
+  located: Array<{ site: Site; lat: number; lng: number; acc?: number; how: LocatedHow; movedM: number | null }>;
 }
 
 /** What adding a results file would do. */
@@ -178,10 +189,15 @@ export function planField(b: Pick<ProjectBundle, 'siteMap' | 'paramMap' | 'proje
     const ll = siteLatLng(s);
     return ll && !isQcSite(s) ? [{ site: s, ll }] : [];
   });
-  // the site each of the phone's points joined when the job was added before (the latest time): that one again
+  // the site each of the phone's points joined when the job was added before (the latest time) – or the project, for
+  // its photos: there again
   const went = new Map<string, string>();
   const earlier = (b.imports ?? []).filter((x) => x.kind === 'field' && x.fieldPoints).sort((x, y) => (x.importedAt < y.importedAt ? -1 : 1));
-  for (const batch of earlier) for (const [point, site] of Object.entries(batch.fieldPoints!)) if (b.siteMap.has(site)) went.set(point, site);
+  for (const batch of earlier) for (const [point, site] of Object.entries(batch.fieldPoints!)) if (site === PROJECT_PHOTOS || b.siteMap.has(site)) went.set(point, site === PROJECT_PHOTOS ? 'project' : site);
+  const photosOnly = (id: string) => {
+    const v = results.visits.find((x) => x.siteId === id);
+    return !!v?.photos?.length && !Object.keys(v.values).length && !v.notSampled;
+  };
   const newSites: FieldPlan['newSites'] = (results.newSites ?? []).map((n, i) => {
     // named after the phone's id, so the same file added again doesn't add the site twice; a point the phone named
     // (P1 …) isn't taken for a site with the same code
@@ -191,15 +207,17 @@ export function planField(b: Pick<ProjectBundle, 'siteMap' | 'paramMap' | 'proje
     const near = here ? placed.map((p) => ({ site: p.site, m: distanceM(p.ll, here) })).sort((x, y) => x.m - y.m) : [];
     if (already) {
       if (n.lat !== undefined && n.lng !== undefined && !siteLatLng(already)) located.push({ site: already, lat: n.lat, lng: n.lng, acc: n.acc, how: n.how ?? 'map', movedM: null });
-      return { field: n, site: already, existing: true, near, suggest: already.id };
+      return { field: n, site: already, existing: true, near, suggest: already.id, photosOnly: photosOnly(n.id) };
     }
     const nz = n.lat !== undefined && n.lng !== undefined ? roundedNztm(n.lat, n.lng) : null;
     const type: SiteType = (SITE_TYPES as readonly string[]).includes(n.type ?? '') ? (n.type as SiteType) : 'Other';
     const site: Site = { id, projectId: b.project.id, code: n.code, name: n.name, type, role: '', aliases: [], active: true, order: order + 1 + i, description: n.note, ...(nz ? nz : {}) };
-    // where it went before; else, a point the phone named a few steps from a site: most likely that site
+    // where it went before; else, a point the phone named a few steps from a site: most likely that site; photos only,
+    // anywhere else: kept with the project (a site for each place photographed would crowd the project's sites)
+    const only = photosOnly(n.id);
     const before = went.get(n.id);
-    const suggest = before ?? (n.auto && near[0] && near[0].m <= NEAR_M ? near[0].site.id : 'new');
-    return { field: n, site, existing: false, near, suggest, ...(before ? { before: true } : {}) };
+    const suggest = before === 'project' && !only ? 'new' : (before ?? (n.auto && near[0] && near[0].m <= NEAR_M ? near[0].site.id : n.auto && only ? 'project' : 'new'));
+    return { field: n, site, existing: false, near, suggest, photosOnly: only, ...(before ? { before: true } : {}) };
   });
   for (const l of results.located ?? []) {
     const site = b.siteMap.get(l.siteId);
@@ -257,11 +275,21 @@ export interface FieldChoices {
   located?: Set<string>;
   /** New points that join one of the project's sites instead (the phone's id → the site's id). */
   attach?: Map<string, string>;
+  /** New points with only photos whose photos are kept with the project, with no site (the phone's ids). */
+  project?: Set<string>;
 }
+
+/** Where a point's photos went when they were kept with the project (in an import's fieldPoints). */
+export const PROJECT_PHOTOS = '@project';
 
 /** What the choices make of the plan's new points to start with: those suggested to join a site, join it. */
 export function defaultAttach(plan: FieldPlan): Map<string, string> {
-  return new Map(plan.newSites.filter((n) => !n.existing && n.suggest !== 'new').map((n) => [n.field.id, n.suggest]));
+  return new Map(plan.newSites.filter((n) => !n.existing && n.suggest !== 'new' && n.suggest !== 'project').map((n) => [n.field.id, n.suggest]));
+}
+
+/** The points whose photos start as kept with the project. */
+export function defaultProject(plan: FieldPlan): Set<string> {
+  return new Set(plan.newSites.filter((n) => !n.existing && n.suggest === 'project').map((n) => n.field.id));
 }
 
 const FIELD_LINE = /^(Field( photos| location)?): /;
@@ -278,7 +306,7 @@ function fieldNotes(v: FieldVisit, by: string | undefined, photos: string[]): st
 const safe = safeName;
 
 /** Add a phone's results: readings to each site's sample for the day, notes, photos, and the round marked sampled. */
-export async function commitField(projectId: string, plan: FieldPlan, fileName: string, choices: FieldChoices = {}): Promise<{ batch: ImportBatch; samples: number; results: number; photos: number; photoError?: string; sitesAdded: number; located: number }> {
+export async function commitField(projectId: string, plan: FieldPlan, fileName: string, choices: FieldChoices = {}): Promise<{ batch: ImportBatch; samples: number; results: number; photos: number; projectPhotos: number; photoError?: string; sitesAdded: number; located: number }> {
   const { results } = plan;
   // new points that join one of the project's sites
   const attached = new Map<string, Site>();
@@ -287,8 +315,11 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
     const site = to ? await db.sites.get(to) : undefined;
     if (site && site.projectId === projectId) attached.set(n.site.id, site);
   }
+  // points with only photos, kept with the project: no site, no sample – the photos in its folder
+  const toProject = plan.newSites.filter((n) => !n.existing && n.photosOnly && !attached.has(n.site.id) && choices.project?.has(n.field.id));
+  const projectRows = plan.rows.filter((r) => toProject.some((n) => n.site.id === r.site.id));
   // new sites left out: so are their readings
-  const addSites = plan.newSites.filter((n) => !n.existing && !attached.has(n.site.id) && (!choices.newSites || choices.newSites.has(n.field.id)));
+  const addSites = plan.newSites.filter((n) => !n.existing && !attached.has(n.site.id) && !toProject.includes(n) && (!choices.newSites || choices.newSites.has(n.field.id)));
   const leftOut = new Set(plan.newSites.filter((n) => !n.existing && !attached.has(n.site.id) && !addSites.includes(n)).map((n) => n.site.id));
   const setPlaces = plan.located.filter((l) => !choices.located || choices.located.has(l.site.id));
   const retarget = <T extends { site: Site }>(r: T): T => (attached.has(r.site.id) ? { ...r, site: attached.get(r.site.id)! } : r);
@@ -302,15 +333,16 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
   let photoError: string | undefined;
   const project = await db.projects.get(projectId);
   const used = new Set<string>();
-  for (const row of plan.rows) {
+  /** A visit's photos into the shared folder, named `base` 1, 2 … (a photo kept before – sent again – keeps its own). */
+  const keep = async (row: FieldRow, base: string): Promise<Array<{ path: string; photo: FieldPhoto }>> => {
     const list = row.visit.photos ?? [];
-    if (!list.length) continue;
+    if (!list.length) return [];
     if (!folder?.writeBlob) {
       photoError = 'The photos weren’t kept: the shared folder isn’t connected.';
-      continue;
+      return [];
     }
     const dir = photoDir(project ?? { code: '', name: 'Project' }, row.date);
-    const paths: string[] = [];
+    const out: Array<{ path: string; photo: FieldPhoto }> = [];
     for (const p of list) {
       let bytes = photoBytes(p);
       if (!bytes) continue;
@@ -319,26 +351,37 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
       if (gps) bytes = withPhotoGps(bytes, gps, p.at);
       const ext = type === 'image/jpeg' ? 'jpg' : type.slice(6);
       try {
-        // the next free name – a photo added before (the same file sent again) keeps its own
         let path = '';
         let same = false;
         for (let n = 1; n < 2000 && !path; n++) {
-          const cand = `${dir}/${safe(row.site.code)} ${n}.${ext}`;
+          const cand = `${dir}/${safe(base) || 'Photo'} ${n}.${ext}`;
           if (used.has(cand)) continue;
           const info = await folder.info(cand).catch(() => null);
           if (!info) path = cand;
           else if (info.size === bytes.length) [path, same] = [cand, true];
         }
-        if (!path) throw new Error('too many photos at the site that day');
+        if (!path) throw new Error('too many photos at the place that day');
         if (!same) await folder.writeBlob(path, new Blob([bytes as BlobPart], { type }));
         used.add(path);
-        paths.push(path);
+        out.push({ path, photo: p });
         photos++;
       } catch (e) {
         photoError = `Some photos weren’t kept: ${(e as Error).message}`;
       }
     }
-    photoPaths.set(row, paths);
+    return out;
+  };
+  for (const row of plan.rows) {
+    const kept = await keep(row, row.site.code);
+    if (kept.length) photoPaths.set(row, kept.map((k) => k.path));
+  }
+  // photos kept with the project: named after the point (when named on the phone) or the job
+  const projectPhotos: NonNullable<ImportBatch['photos']> = [];
+  for (const row of projectRows) {
+    const point = toProject.find((n) => n.site.id === row.site.id)!.field;
+    const label = (!point.auto && (point.name || point.code)) || results.sheet.round || 'Photo';
+    for (const { path, photo } of await keep(row, label))
+      projectPhotos.push({ path, label, ...(photo.at ? { at: photo.at } : {}), ...(photo.lat !== undefined && photo.lng !== undefined ? { lat: photo.lat, lng: photo.lng } : {}), ...(row.visit.notes ? { note: row.visit.notes } : {}) });
   }
 
   const batch: ImportBatch = {
@@ -356,11 +399,15 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
       plan.notSampled.length ? `Not sampled: ${plan.notSampled.map((n) => `${n.site.code} (${n.reason})`).join(', ')}.` : '',
       addSites.length ? `Sites added in the field: ${addSites.map((n) => n.site.code).join(', ')}.` : '',
       setPlaces.length ? `Locations set in the field: ${setPlaces.map((l) => l.site.code).join(', ')}.` : '',
+      projectPhotos.length ? `${projectPhotos.length} photo${projectPhotos.length === 1 ? '' : 's'} kept with the project.` : '',
     ]
       .filter(Boolean)
       .join(' '),
-    // where the points that joined a site went: the same next time the job is added
-    ...(attached.size ? { fieldPoints: Object.fromEntries(plan.newSites.filter((n) => attached.has(n.site.id)).map((n) => [n.field.id, attached.get(n.site.id)!.id])) } : {}),
+    // where the points that joined a site went (or the project, for their photos): the same next time it's added
+    ...(attached.size || toProject.length
+      ? { fieldPoints: Object.fromEntries([...plan.newSites.filter((n) => attached.has(n.site.id)).map((n) => [n.field.id, attached.get(n.site.id)!.id]), ...toProject.map((n) => [n.field.id, PROJECT_PHOTOS])]) }
+      : {}),
+    ...(projectPhotos.length ? { photos: projectPhotos } : {}),
   };
   await db.transaction('rw', [db.samples, db.results, db.imports, db.projects, db.sites], async () => {
     // the sites added in the field, and the locations set there
@@ -420,13 +467,15 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
     await touchProject(projectId);
   });
   await logAudit(projectId, 'import', `Field results added from ${fileName}: ${batch.results} readings, ${batch.samples} sites`);
-  // the round: sampled on the day (when the project is on the monitoring calendar)
+  // the round: sampled on the day (when the project is on the monitoring calendar) – for a job from a phone or
+  // photos, only when readings were taken
   const day = plan.rows[0]?.date.slice(0, 10) ?? results.sheet.date;
   const row = await db.calendarRows.where('projectId').equals(projectId).first();
-  if (row && day) {
+  const planned = !/^(job|photos)-/.test(results.sheet.id);
+  if (row && day && (planned || plan.rows.some((r) => r.values.length))) {
     const month = day.slice(0, 7);
     const mark = await db.calendarMarks.get(`${row.id}|${month}`);
     if (!mark?.sampledOn) await recordRound(row.id, month, { sampledOn: day }).catch(() => undefined);
   }
-  return { batch, samples: batch.samples, results: batch.results, photos, photoError, sitesAdded: addSites.length, located: setPlaces.length };
+  return { batch, samples: batch.samples, results: batch.results, photos, projectPhotos: projectPhotos.length, photoError, sitesAdded: addSites.length, located: setPlaces.length };
 }

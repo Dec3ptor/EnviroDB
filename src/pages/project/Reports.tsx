@@ -598,7 +598,7 @@ export function ReportsTab() {
                   images={reportFigures[fb.id] ?? []}
                   numbering={fb.numbering}
                   onChange={(images) => saveFigures(fb.id, images)}
-                  more={(add) => <FieldPhotoPicker samples={data.samples} sites={data.sites} period={period} siteIds={chosenSites} images={reportFigures[fb.id] ?? []} onAdd={add} />}
+                  more={(add) => <FieldPhotoPicker samples={data.samples} sites={data.sites} imports={data.imports} period={period} siteIds={chosenSites} images={reportFigures[fb.id] ?? []} onAdd={add} />}
                 />
                 <MoreOptions label="Layout" summary={`${fb.perRow} per row · ${fb.numbering === 'group' ? 'one number, (a) (b) …' : fb.numbering === 'each' ? `${fb.label || 'Figure'} numbers` : 'no numbers'}`} defaultOpen={(reportFigures[fb.id]?.length ?? 0) > 1}>
                   <FiguresLayout block={fb} onChange={(nb) => changeTemplate({ ...template, blocks: template.blocks.map((x) => (x.id === nb.id ? nb : x)) })} />
