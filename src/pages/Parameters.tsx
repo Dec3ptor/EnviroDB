@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActionIcon, Autocomplete, Button, Card, Group, NumberInput, Pagination, Select, Table, TagsInput, Text, TextInput, Tooltip } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { notifications } from '@mantine/notifications';
 import { IconMathFunction, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
 import { ParameterEditor } from '../components/ParameterEditor';
 import { db } from '../db/db';
@@ -55,7 +56,17 @@ function ParamRow({ p, onOpen }: { p: Parameter; onOpen: (id: string) => void })
       </Table.Td>
       <Table.Td>
         <Group gap={4} wrap="nowrap">
-          <SaveIcon dirty={dirty} disabled={!d.name.trim()} onClick={() => saveParameter(d, p).then(reset)} label="Save parameter" />
+          <SaveIcon
+            dirty={dirty}
+            disabled={!d.name.trim()}
+            onClick={() =>
+              saveParameter(d, p).then((kept) => {
+                reset();
+                if (kept.length) notifications.show({ color: 'teal', message: `${kept.join(', ')} – worked out from it – now name${kept.length === 1 ? 's' : ''} it as ${d.name}.` });
+              })
+            }
+            label="Save parameter"
+          />
           <Tooltip label={p.formula ? 'Its formula, and everything else' : 'Calculate it from others – or change everything else'} openDelay={300}>
             <ActionIcon variant="subtle" color={p.formula ? undefined : 'gray'} onClick={() => onOpen(p.id)} aria-label={`Open ${p.name}`}>
               <IconMathFunction size={16} />

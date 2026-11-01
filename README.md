@@ -149,7 +149,11 @@ there as they work and show up for the others within seconds.
   `+ - * / ^`, brackets and Excel's functions (`ABS SQRT EXP LN LOG10 LOG POWER ROUND MIN MAX AVERAGE IF PI`), plus
   `DO_SAT(temperature, salinity, pressure)` – oxygen's solubility in mg/L (Benson & Krause, as in APHA and the
   USGS tables). The formula is checked as you type and shows the values it works out in the project before it's
-  saved. **Ask an AI…** copies what an AI needs to write one (the syntax and the project's parameter names and
+  saved – and, when it works none out, why: each parameter it uses is listed with its unit and how many samples
+  have it, one with none is marked with *Did you mean* (the project's parameters with values that look like it, to
+  swap in with a click), and where the value's measured too it shows how close the formula comes. A formula that
+  goes round in a circle is caught before it's saved, and renaming a parameter changes the formulas that name it.
+  **Ask an AI…** copies what an AI needs to write one (the syntax and the project's parameter names and
   units – no results, sites or client details): paste it into Copilot, ChatGPT or Claude, say what you want, and
   paste its formula back. A formula is only ever arithmetic – EnviroDB reads it itself, it's never run as code.
   Calculated values are worked out as the data is shown and **never stored**: a measured value – from a lab, a

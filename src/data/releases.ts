@@ -11,6 +11,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.31.1',
+    date: '2026-11-01',
+    title: 'A formula says why it isn’t working',
+    items: [
+      'A parameter’s formula lists each parameter it uses with its unit and how many samples in the project have it. One with no values here is marked, with Did you mean: the project’s parameters with values that look like it, to swap in with a click – a formula naming Dissolved Oxygen (the mg/L one) where DO % was meant, say.',
+      'When the formula gives no values, it says why: no sample has one of what it needs, the samples that have it all have a measured value of their own (kept), or the sums give no number (dividing by 0). Values in a unit that can’t be changed to the parameter’s are counted and named.',
+      'Where a value is measured too, the formula is worked out there as a check: how close it comes to the measured value – far apart is flagged.',
+      'A formula that would go round in a circle (X worked out from Y, Y from X) is caught before it’s saved.',
+      'Names with a dash or brackets of their own – TPH C7–C9, Benzo[a]pyrene – work in a formula, and a hyphen does for a dash.',
+      'A parameter renamed (or a short or other name taken off) no longer breaks the formulas that name it: they’re changed to name it the new way.',
+    ],
+  },
+  {
     version: '1.31.0',
     date: '2026-11-01',
     title: 'Type values in; calculated parameters',

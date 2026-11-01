@@ -23,8 +23,20 @@ export type Node =
 
 const MAX_LEN = 2000;
 
-function tokens(src: string): Tok[] {
-  const s = src.replace(/[×]/g, '*').replace(/[÷]/g, '/').replace(/[−–]/g, '-').replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/≠/g, '<>');
+// what a formula pasted from Word or an AI may have for an operator (a parameter's name keeps its own: "TPH C7–C9")
+const ALT_OPS: Record<string, string> = { '×': '*', '÷': '/', '−': '-', '–': '-', '≤': '<=', '≥': '>=', '≠': '<>' };
+
+/** Where the parameter name opened at `from` (a "[") ends: its "]" – names may have brackets of their own ("Benzo[a]pyrene"). */
+function refEnd(s: string, from: number): number {
+  let depth = 0;
+  for (let i = from; i < s.length; i++) {
+    if (s[i] === '[') depth++;
+    else if (s[i] === ']' && --depth === 0) return i;
+  }
+  return -1;
+}
+
+function tokens(s: string): Tok[] {
   const out: Tok[] = [];
   let i = 0;
   while (i < s.length) {
@@ -40,7 +52,7 @@ function tokens(src: string): Tok[] {
       continue;
     }
     if (c === '[') {
-      const end = s.indexOf(']', i + 1);
+      const end = refEnd(s, i);
       if (end < 0) throw new FormulaError('A [ isn’t closed with ]', i);
       const name = s.slice(i + 1, end).trim();
       if (!name) throw new FormulaError('Put a parameter’s name between [ and ]', i);
@@ -52,6 +64,11 @@ function tokens(src: string): Tok[] {
     if (id) {
       out.push({ t: 'id', name: id[0].toUpperCase(), at: i });
       i += id[0].length;
+      continue;
+    }
+    if (ALT_OPS[c]) {
+      out.push({ t: 'op', v: ALT_OPS[c], at: i });
+      i++;
       continue;
     }
     const two = s.slice(i, i + 2);
@@ -183,6 +200,34 @@ export function parseFormula(src: string): { node: Node; refs: string[] } {
   };
   walk(node);
   return { node, refs };
+}
+
+/** A parameter's name as a formula writes it, in brackets – its id when the name's own brackets don't pair up. */
+export function refText(p: { id: string; name: string }): string {
+  let depth = 0;
+  for (const c of p.name) {
+    if (c === '[') depth++;
+    else if (c === ']' && --depth < 0) break;
+  }
+  return depth === 0 ? p.name : p.id;
+}
+
+/** The formula with the parameters it names as `from` (as written in it) named `to` instead. */
+export function renameRefs(src: string, from: string[], to: string): string {
+  const names = new Set(from);
+  let out = '';
+  let i = 0;
+  while (i < src.length) {
+    const end = src[i] === '[' ? refEnd(src, i) : -1;
+    if (end < 0) {
+      out += src[i++];
+      continue;
+    }
+    const whole = src.slice(i, end + 1);
+    out += names.has(whole.slice(1, -1).trim()) ? `[${to}]` : whole;
+    i = end + 1;
+  }
+  return out;
 }
 
 /**

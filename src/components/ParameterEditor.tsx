@@ -12,8 +12,8 @@ import type { Parameter } from '../db/types';
 import { createParameter, saveParameter } from '../db/repo';
 import { compareParams, PARAMETER_GROUPS } from '../data/parameters';
 import { COMMON_UNITS, unitLabel } from '../lib/units';
-import { calculatedResults, compileFormula } from '../lib/calculated';
-import { FUNCTION_HELP } from '../lib/formula';
+import { compileAll, compileFormula, explainFormula, likeParams, typicalGap, type FormulaReport, type InputUse } from '../lib/calculated';
+import { FUNCTION_HELP, refText, renameRefs } from '../lib/formula';
 import { formulaPrompt } from '../lib/formulaPrompt';
 import type { ProjectData } from '../hooks/useProjectData';
 import { fmtNum } from '../lib/values';
@@ -50,25 +50,56 @@ export function ParameterEditor({ opened, paramId, bundle, onClose, onSaved }: {
 
   const targetId = stored?.id ?? '__new__';
   const params = useMemo(() => [...(bundle?.params ?? library ?? [])].sort(compareParams), [bundle, library]);
-  const target: Parameter = { ...(stored ?? { id: targetId, aliases: [] }), id: targetId, name: d.name, group: d.group, unit: d.unit, aliases: d.aliases } as Parameter;
+  const target: Parameter = { ...(stored ?? { id: targetId, aliases: [] }), id: targetId, name: d.name, short: d.short.trim() || undefined, group: d.group, unit: d.unit, aliases: d.aliases } as Parameter;
   const formula = d.formula.trim();
   const compiled = formula ? compileFormula(target, params, formula) : null;
   const ok = compiled && !('error' in compiled) ? compiled : null;
-  // what it works out in this project (before it's saved)
-  const preview = useMemo(() => {
+  // worked out from itself through other calculated parameters (X from Y, Y from X): caught before it's saved
+  const loop = useMemo(() => {
+    if (!ok) return null;
+    const trial = [...params.filter((p) => p.id !== targetId), { ...target, formula }];
+    const why = compileAll(trial).problems.get(targetId);
+    if (!why) return null;
+    // the parameter it comes back through
+    const seen = new Set<string>();
+    const reaches = (id: string): boolean => {
+      if (id === targetId) return true;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      const p = trial.find((x) => x.id === id);
+      const c = p?.formula ? compileFormula(p, trial) : null;
+      return !!c && !('error' in c) && [...c.inputs.values()].some(reaches);
+    };
+    const via = trial.find((p) => p.id !== targetId && [...ok.inputs.values()].includes(p.id) && reaches(p.id));
+    return via ? `${via.name} is worked out from ${d.name.trim() || 'this one'} – they can’t each be worked out from the other` : why;
+  }, [ok?.formula, params, targetId, d.name, d.short, d.aliases]);
+  const problem = compiled && 'error' in compiled ? compiled.error : loop;
+  // what it works out in this project (before it's saved) – and why not, when it doesn't
+  const report = useMemo(() => {
     if (!bundle || !ok) return null;
     const others = bundle.results.filter((r) => !(r.calc && r.parameterId === targetId));
-    const out = calculatedResults([...bundle.samples, ...bundle.qc.samples], others, params, bundle.project.ndHandling, [ok]);
-    const measured = new Set(bundle.results.filter((r) => r.parameterId === targetId && !r.calc).map((r) => r.sampleId)).size;
-    return { n: out.length, measured, examples: [...out].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 5) };
-  }, [bundle, ok?.formula, targetId, params]);
+    return explainFormula([...bundle.samples, ...bundle.qc.samples], others, params, bundle.project.ndHandling, ok);
+  }, [bundle, ok?.formula, ok?.param.unit, targetId, params]);
+  // how many samples have each parameter here (to offer ones with values)
+  const counts = useMemo(() => {
+    const by = new Map<string, Set<string>>();
+    for (const r of bundle?.results ?? []) {
+      if (r.excluded || r.value === null || r.parameterId === targetId) continue;
+      let set = by.get(r.parameterId);
+      if (!set) by.set(r.parameterId, (set = new Set()));
+      set.add(r.sampleId);
+    }
+    return new Map([...by].map(([id, set]) => [id, set.size]));
+  }, [bundle, targetId]);
   // the project's parameters with data (else the library's), to name in a formula or tell an AI about
   const offered = useMemo(() => {
     const withData = bundle ? new Set(bundle.index.paramIdsWithData) : null;
     return params.filter((p) => p.id !== targetId && (!withData || withData.has(p.id)));
   }, [params, bundle, targetId]);
-
-  const insert = (name: string) => {
+  const insert = (id: string) => {
+    const p = params.find((x) => x.id === id);
+    if (!p) return;
+    const name = refText(p);
     const el = box.current;
     const at = el?.selectionStart ?? d.formula.length;
     const end = el?.selectionEnd ?? at;
@@ -90,15 +121,17 @@ export function ParameterEditor({ opened, paramId, bundle, onClose, onSaved }: {
   const save = async () => {
     const patch = { name: d.name.trim(), short: d.short.trim() || undefined, group: d.group, unit: d.unit.trim(), decimals: d.decimals === '' ? undefined : Number(d.decimals), formula: formula || undefined };
     let saved: Parameter;
+    let kept: string[] = [];
     if (stored) {
       saved = { ...stored, ...patch, aliases: d.aliases };
-      await saveParameter(saved, stored);
+      kept = await saveParameter(saved, stored);
     } else {
       const made = await createParameter(patch.name, patch.unit, patch.group);
       saved = { ...made, ...patch, aliases: [...new Set([...made.aliases, ...d.aliases])] };
       await saveParameter(saved, made);
     }
-    notifications.show({ color: 'teal', message: `${saved.name} saved${saved.formula ? ' – its values are worked out wherever a sample has what the formula needs' : ''}.` });
+    const also = kept.length ? ` ${kept.join(', ')} – worked out from it – now name${kept.length === 1 ? 's' : ''} it as ${saved.name}.` : '';
+    notifications.show({ color: 'teal', message: `${saved.name} saved${saved.formula ? ' – its values are worked out wherever a sample has what the formula needs' : ''}.${also}` });
     onSaved?.(saved);
     onClose();
   };
@@ -131,10 +164,10 @@ export function ParameterEditor({ opened, paramId, bundle, onClose, onSaved }: {
           onChange={(e) => setD({ ...d, formula: e.currentTarget.value })}
           placeholder="e.g. [DO %] / 100 * DO_SAT([Temperature])"
           styles={{ input: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' } }}
-          error={compiled && 'error' in compiled ? compiled.error : undefined}
+          error={problem ?? undefined}
         />
         <Group gap="xs" wrap="wrap" mt={-4}>
-          <Select size="xs" placeholder="Insert a parameter…" data={offered.map((p) => ({ value: p.name, label: `${p.name}${unitLabel(p.unit) ? ` (${unitLabel(p.unit)})` : ''}` }))} value={null} onChange={(v) => v && insert(v)} searchable w={240} comboboxProps={{ withinPortal: true }} aria-label="Insert a parameter" />
+          <Select size="xs" placeholder="Insert a parameter…" data={offered.map((p) => ({ value: p.id, label: `${p.name}${unitLabel(p.unit) ? ` (${unitLabel(p.unit)})` : ''}` }))} value={null} onChange={(v) => v && insert(v)} searchable w={240} comboboxProps={{ withinPortal: true }} aria-label="Insert a parameter" />
           <Button size="xs" variant="light" leftSection={<IconCopy size={14} />} onClick={() => void askAi()}>
             Ask an AI…
           </Button>
@@ -154,36 +187,24 @@ export function ParameterEditor({ opened, paramId, bundle, onClose, onSaved }: {
             ))}
           </Card>
         )}
-        {ok && (
-          <Text size="xs" c="teal">
-            Works it out from {[...new Set(ok.inputs.values())].map((id) => params.find((p) => p.id === id)?.name ?? id).join(', ')}.
-          </Text>
-        )}
-        {preview && (
-          <Card withBorder padding="sm">
-            <Text size="sm" fw={600}>
-              In this project: {preview.n ? `${preview.n} sample${preview.n === 1 ? ' gets' : 's get'} a value` : 'no sample has what it needs'}
-              {preview.measured ? ` · ${preview.measured} ${preview.measured === 1 ? 'has' : 'have'} a measured one – kept` : ''}
+        {ok && !loop && ok.inputs.size > 0 && (
+          <Stack gap={4}>
+            <Text size="xs" fw={600}>
+              Works it out from
             </Text>
-            {preview.examples.length > 0 && (
-              <Table fz="xs" mt={6} withRowBorders={false} verticalSpacing={2}>
-                <Table.Tbody>
-                  {preview.examples.map((r) => (
-                    <Table.Tr key={r.id}>
-                      <Table.Td style={{ whiteSpace: 'nowrap' }}>
-                        {bundle?.siteMap.get(r.siteId)?.code} {formatDate(r.date.slice(0, 10))}
-                      </Table.Td>
-                      <Table.Td c="dimmed">{r.calc?.from}</Table.Td>
-                      <Table.Td ta="right" fw={600} style={{ whiteSpace: 'nowrap' }}>
-                        {fmtNum(r.value, d.decimals === '' ? undefined : Number(d.decimals))} {unit}
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            )}
-          </Card>
+            {(report?.inputs ?? inputsOf(ok.inputs, params)).map((u) => (
+              <InputLine
+                key={u.param.id}
+                use={u}
+                inProject={!!report}
+                like={report && !u.samples ? likeParams(u.param, offered.filter((p) => ![...ok.inputs.values()].includes(p.id)), (id) => counts.get(id) ?? 0) : []}
+                count={(id) => counts.get(id) ?? 0}
+                onSwap={(q) => setD({ ...d, formula: renameRefs(d.formula, u.refs, refText(q)) })}
+              />
+            ))}
+          </Stack>
         )}
+        {report && !loop && <Preview report={report} name={d.name.trim() || 'value'} unit={unit} decimals={d.decimals === '' ? undefined : Number(d.decimals)} siteCode={(id) => bundle?.siteMap.get(id)?.code ?? ''} />}
         {formula && stored?.formula && formula !== stored.formula && (
           <Alert variant="light" color="blue" p="xs">
             <Text size="xs">The values worked out change with the formula. Nothing measured changes.</Text>
@@ -196,11 +217,120 @@ export function ParameterEditor({ opened, paramId, bundle, onClose, onSaved }: {
           <Button variant="default" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => void save()} disabled={!d.name.trim() || !!(compiled && 'error' in compiled)}>
+          <Button onClick={() => void save()} disabled={!d.name.trim() || !!problem}>
             Save
           </Button>
         </Group>
       </Stack>
     </Modal>
+  );
+}
+
+/** The parameters a formula uses, without a project to count them in. */
+const inputsOf = (inputs: Map<string, string>, params: Parameter[]): InputUse[] => {
+  const out: InputUse[] = [];
+  for (const [ref, id] of inputs) {
+    const there = out.find((u) => u.param.id === id);
+    const param = params.find((p) => p.id === id);
+    if (there) there.refs.push(ref);
+    else if (param) out.push({ param, refs: [ref], samples: 0, otherUnit: 0, otherUnits: [] });
+  }
+  return out;
+};
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const list = (xs: string[], last: string) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} ${last} ${xs[xs.length - 1]}`);
+
+/** One parameter the formula uses: its unit, how many samples here have it – and, when none do, ones that do. */
+function InputLine({ use, inProject, like, count, onSwap }: { use: InputUse; inProject: boolean; like: Parameter[]; count: (id: string) => number; onSwap: (p: Parameter) => void }) {
+  const unit = unitLabel(use.param.unit);
+  const other = use.otherUnits.map((u) => unitLabel(u) || 'no unit').join(', ');
+  const none = inProject && !use.samples;
+  // written another way than its name: [DO %] = Dissolved Oxygen Saturation
+  const alt = use.refs.filter((r) => r.toLowerCase() !== use.param.name.trim().toLowerCase());
+  return (
+    <div>
+      <Text size="xs" c={none ? 'orange.8' : undefined}>
+        {alt.length > 0 && <code>{alt.map((r) => `[${r}]`).join(', ')} = </code>}
+        <b>{use.param.name}</b>
+        {unit ? ` (${unit})` : ''}
+        {inProject && (use.samples ? ` – in ${plural(use.samples, 'sample')}` : use.otherUnit ? '' : ' – no values in this project')}
+        {inProject && use.otherUnit > 0 && (use.samples ? ` · ${use.otherUnit} more in ${other}, which can’t be changed to ${unit} – not used` : ` – its ${plural(use.otherUnit, 'value')} ${use.otherUnit === 1 ? 'is' : 'are'} in ${other}, which can’t be changed to ${unit}, so ${use.otherUnit === 1 ? 'it isn’t' : 'they aren’t'} used`)}
+      </Text>
+      {none && (
+        <Group gap={4} mt={2} wrap="wrap">
+          <Text size="xs" c="dimmed">
+            {like.length ? 'Did you mean' : 'Pick the one your values are in from Insert a parameter…'}
+          </Text>
+          {like.map((q) => (
+            <Button key={q.id} size="compact-xs" variant="light" onClick={() => onSwap(q)}>
+              {q.name}
+              {unitLabel(q.unit) ? ` (${unitLabel(q.unit)})` : ''} – {plural(count(q.id), 'sample')}
+            </Button>
+          ))}
+        </Group>
+      )}
+    </div>
+  );
+}
+
+/** What the formula does in this project: how many samples get a value (or why none do), and how close it comes where it's measured too. */
+function Preview({ report, name, unit, decimals, siteCode }: { report: FormulaReport; name: string; unit: string; decimals?: number; siteCode: (siteId: string) => string }) {
+  const n = report.results.length;
+  const kept = report.measured ? `${report.measured} ${report.measured === 1 ? 'has' : 'have'} a measured ${name} – kept` : '';
+  const missing = report.inputs.filter((u) => !u.samples);
+  const why = missing.length
+    ? `no sample has ${list(missing.map((u) => (u.otherUnit ? `${u.param.name} in ${unitLabel(u.param.unit)}` : u.param.name)), 'or')}`
+    : report.noAnswer
+      ? `it gives no number for the ${plural(report.noAnswer, 'sample')} with what it needs – dividing by 0, or the root or log of a negative?`
+      : report.checks.length
+        ? `every sample with what it needs has a measured ${name} – kept`
+        : report.inputs.length > 1
+          ? `no sample has ${list(report.inputs.map((u) => u.param.name), 'and')} together`
+          : 'no sample has what it needs';
+  const gap = typicalGap(report.checks);
+  const far = gap?.share != null && gap.share > 0.15;
+  const fmt = (v: number) => fmtNum(v, decimals);
+  // its newest values – or, when it gives none, where it's measured too
+  const rows = n
+    ? [...report.results].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 5).map((r) => ({ key: r.id, siteId: r.siteId, date: r.date, from: r.calc?.from ?? '', value: r.value!, measured: undefined as number | undefined }))
+    : [...report.checks].sort((a, b) => (a.sample.date < b.sample.date ? 1 : -1)).slice(0, 5).map((k) => ({ key: k.sample.id, siteId: k.sample.siteId, date: k.sample.date, from: k.from, value: k.worked, measured: k.measured }));
+  return (
+    <Card withBorder padding="sm">
+      <Text size="sm" fw={600}>
+        In this project: {n ? `${plural(n, 'sample')} ${n === 1 ? 'gets' : 'get'} a value` : `no sample gets a value – ${why}`}
+        {kept && !(n === 0 && !missing.length && !report.noAnswer && report.checks.length) ? ` · ${kept}` : ''}
+      </Text>
+      {gap && (
+        <Text size="xs" mt={4} c={far ? 'orange.8' : 'dimmed'}>
+          {report.checks.length === 1
+            ? `Where it’s measured too: works out ${fmt(report.checks[0].worked)} ${unit}, measured ${fmt(report.checks[0].measured)} ${unit}`
+            : `Where it’s measured too (${report.checks.length} samples): typically within ${fmt(gap.diff)} ${unit}${gap.share != null ? ` (${Math.round(gap.share * 1000) / 10}%)` : ''} of the measured value`}
+          {far ? ' – far apart: is the formula using the right parameters?' : ''}
+        </Text>
+      )}
+      {rows.length > 0 && (
+        <Table fz="xs" mt={6} withRowBorders={false} verticalSpacing={2}>
+          <Table.Tbody>
+            {rows.map((r) => (
+              <Table.Tr key={r.key}>
+                <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                  {siteCode(r.siteId)} {formatDate(r.date.slice(0, 10))}
+                </Table.Td>
+                <Table.Td c="dimmed">{r.from}</Table.Td>
+                <Table.Td ta="right" fw={600} style={{ whiteSpace: 'nowrap' }}>
+                  {fmt(r.value)} {unit}
+                </Table.Td>
+                {r.measured !== undefined && (
+                  <Table.Td c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                    measured {fmt(r.measured)}
+                  </Table.Td>
+                )}
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      )}
+    </Card>
   );
 }

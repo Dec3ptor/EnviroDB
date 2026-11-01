@@ -1,6 +1,7 @@
 import { roundEdits, type RoundPatch } from '../lib/rounds';
 import type { Table } from 'dexie';
 import { normName } from '../lib/matching';
+import { formulasKept } from '../lib/calculated';
 import { BUILT_IN_PARAMETERS } from '../data/parameters';
 import { db, getSettings, saveSettings } from './db';
 import { same } from '../sync/model';
@@ -148,8 +149,16 @@ export async function addSiteAlias(siteId: string, alias: string): Promise<void>
 
 // ------------------------------------------------------------ parameters
 
-export async function saveParameter(p: Parameter, before?: Parameter): Promise<void> {
-  await saveEdited(db.parameters, p, before);
+/**
+ * A parameter saved. When it's renamed (or a short or other name comes off), other parameters' formulas that named it
+ * the old way are changed to name it as it is now – so they keep working. Returns those parameters' names.
+ */
+export async function saveParameter(p: Parameter, before?: Parameter): Promise<string[]> {
+  const saved = await saveEdited(db.parameters, p, before);
+  if (!before || (before.name === saved.name && before.short === saved.short && same(before.aliases, saved.aliases))) return [];
+  const kept = formulasKept(await db.parameters.toArray(), before, saved);
+  for (const k of kept) await saveEdited(db.parameters, { ...k.param, formula: k.formula }, k.param);
+  return kept.map((k) => k.param.name);
 }
 
 export async function createParameter(name: string, unit: string, group = 'Other'): Promise<Parameter> {

@@ -1,10 +1,10 @@
 import 'fake-indexeddb/auto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { db, ensureBuiltIns } from '../src/db/db';
-import { newProject, newSite, saveProject, saveSite } from '../src/db/repo';
+import { newProject, newSite, saveParameter, saveProject, saveSite } from '../src/db/repo';
 import { addSample, setCellValue } from '../src/db/edits';
-import { doSaturation, evaluate, FormulaError, parseFormula } from '../src/lib/formula';
-import { calculatedResults, compileAll, compileFormula, paramByRef } from '../src/lib/calculated';
+import { doSaturation, evaluate, FormulaError, parseFormula, refText, renameRefs } from '../src/lib/formula';
+import { calculatedResults, compileAll, compileFormula, explainFormula, formulasKept, likeParams, paramByRef, typicalGap } from '../src/lib/calculated';
 import { pivot } from '../src/lib/analysis';
 import type { Parameter, Result, Sample } from '../src/db/types';
 import { loadBundle } from './helpers';
@@ -183,5 +183,120 @@ describe('values typed into the Data tab', () => {
     expect(grid.columns.map((c) => c.id)).toContain('do');
     expect(grid.columns.map((c) => c.id)).toContain('ph');
     await db.parameters.update('do', { formula: undefined });
+  });
+});
+
+// ------------------------------------------------------------ a formula explained in the editor
+
+describe('a formula explained before it’s saved', () => {
+  const temp = P('temp', 'Temperature', '°C', undefined, { short: 'Temp', aliases: ['water temperature'] });
+  const doMg = P('do', 'Dissolved Oxygen', 'mg/L', undefined, { short: 'DO', aliases: ['do (mg/l)', 'dissolved oxygen (field)'] });
+  const doSat = P('do-sat', 'Dissolved Oxygen Saturation', '% sat', undefined, { short: 'DO %', aliases: ['do saturation'] });
+  const fieldPct = P('do-pct-field', 'DO(%)(field)', '%', undefined, { aliases: ['DO(%)(field)'] });
+  const zinc = P('zn-d', 'Dissolved Zinc', 'mg/L');
+  const target = P('do-field', 'DO(Mg/L)(field)', 'mg/L', undefined, { aliases: ['DO(Mg/L)(field)'] });
+  const params = [temp, doMg, doSat, fieldPct, zinc, target];
+  const samples = ['a', 'b', 'c', 'd'].map(S);
+  // the field meter gives DO % and temperature; DO mg/L is measured in a and b only
+  const results = [
+    R('a', 'do-pct-field', 95, '%'),
+    R('a', 'temp', 14.2, '°C'),
+    R('a', 'do-field', 9.8, 'mg/L'),
+    R('b', 'do-pct-field', 100, '%'),
+    R('b', 'temp', 10, '°C'),
+    R('b', 'do-field', 11.2, 'mg/L'),
+    R('c', 'do-pct-field', 80, '%'),
+    R('c', 'temp', 12, '°C'),
+    R('d', 'temp', 20, 'deg'), // a unit it can't read
+    R('d', 'zn-d', 0.01, 'mg/L'),
+  ];
+  const explain = (formula: string) => {
+    const c = compileFormula(target, params, formula);
+    if ('error' in c) throw new Error(c.error);
+    return explainFormula(samples, results, params, 'dl', c);
+  };
+
+  it('the mg/L parameter named for DO %: no values – each input counted, and the ones like it offered', () => {
+    const r = explain('[Dissolved Oxygen] / 100 * DO_SAT([Temperature])');
+    expect(r.results).toHaveLength(0);
+    expect(r.measured).toBe(2);
+    expect(r.inputs.map((u) => [u.param.id, u.samples, u.otherUnit, u.otherUnits])).toEqual([
+      ['do', 0, 0, []],
+      ['temp', 3, 1, ['deg']],
+    ]);
+    // like Dissolved Oxygen, with values here: DO(%)(field) – not Dissolved Zinc ("dissolved" says nothing)
+    const withValues = [temp, fieldPct, zinc];
+    expect(likeParams(doMg, withValues, () => 1).map((p) => p.id)).toEqual(['do-pct-field']);
+    expect(likeParams(doMg, [...withValues, doSat], (id) => (id === 'do-sat' ? 1 : 5)).map((p) => p.id)).toEqual(['do-sat', 'do-pct-field']);
+    expect(likeParams(temp, [P('t2', 'Temp(°C)(field)', '°C'), zinc], () => 1).map((p) => p.id)).toEqual(['t2']);
+    // little words say nothing: "c7 to c9" isn't like "depth to water"
+    expect(likeParams(P('tph', 'TPH C7–C9', 'mg/L', undefined, { aliases: ['c7 to c9'] }), [P('swl', 'Static Water Level', 'm', undefined, { aliases: ['depth to water'] })], () => 1)).toEqual([]);
+  });
+
+  it('the right one: values where it isn’t measured, and how close it comes where it is', () => {
+    const r = explain('[DO(%)(field)] / 100 * DO_SAT([Temperature])');
+    expect(r.results.map((x) => x.sampleId)).toEqual(['c']);
+    expect(r.results[0].value).toBeCloseTo(0.8 * doSaturation(12), 5);
+    expect(r.checks.map((k) => [k.sample.id, k.measured])).toEqual([
+      ['a', 9.8],
+      ['b', 11.2],
+    ]);
+    expect(r.checks[0].worked).toBeCloseTo(0.95 * doSaturation(14.2), 5);
+    const gap = typicalGap(r.checks)!;
+    expect(gap.share!).toBeLessThan(0.03);
+    expect(r.noAnswer).toBe(0);
+  });
+
+  it('a sample with what it needs but no answer is counted (dividing by 0)', () => {
+    expect(explain('[DO(%)(field)] / ([Temperature] - 12)').noAnswer).toBe(1);
+  });
+});
+
+describe('names in a formula', () => {
+  const tph = P('tph-c7', 'TPH C7–C9', 'mg/L');
+  const bap = P('bap', 'Benzo[a]pyrene', 'µg/L');
+  const ps = [tph, bap, P('x', 'X', 'mg/L')];
+
+  it('a name with a dash or brackets of its own – as listed, or typed with a hyphen', () => {
+    expect(parseFormula('[TPH C7–C9] – 1').refs).toEqual(['TPH C7–C9']);
+    expect(parseFormula('[Benzo[a]pyrene] * 2').refs).toEqual(['Benzo[a]pyrene']);
+    expect(calc('[TPH C7–C9] – 1', { 'TPH C7–C9': 3 })).toBe(2);
+    expect(compileFormula(ps[2], ps, '[TPH C7-C9] + [benzo[a]pyrene]')).toMatchObject({ inputs: new Map([['TPH C7-C9', 'tph-c7'], ['benzo[a]pyrene', 'bap']]) });
+    expect(refText(bap)).toBe('Benzo[a]pyrene');
+    expect(refText({ id: 'odd', name: 'Odd ]name' })).toBe('odd');
+  });
+
+  it('one parameter named another way, everywhere in the formula', () => {
+    expect(renameRefs('[Dissolved Oxygen] / 100 * DO_SAT([Temp]) + [ Dissolved Oxygen ]', ['Dissolved Oxygen'], 'DO(%)(field)')).toBe('[DO(%)(field)] / 100 * DO_SAT([Temp]) + [DO(%)(field)]');
+  });
+
+  it('renamed: the formulas that named it the old way name it the new way, and keep working', () => {
+    const doSat = P('do-sat', 'DO %', '% sat');
+    const calcDo = P('do-calc', 'DO calc', 'mg/L', '[DO %] / 100 * DO_SAT([Temp])');
+    const other = P('other', 'Other', '', '[Temp] * 2');
+    const t = P('temp', 'Temp', '°C');
+    const before = [doSat, calcDo, other, t];
+    const after = { ...doSat, name: 'DO saturation' };
+    expect(formulasKept(before, doSat, after).map((k) => [k.param.id, k.formula])).toEqual([['do-calc', '[DO saturation] / 100 * DO_SAT([Temp])']]);
+    // still named the same way (the old name kept as another name): nothing to change
+    expect(formulasKept(before, doSat, { ...after, aliases: ['DO %'] })).toEqual([]);
+  });
+});
+
+describe('a renamed parameter, saved', () => {
+  it('keeps the formulas that use it working', async () => {
+    await ensureBuiltIns();
+    await db.parameters.put(P('my-calc', 'My calc', 'mg/L', '[Total Suspended Solids] * 2 + [TSS]'));
+    const tss = (await db.parameters.get('tss'))!;
+    const renamed = { ...tss, name: 'Suspended Solids', short: 'SS', aliases: tss.aliases.filter((a) => !/^(total suspended solids|tss)$/i.test(a)) };
+    expect(await saveParameter(renamed, tss)).toEqual(['My calc']);
+    // [TSS] is its id too: it still names it
+    expect((await db.parameters.get('my-calc'))!.formula).toBe('[Suspended Solids] * 2 + [TSS]');
+    expect(compileAll(await db.parameters.toArray()).problems.has('my-calc')).toBe(false);
+    // by its id: nothing to change
+    await db.parameters.update('my-calc', { formula: '[tss] * 2' });
+    expect(await saveParameter({ ...renamed, name: 'Solids' }, renamed)).toEqual([]);
+    await db.parameters.delete('my-calc');
+    await db.parameters.put(tss);
   });
 });
