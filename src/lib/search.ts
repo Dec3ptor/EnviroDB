@@ -3,7 +3,7 @@
 
 import type { GuidelineSet, Parameter, Project, ReportObligation, ReportTemplate, Rule, Site } from '../db/types';
 
-export type SearchKind = 'project' | 'site' | 'page' | 'obligation' | 'rule' | 'parameter' | 'template' | 'guideline';
+export type SearchKind = 'project' | 'site' | 'page' | 'obligation' | 'file' | 'rule' | 'parameter' | 'template' | 'guideline';
 
 export interface SearchHit {
   kind: SearchKind;
@@ -21,6 +21,8 @@ export interface SearchSource {
   obligations: Array<ReportObligation & { projectName?: string }>;
   templates: Array<Pick<ReportTemplate, 'id' | 'name' | 'description'>>;
   guidelineSets: Array<Pick<GuidelineSet, 'id' | 'name' | 'shortName'>>;
+  /** Projects' files: their name, what they are, and the words to find them by (lab, number, notes). */
+  files?: Array<{ projectId: string; name: string; detail?: string; words: Array<string | undefined> }>;
 }
 
 export const KIND_TEXT: Record<SearchKind, string> = {
@@ -28,12 +30,13 @@ export const KIND_TEXT: Record<SearchKind, string> = {
   site: 'Sites',
   page: 'Pages',
   obligation: 'Reports and plans due',
+  file: 'Files',
   rule: 'Limits and triggers',
   parameter: 'Parameters',
   template: 'Report templates',
   guideline: 'Guideline values',
 };
-const KIND_ORDER: SearchKind[] = ['project', 'site', 'page', 'obligation', 'rule', 'parameter', 'template', 'guideline'];
+const KIND_ORDER: SearchKind[] = ['project', 'site', 'page', 'obligation', 'file', 'rule', 'parameter', 'template', 'guideline'];
 
 /** The app's pages, so "settings" or "calendar" is a hit too. */
 export const PAGES: Array<{ title: string; detail?: string; to: string; words?: string }> = [
@@ -90,6 +93,7 @@ export function searchAll(query: string, src: SearchSource, limit = 40): SearchH
   for (const s of src.sites) add('site', s.code, [s.name, s.type, s.projectName].filter(Boolean).join(' · '), `/projects/${s.projectId}/setup`, [s.code, s.name, ...s.aliases]);
   for (const pg of PAGES) add('page', pg.title, pg.detail, pg.to, [pg.title, pg.words]);
   for (const o of src.obligations) add('obligation', o.name, [o.kind === 'plan' ? 'Management plan' : o.kind === 'other' ? 'Document' : 'Report', o.recipient, o.projectName].filter(Boolean).join(' · '), `/projects/${o.projectId}/schedule`, [o.name, o.recipient]);
+  for (const f of src.files ?? []) add('file', f.name, f.detail, `/projects/${f.projectId}/files`, [f.name, ...f.words]);
   for (const r of src.rules) add('rule', r.name, [r.level, r.condition, r.projectName].filter(Boolean).join(' · '), `/projects/${r.projectId}/compliance`, [r.name, r.condition]);
   for (const p of src.params) add('parameter', p.name, [p.short, p.group].filter(Boolean).join(' · '), '/parameters', [p.name, p.short, ...p.aliases.slice(0, 12)]);
   for (const t of src.templates) add('template', t.name, t.description, `/templates/${t.id}`, [t.name, t.description]);
@@ -108,7 +112,7 @@ export const SHORTCUTS: Array<{ keys: string; does: string }> = [
   { keys: 'g then i', does: 'Import data' },
   { keys: 'g then l', does: 'Library' },
   { keys: 'g then s', does: 'Settings' },
-  { keys: '1 – 7', does: 'A project’s tabs, in order (Overview, Data, Graphs, Map, Compliance, Reports, Setup)' },
+  { keys: '1 – 8', does: 'A project’s tabs, in order (Overview, Data, Graphs, Map, Compliance, Reports, Files, Setup)' },
   { keys: 'Esc', does: 'Close a dialog or drawer' },
 ];
 

@@ -619,6 +619,49 @@ export interface ProjectPhoto {
   note?: string;
 }
 
+// ---------------------------------------------------------------- a project's files
+
+/** What a project's file is. */
+export type FileKind = 'results' | 'quote' | 'coc' | 'field' | 'consent' | 'report' | 'correspondence' | 'invoice' | 'other';
+
+/** The data a file is about: a lab job's samples, an import's, or samples chosen one by one. */
+export type FileLink = { kind: 'job'; job: string } | { kind: 'import'; importId: ID } | { kind: 'samples'; sampleIds: ID[] };
+
+/**
+ * A document kept with a project – a lab's quote or result sheet, a chain of custody, the consent. Uploaded, it's a
+ * copy in the team's shared folder (`path`); or a link to one kept elsewhere (`href`: a web address, or a path on the
+ * network drive). It can be linked to the data it's about.
+ */
+export interface ProjectFile {
+  id: ID;
+  projectId: ID;
+  /** Its name, as shown (the file's own name, or what a link is to). */
+  name: string;
+  kind: FileKind;
+  /** A copy in the shared folder: where it is there ("Project files/DEMO-001/Quote.pdf"). */
+  path?: string;
+  /** Kept elsewhere: a web address (SharePoint, OneDrive …) or a path ("G:\\Clients\\…\\Quote.pdf"). */
+  href?: string;
+  /** Bytes, and the type the browser gave it (a copy's). */
+  size?: number;
+  type?: string;
+  /** The lab (or company) it's from. */
+  lab?: string;
+  /** Its number: the lab's job or report number, a quote number. */
+  ref?: string;
+  /** Its date ('YYYY-MM-DD'): of the quote, the report … */
+  date?: string;
+  notes?: string;
+  /** Job, report and sample numbers in its name and first pages – to offer the lab job it's about, imported before or after. */
+  numbers?: string[];
+  /** The data it's about – none until it's linked. */
+  linked?: FileLink;
+  /** Kept by the import of its results. */
+  fromImport?: ID;
+  addedAt: string;
+  addedBy?: string;
+}
+
 /** Something that happened to a project: who did what, when – the project's history. */
 export interface AuditEntry {
   id: ID;
@@ -626,7 +669,7 @@ export interface AuditEntry {
   /** ISO time. */
   at: string;
   by: string;
-  kind: 'import' | 'undo' | 'review' | 'site' | 'rule' | 'obligation' | 'result' | 'sample' | 'note' | 'project' | 'setup';
+  kind: 'import' | 'undo' | 'review' | 'site' | 'rule' | 'obligation' | 'result' | 'sample' | 'note' | 'project' | 'setup' | 'file';
   text: string;
 }
 

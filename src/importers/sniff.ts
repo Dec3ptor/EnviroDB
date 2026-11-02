@@ -39,6 +39,14 @@ function markers(text: string): { hit: boolean; labName?: string } {
   return { hit: false };
 }
 
+/** The lab a file's name or text names (Hill Labs, ALS, Eurofins …), if any – and whether it reads like a lab's file at all. */
+export const labOfText = markers;
+
+/** Some of a spreadsheet's, CSV's or zip's text, to look for a lab's name and numbers in (none for other files). */
+export async function peekText(file: File): Promise<string> {
+  return (await peek(file).catch(() => null))?.text ?? '';
+}
+
 /** The first part of a text file, or the strings of a spreadsheet (and whether EnviroDB made it). */
 async function peek(file: File): Promise<{ text: string; ours: boolean } | null> {
   if (file.size > PEEK_MAX) return null;

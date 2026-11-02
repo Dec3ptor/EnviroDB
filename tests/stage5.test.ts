@@ -16,6 +16,7 @@ const src: SearchSource = {
   obligations: [{ id: 'o1', projectId: 'p1', name: 'Annual monitoring report', kind: 'report', recipient: 'Waikato Regional Council', every: 1, unit: 'year', projectName: 'Kōwhai Quarry' } as never],
   templates: [{ id: 't1', name: 'Annual compliance monitoring report', description: 'Full report' }],
   guidelineSets: [{ id: 'g1', name: 'ANZG (2018) freshwater 95% protection', shortName: 'ANZG FW 95%' }],
+  files: [{ projectId: 'p1', name: 'Q-2026-114.pdf', detail: 'Quote · Hill Labs · Kōwhai Quarry', words: ['Q-2026-114', 'Hill Labs', 'Quote', 'covers the quarterly rounds'] }],
 };
 
 describe('stage 5: search everything', () => {
@@ -32,6 +33,9 @@ describe('stage 5: search everything', () => {
     expect(searchAll('condition 12', src)[0]).toMatchObject({ kind: 'rule', to: '/projects/p1/compliance' });
     expect(searchAll('council', src)[0]).toMatchObject({ kind: 'obligation', to: '/projects/p1/schedule' });
     expect(searchAll('anzg', src)[0]).toMatchObject({ kind: 'guideline', to: '/guidelines/g1' });
+    // a project's file: by its name, lab, kind or notes
+    expect(searchAll('hill quote', src)[0]).toMatchObject({ kind: 'file', title: 'Q-2026-114.pdf', to: '/projects/p1/files' });
+    expect(searchAll('quarterly', src)[0].kind).toBe('file');
     const annual = searchAll('annual', src);
     expect(annual.map((h) => h.kind)).toEqual(['obligation', 'template']);
   });

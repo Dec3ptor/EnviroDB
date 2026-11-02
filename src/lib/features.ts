@@ -47,7 +47,7 @@ export function presetOf(s: Pick<Settings, 'features'>): 'essentials' | 'everyth
 // ------------------------------------------------------------ a project's views
 
 /** A project's views: the tabs, and the views within them. */
-export type ProjectView = 'overview' | 'schedule' | 'data' | 'qa' | 'charts' | 'trends' | 'map' | 'compliance' | 'npsfm' | 'reports' | 'pack' | 'setup';
+export type ProjectView = 'overview' | 'schedule' | 'data' | 'qa' | 'charts' | 'trends' | 'map' | 'compliance' | 'npsfm' | 'reports' | 'pack' | 'files' | 'setup';
 
 export interface ProjectFacts {
   project: Pick<Project, 'qa'>;
@@ -94,6 +94,7 @@ export const PROJECT_TABS: Array<{ value: ProjectView; label: string; views: Arr
   { value: 'map', label: 'Map', views: [{ value: 'map', label: 'Map' }] },
   { value: 'compliance', label: 'Compliance', views: [{ value: 'compliance', label: 'Consent' }, { value: 'npsfm', label: 'NPS-FM' }] },
   { value: 'reports', label: 'Reports', views: [{ value: 'reports', label: 'Reports' }, { value: 'pack', label: 'Client data pack' }] },
+  { value: 'files', label: 'Files', views: [{ value: 'files', label: 'Files' }] },
   { value: 'setup', label: 'Setup', views: [{ value: 'setup', label: 'Setup' }] },
 ];
 

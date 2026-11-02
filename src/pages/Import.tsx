@@ -47,6 +47,9 @@ import { teamKeysOf } from '../components/TeamKey';
 import { FieldResultsModal } from '../components/FieldSheet';
 import { IMPORTING, SectionNav } from '../components/Shell';
 import { deleteImport, setReviewed } from '../db/repo';
+import { keepImportFiles, projectFilesDir } from '../lib/projectFiles';
+import { currentWorkspaceFolder, useWorkspace } from '../sync/workspace';
+import { useViewState } from '../hooks/useViewState';
 import { modals } from '@mantine/modals';
 import { HELP } from '../components/Onboarding';
 import { useFeatures } from '../hooks/useFeatures';
@@ -369,6 +372,11 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
   const [dupes, setDupes] = useState<'replace' | 'skip' | 'keep'>('replace');
   const [clearEarlier, setClearEarlier] = useState(false);
   const [remember, setRemember] = useState(true);
+  // the lab files read: kept with the project's files, linked to the results (as chosen last time, in this browser)
+  const sourceFiles = useRef<Array<File | InputFile>>([]);
+  const [keepFiles, setKeepFiles] = useViewState('import.keepFiles', true);
+  const ws = useWorkspace();
+  const canKeep = ws.phase === 'ready' && !!currentWorkspaceFolder()?.writeBlob;
   const [summary, setSummary] = useState<CommitSummary | null>(null);
   const [newParamFor, setNewParamFor] = useState<{ key: string; name: string; unit?: string; group?: string } | null>(null);
   const [bulkDate, setBulkDate] = useState<string | undefined>();
@@ -487,6 +495,7 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
       if (results) read.push({ results, name: `${pics.length - skipped.length} photo${pics.length - skipped.length === 1 ? '' : 's'}`, inbox: [] });
     }
     const files = all.filter((f) => !isJson(f) && !jobs.includes(f) && !pics.includes(f));
+    sourceFiles.current = files;
     // photos dropped here are for the project chosen here
     await review(read, inbox || files.length > 0 || pics.length > 0);
     if (!files.length) return;
@@ -612,6 +621,15 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
       if (fromInbox.current.length) {
         await markInboxImported(fromInbox.current, project.id, res.id);
         fromInbox.current = [];
+      }
+      // the files themselves, kept with the project's files and linked to these results
+      if (keepFiles && canKeep && sourceFiles.current.length) {
+        try {
+          const kept = await keepImportFiles(project, sourceFiles.current, res, { lab: parsed.labName, job: parsed.labJob });
+          if (kept) notifications.show({ color: 'teal', message: `${kept === 1 ? 'The file is' : `The ${kept} files are`} kept with the project’s files (in the shared folder, ${projectFilesDir(project)}), linked to these results.` });
+        } catch (e) {
+          notifications.show({ color: 'orange', message: `The results are in, but the file couldn’t be kept with the project: ${(e as Error).message}` });
+        }
       }
       setSummary(res);
       setStep(5);
@@ -1226,6 +1244,14 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
                 />
               )}
               <Checkbox label="Remember site and analyte names from this file for next time" checked={remember} onChange={(e) => setRemember(e.currentTarget.checked)} />
+              {canKeep && sourceFiles.current.length > 0 && (
+                <Checkbox
+                  label={`Keep the file${sourceFiles.current.length === 1 ? '' : 's'} with the project’s files, linked to these results`}
+                  description={`A copy in the shared folder (${projectFilesDir(project)}) – open it from the Files tab, the samples’ details or the import history.`}
+                  checked={keepFiles}
+                  onChange={(e) => setKeepFiles(e.currentTarget.checked)}
+                />
+              )}
             </Stack>
           </Card>
           <Group justify="space-between">

@@ -31,4 +31,5 @@ export const AUDIT_KIND_TEXT: Record<AuditEntry['kind'], string> = {
   note: 'Note',
   project: 'Project',
   setup: 'Setup',
+  file: 'File',
 };

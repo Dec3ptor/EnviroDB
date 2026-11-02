@@ -295,6 +295,7 @@ export const HELP: Record<string, HelpText> = {
   npsfm: { title: 'NPS-FM', text: 'Freshwater sites graded against the NPS-FM attribute bands, with the statistics behind each grade.', more: 'finding-your-way-around' },
   reports: { title: 'Reports', text: 'A template, a period and your commentary make the report; download Word or PDF, or Issue it to lock it as sent. The check beside Issue says what’s missing.', more: 'finding-your-way-around' },
   pack: { title: 'the Client data pack', text: 'One HTML file of the project’s data for the client – graphs, a map and tables – set up the way you want them to see it.', more: 'finding-your-way-around' },
+  files: { title: 'Files', text: 'The project’s documents – lab quotes, result sheets, chains of custody, the consent. Drop files to keep a copy in the shared folder, or add a link to one kept elsewhere; link a result sheet to its lab job and it shows with those samples.', more: 'finding-your-way-around' },
   setup: { title: 'Setup', text: 'The project’s details, sites and what it shows; the parameters in it; its history of who did what; archive or delete.', more: 'finding-your-way-around' },
 };
 

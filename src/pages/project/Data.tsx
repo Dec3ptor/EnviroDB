@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending, IconEyeOff, IconCloudRain, IconChecks, IconMessage, IconMathFunction, IconPencil, IconX, IconPlus, IconCalendarPlus, IconColumnInsertRight } from '@tabler/icons-react';
+import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending, IconEyeOff, IconCloudRain, IconChecks, IconMessage, IconMathFunction, IconPencil, IconX, IconPlus, IconCalendarPlus, IconColumnInsertRight, IconPaperclip } from '@tabler/icons-react';
 import { addSample, setCellValue, typedText } from '../../db/edits';
 import { logAudit, whoAmI } from '../../db/audit';
 import { ParameterEditor } from '../../components/ParameterEditor';
@@ -17,13 +17,17 @@ import { unitLabel } from '../../lib/units';
 import { exportPivotCsv, exportPivotXlsx } from '../../reports/excel';
 import { exportProjectWorkbook } from '../../reports/workbook';
 import { SamplePhotos } from '../../components/SamplePhotos';
+import { SampleFiles } from '../../components/SampleFiles';
+import { FileIcon, FileViewer } from '../../components/FileViewer';
+import { useProjectFiles } from '../../hooks/useProjectFiles';
+import { filesBySample, samplesByImport } from '../../lib/projectFiles';
 import { deleteImport, deleteSamples, saveEdited, setResultComment, setReviewed } from '../../db/repo';
 import { db } from '../../db/db';
 import { compareParams } from '../../data/parameters';
 
 /** A parameter id no result has, so the table shows nothing rather than everything when a view has no parameters. */
 const NO_PARAMETERS = '\u0000none';
-import type { ReportBlock, Result, Sample } from '../../db/types';
+import type { ProjectFile, ReportBlock, Result, Sample } from '../../db/types';
 import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
 import { fmtNum, parseValue } from '../../lib/values';
@@ -130,6 +134,8 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
   // remounted (via key) whenever a different sample is opened
   const [s, setDraft] = useState<Sample | null>(sample ? { ...sample } : null);
   const [edits, setEdits] = useState<Record<string, string>>({});
+  // a file open over the details: Escape closes it, not them
+  const [fileOpen, setFileOpen] = useState(false);
   if (!s) return null;
   // every result, left-out ones too (struck through)
   const results = (index.allBySample.get(s.id) ?? []).slice().sort((a, b) => {
@@ -158,7 +164,7 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
     onClose();
   };
   return (
-    <Drawer opened={!!sample} onClose={onClose} position="right" size="lg" title={<Text fw={600}>Sample {s.sampleName ?? ''}</Text>}>
+    <Drawer opened={!!sample} onClose={onClose} closeOnEscape={!fileOpen} position="right" size="lg" title={<Text fw={600}>Sample {s.sampleName ?? ''}</Text>}>
       <Stack gap="sm">
         <Group grow>
           <Select label="Site" data={sites.map((x) => ({ value: x.id, label: x.code }))} value={s.siteId} onChange={(v) => v && setDraft({ ...s, siteId: v })} allowDeselect={false} />
@@ -174,6 +180,7 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
         </Group>
         <Textarea label="Notes" autosize minRows={2} value={s.notes ?? ''} onChange={(e) => setDraft({ ...s, notes: e.currentTarget.value })} placeholder="e.g. sampled after heavy rain" />
         <SamplePhotos sample={s} site={sites.find((x) => x.id === s.siteId)} project={project} />
+        <SampleFiles sample={sample ?? s} results={results} project={project} siteCode={sites.find((x) => x.id === s.siteId)?.code} onViewing={setFileOpen} />
         {rainSeries(continuous).map(({ series, years }) => {
           const rain = rainAround(years, s.date);
           if (rain.day === null && rain.before === null) return null;
@@ -498,7 +505,7 @@ function useHeaderRows() {
   return ref;
 }
 
-function SamplesAsRows({ rows, columns, flags, onRow, head, edit }: { rows: PivotRow[]; columns: ReturnType<typeof pivot>['columns']; flags: Map<string, CellFlag>; onRow: (s: Sample) => void; head: HeadProps; edit: CellEditing }) {
+function SamplesAsRows({ rows, columns, flags, onRow, head, edit, files }: { rows: PivotRow[]; columns: ReturnType<typeof pivot>['columns']; flags: Map<string, CellFlag>; onRow: (s: Sample) => void; head: HeadProps; edit: CellEditing; files: Map<string, ProjectFile[]> }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const v = useVirtualizer({ count: rows.length, getScrollElement: () => parentRef.current, estimateSize: () => 27, overscan: 12 });
   const items = v.getVirtualItems();
@@ -550,8 +557,9 @@ function SamplesAsRows({ rows, columns, flags, onRow, head, edit }: { rows: Pivo
                 <td className="sticky-col tabular open-sample" title={`${row.sample.sampleName ? `${row.sample.sampleName} – ` : ''}open the sample`} onClick={() => onRow(row.sample)}>
                   {formatDate(row.sample.date, { time: true })}
                 </td>
-                <td className="sticky-col-2 open-sample" title="Open the sample" onClick={() => onRow(row.sample)}>
+                <td className="sticky-col-2 open-sample" title={files.get(row.sample.id) ? `Open the sample – its files: ${files.get(row.sample.id)!.map((f) => f.name).join(', ')}` : 'Open the sample'} onClick={() => onRow(row.sample)}>
                   {row.site.code}
+                  {files.get(row.sample.id) && <IconPaperclip size={11} className="sample-files" aria-label="Has files" />}
                 </td>
                 {columns.map((p) => (
                   <ValueCell key={p.id} row={row} p={p} flags={flags} edit={edit} hint={it.index === 0} />
@@ -653,8 +661,11 @@ function FilterEditor({ draft, columns, onChange, onApply }: { draft: ValueFilte
 }
 
 function ImportHistory() {
-  const { imports } = useProject();
+  const { imports, project } = useProject();
+  const files = useProjectFiles(project.id);
+  const [viewing, setViewing] = useState<ProjectFile | null>(null);
   if (!imports.length) return null;
+  const kept = (id: string) => files.filter((f) => f.fromImport === id || (f.linked?.kind === 'import' && f.linked.importId === id));
   return (
     <Accordion variant="contained">
       <Accordion.Item value="imports">
@@ -678,7 +689,17 @@ function ImportHistory() {
                 {imports.map((im) => (
                   <Table.Tr key={im.id}>
                     <Table.Td>{new Date(im.importedAt).toLocaleString('en-NZ')}</Table.Td>
-                    <Table.Td>{im.fileName}</Table.Td>
+                    <Table.Td>
+                      {im.fileName}
+                      {kept(im.id).map((f) => (
+                        <Group key={f.id} gap={4} wrap="nowrap">
+                          <FileIcon f={f} size={13} />
+                          <Button size="compact-xs" variant="subtle" px={2} onClick={() => setViewing(f)} title="Kept with the project's files – open it">
+                            {f.name}
+                          </Button>
+                        </Group>
+                      ))}
+                    </Table.Td>
                     <Table.Td>
                       {im.reviewed ? (
                         <Group gap={4} wrap="nowrap">
@@ -727,6 +748,7 @@ function ImportHistory() {
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+          {viewing && <FileViewer file={viewing} onClose={() => setViewing(null)} />}
         </Accordion.Panel>
       </Accordion.Item>
     </Accordion>
@@ -826,6 +848,13 @@ export function DataTab() {
   const [filters, setFilters] = useViewState<ValueFilter[]>(k('filters'), [], (v) => (Array.isArray(v) ? v.filter((f) => data.paramMap.has(f.paramId)) : undefined));
   const [show, setShow] = useViewState<ShowRows>(k('show'), 'all');
   const [search, setSearch] = useViewState(k('search'), '');
+  // each sample's files (a paperclip on its row)
+  const projectFiles = useProjectFiles(project.id);
+  const sampleFiles = useMemo(() => {
+    if (!projectFiles.length) return new Map<string, ProjectFile[]>();
+    const all = [...data.samples, ...data.qc.samples];
+    return filesBySample(projectFiles, all, samplesByImport(all, data.results));
+  }, [projectFiles, data.samples, data.qc.samples, data.results]);
   const [draft, setDraft] = useState<ValueFilter | null>(null);
   const [consentView, setConsentView] = useViewState<'all' | ConsentView>(k('consent'), 'all');
   const consent = useMemo(() => ({ consent: consentParameterIds(data, 'consent'), limits: consentParameterIds(data, 'limits'), triggers: consentParameterIds(data, 'triggers') }), [data]);
@@ -1122,7 +1151,7 @@ export function DataTab() {
           {consent[consentView === 'all' ? 'consent' : consentView].size ? 'Try another period or sites.' : 'Add the consent conditions on the Compliance tab, and the parameters each sampling schedule requires under Overview → Sampling & reporting.'}
         </EmptyState>
       ) : view.length ? (
-        layout === 'samplesAsRows' ? <SamplesAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} head={head} edit={edit} /> : <ParamsAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} onEdit={(id) => setEditParam({ id })} edit={edit} />
+        layout === 'samplesAsRows' ? <SamplesAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} head={head} edit={edit} files={sampleFiles} /> : <ParamsAsRows rows={view} columns={columns} flags={flags} onRow={setSelected} onEdit={(id) => setEditParam({ id })} edit={edit} />
       ) : (
         <EmptyState
           title={rows.length ? 'No samples match the filters' : 'No results match the filters'}

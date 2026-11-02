@@ -76,7 +76,7 @@ export async function touchProject(projectId: string): Promise<void> {
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
-  await db.transaction('rw', [db.projects, db.sites, db.samples, db.results, db.rules, db.notes, db.schedules, db.obligations, db.imports, db.calendarRows, db.qa, db.conditions, db.assessments, db.issues, db.archive, db.series, db.seriesDays, db.audit], async () => {
+  await db.transaction('rw', [db.projects, db.sites, db.samples, db.results, db.rules, db.notes, db.schedules, db.obligations, db.imports, db.calendarRows, db.qa, db.conditions, db.assessments, db.issues, db.archive, db.series, db.seriesDays, db.audit, db.files], async () => {
     // its rows on the monitoring calendar stay, with the project's details
     const project = await db.projects.get(projectId);
     for (const r of await db.calendarRows.where('projectId').equals(projectId).toArray()) {
@@ -107,6 +107,8 @@ export async function deleteProject(projectId: string): Promise<void> {
     await db.schedules.where('projectId').equals(projectId).delete();
     await db.obligations.where('projectId').equals(projectId).delete();
     await db.imports.where('projectId').equals(projectId).delete();
+    // its files' records (copies in the shared folder stay there, in Project files)
+    await db.files.where('projectId').equals(projectId).delete();
     await db.projects.delete(projectId);
   });
 }
@@ -573,6 +575,8 @@ export async function deleteImport(importId: string): Promise<void> {
     }
     await db.imports.delete(importId);
   });
+  // its files stay with the project, no longer linked to the results that went
+  if (b) for (const f of await db.files.where('projectId').equals(b.projectId).toArray()) if (f.linked?.kind === 'import' && f.linked.importId === importId) await db.files.update(f.id, { linked: undefined });
   if (b) await logAudit(b.projectId, 'undo', `Import undone: ${b.fileName} (${b.results} results)`);
 }
 

@@ -167,6 +167,20 @@ there as they work and show up for the others within seconds.
   import with no unit takes it. The parameter library's own units stay, so other projects are unaffected.
 - **Photos.** A sample's details show the photos taken on the phone in field mode, from the shared folder's *Field
   photos*; add photos from your computer there too. The pictures stay in the shared folder, never in the database.
+- **Files.** A project's *Files* tab keeps its documents: lab quotes and result sheets, chains of custody, field
+  sheets, the consent. Drop files anywhere on the tab (or *Upload files*): each is copied as it is into the shared
+  folder's *Project files/<project code>*, where everyone in the team – and File Explorer – finds it. Or *Add a
+  link* to one kept elsewhere: a SharePoint or OneDrive link opens in a new tab; a path (G:\…, \\server\…) is
+  copied for File Explorer, or opened here when it's in your projects folder. EnviroDB works out what each file is
+  (quote, lab results, chain of custody …), the lab, and the job and report numbers in its name and first pages; PDFs,
+  pictures and text files open in EnviroDB, anything else downloads. **Linking a file to data** is your choice: a
+  result sheet whose lab job is one of the project's offers *Link to lab job* in one click (its samples – and any
+  imported later under that job); or link it to an import's samples, or to samples you pick. A linked file shows
+  in those samples' details on the *Data* tab (with *Add files* there too), and the samples have a paperclip
+  beside their site. Importing a lab file keeps it with the project's files, linked to the results it brought in
+  (the import's *Keep the file …* option; it's listed under the import in *Import history*). Undoing an import
+  leaves its file, unlinked; removing a file deletes its copy in the shared folder, with *Undo* straight after.
+  Files are found by *Search* (Ctrl K) too.
 - **Bores.** A groundwater site keeps its bore's particulars (*Setup* → the droplet beside the site): top-of-casing
   level, stick-up, depth, screen, diameter. The *Static Water Level* (down from the top of the casing) is the
   reading; EnviroDB works the rest out: *Depth to Water (below ground)* with the stick-up, *Groundwater Level (RL)*
@@ -627,9 +641,9 @@ has a **ⓘ** that says what it's for and links to the section of this README.
   exceedances, projects and more. **Monitoring calendar** – the team's monitoring schedule spreadsheet, linked to
   the projects. **Import data** brings in lab results for any project; its *Quick check* tab checks a lab file
   against guidelines with no project at all.
-- **A project** has seven tabs: *Overview* (latest results at a glance; *Sampling & reporting* for the sampling
+- **A project** has eight tabs: *Overview* (latest results at a glance; *Sampling & reporting* for the sampling
   schedules, reporting dates and rounds), *Data* (with *QA/QC* when it's on), *Graphs* (with *Trends*), *Map*,
-  *Compliance* (with *NPS-FM*), *Reports* (with the *Client data pack*) and *Setup*. A tab with more than one view
+  *Compliance* (with *NPS-FM*), *Reports* (with the *Client data pack*), *Files* (its documents) and *Setup*. A tab with more than one view
   has a switch under the tabs. Its main action, *Import results*, is top right; less common ones (*Field work…*,
   *Copy for AI input* on a phone, *Download project file*) are under ⋯. Links to the old tabs still work.
 - **Library** – reference data shared by every project: *Guidelines*, *Report templates* and
@@ -719,12 +733,15 @@ clients/<person>/*.json          the changes that person made (projects, sites, 
                                  issued reports' compressed archive by year …)
 backups/EnviroDB backup <date>.json   a copy of everything, made each day (the last ten are kept)
 Inbox/                           lab files waiting to be imported (yours to add to and tidy)
+Project files/<project code>/    each project's files – uploaded on its Files tab, or kept by an import
+Field photos/<project code>/     photos from phones and computers, by day
 ```
 
 Each browser writes only its own files, so OneDrive, SharePoint and network drives never see two
 people saving the same file (no "conflicted copy" files) – files can arrive in any order and every
 browser still ends up with the same data. Don't edit or delete files in the folder by hand – except in
-*Inbox*, which is the team's to use.
+*Inbox*, which is the team's to use. (Files in *Project files* and *Field photos* can be opened from File
+Explorer; to rename or remove one, do it in EnviroDB, which keeps track of where each is.)
 
 ### Backups and sharing outside the team
 

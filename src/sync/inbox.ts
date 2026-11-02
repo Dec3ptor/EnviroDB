@@ -119,6 +119,11 @@ export async function allowProjectsRoot(): Promise<void> {
   if (p === 'granted') void checkInbox();
 }
 
+/** The projects folder this browser was shown, when EnviroDB may look in it now. */
+export function openProjectsFolder(): { name: string; folder: WorkspaceFolder } | null {
+  return root && state.root.access === 'granted' ? { name: root.name, folder: handleFolder(root) } : null;
+}
+
 /**
  * A project's lab folder, chosen in the projects folder: kept as its path inside it ("Clients/Kōwhai/Lab results"),
  * which everyone in the team can use from their own copy of the projects folder.

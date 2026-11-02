@@ -1,5 +1,5 @@
 import { db, DATA_TABLES, DEFAULT_SETTINGS, ensureBuiltIns, getSettings, REPORT_WORK, saveSettings, type DataTable } from './db';
-import type { MetaRecord, Project, Settings } from './types';
+import type { FileLink, MetaRecord, Project, Settings } from './types';
 import { uid } from '../lib/ids';
 import { todayStr } from '../lib/dates';
 import { APP_VERSION } from '../data/releases';
@@ -136,7 +136,7 @@ export async function restoreWorkspace(obj: unknown, mode: 'replace' | 'merge'):
 export async function exportProjectPackage(projectId: string): Promise<WorkspaceBackup> {
   const project = await db.projects.get(projectId);
   if (!project) throw new Error('Project not found');
-  const [sites, samples, results, rules, notes, schedules, obligations, imports, calendarRows, qa, conditions, assessments, issues, archive, series, seriesDays, audit] = await Promise.all([
+  const [sites, samples, results, rules, notes, schedules, obligations, imports, calendarRows, qa, conditions, assessments, issues, archive, series, seriesDays, audit, files] = await Promise.all([
     db.sites.where('projectId').equals(projectId).toArray(),
     db.samples.where('projectId').equals(projectId).toArray(),
     db.results.where('projectId').equals(projectId).toArray(),
@@ -154,6 +154,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     db.series.where('projectId').equals(projectId).toArray(),
     db.seriesDays.where('projectId').equals(projectId).toArray(),
     db.audit.where('projectId').equals(projectId).toArray(),
+    db.files.where('projectId').equals(projectId).toArray(),
   ]);
   const calendarMarks = calendarRows.length ? await db.calendarMarks.where('item').anyOf(calendarRows.map((r) => r.id)).toArray() : [];
   const usedParams = new Set(results.map((r) => r.parameterId));
@@ -169,7 +170,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     appVersion: APP_VERSION,
-    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks, qa, conditions, assessments, issues, archive, series, seriesDays, audit },
+    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks, qa, conditions, assessments, issues, archive, series, seriesDays, audit, files },
   };
 }
 
@@ -220,6 +221,12 @@ export async function importProjectPackage(obj: unknown): Promise<string> {
     await put('rules', (r) => ({
       ...r, id: remap(r.id)!, projectId: newProjectId, siteIds: ((r.siteIds as string[]) ?? []).map((s) => remap(s)!), referenceSiteId: remap(r.referenceSiteId as string),
     }));
+    // the project's files (their copies are in the shared folder they came from), linked to the same data
+    await put('files', (r) => {
+      const l = r.linked as FileLink | undefined;
+      const linked: FileLink | undefined = !l ? undefined : l.kind === 'import' ? { kind: 'import', importId: remap(l.importId)! } : l.kind === 'samples' ? { kind: 'samples', sampleIds: l.sampleIds.map((x) => remap(x)!) } : l;
+      return { ...r, id: remap(r.id)!, projectId: newProjectId, linked, fromImport: remap(r.fromImport as string) };
+    });
     await put('notes', (r) => {
       const ruleId = remap(r.ruleId as string)!;
       return { ...r, id: `${ruleId}|${r.key}`, projectId: newProjectId, ruleId };

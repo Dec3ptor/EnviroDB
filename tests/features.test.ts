@@ -40,8 +40,8 @@ describe('features', () => {
     expect(visibleViews('charts', facts({ sampleDates: monthly('2023-01', 30) }), DEFAULT_SETTINGS).map((v) => v.value)).toEqual(['charts', 'trends']);
   });
 
-  it('a new project shows seven tabs, each with only its own view', () => {
-    expect(PROJECT_TABS.map((t) => t.label)).toEqual(['Overview', 'Data', 'Graphs', 'Map', 'Compliance', 'Reports', 'Setup']);
+  it('a new project shows eight tabs, each with only its own view', () => {
+    expect(PROJECT_TABS.map((t) => t.label)).toEqual(['Overview', 'Data', 'Graphs', 'Map', 'Compliance', 'Reports', 'Files', 'Setup']);
     const shown = PROJECT_TABS.map((t) => [t.value, visibleViews(t.value, facts(), DEFAULT_SETTINGS).map((v) => v.value)]);
     expect(shown).toEqual([
       ['overview', ['overview', 'schedule']],
@@ -50,6 +50,7 @@ describe('features', () => {
       ['map', ['map']],
       ['compliance', ['compliance']],
       ['reports', ['reports']],
+      ['files', ['files']],
       ['setup', ['setup']],
     ]);
     // every view has one tab, and links to the old tabs still land in the right one

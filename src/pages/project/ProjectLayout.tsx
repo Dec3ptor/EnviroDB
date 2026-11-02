@@ -2,7 +2,7 @@ import { InboxPanel } from '../../components/InboxPanel';
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
 import { Box, Badge, Button, Center, Group, Loader, Menu, Modal, SegmentedControl, Stack, Tabs, Text, ThemeIcon, UnstyledButton, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { IconCamera, IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconSparkles, IconMap, IconDeviceMobile, IconDeviceMobileDown, IconQrcode } from '@tabler/icons-react';
+import { IconCamera, IconFiles, IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconSparkles, IconMap, IconDeviceMobile, IconDeviceMobileDown, IconQrcode } from '@tabler/icons-react';
 import { ProjectDataProvider, useProject } from '../../hooks/useProjectData';
 import { OverviewTab } from './Overview';
 import { DataTab } from './Data';
@@ -15,6 +15,7 @@ import { ComplianceTab } from './Compliance';
 import { ScheduleTab } from './Schedule';
 import { ReportsTab } from './Reports';
 import { SetupTab } from './Setup';
+import { FilesTab } from './Files';
 import { ImportWizard } from '../Import';
 import { ConsentSetupPage } from './ConsentSetup';
 import { downloadProjectPackage } from '../../db/backup';
@@ -41,6 +42,7 @@ const TAB_ICONS: Record<string, typeof IconTable> = {
   map: IconMap,
   compliance: IconShieldCheck,
   reports: IconFileReport,
+  files: IconFiles,
   setup: IconSettings,
 };
 
@@ -313,6 +315,7 @@ export function ProjectLayout() {
             </Shown>
           }
         />
+        <Route path="files" element={<FilesTab />} />
         <Route path="setup" element={<SetupTab />} />
         <Route
           path="import"

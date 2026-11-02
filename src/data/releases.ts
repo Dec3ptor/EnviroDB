@@ -11,6 +11,20 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.32.0',
+    date: '2026-11-02',
+    title: 'A project’s files',
+    items: [
+      'A Files tab in each project for its documents: lab quotes and result sheets, chains of custody, field sheets, the consent. Drop files anywhere on it, or Upload files: each is copied as it is into the shared folder (Project files/<project code>), where the whole team – and File Explorer – finds it.',
+      'Or Add a link to a file kept elsewhere: a SharePoint or OneDrive link opens in a new tab; a path on the network drive (G:\\…) is copied for File Explorer – or opened here, when it’s in your projects folder. Only web links and paths are taken: nothing a browser would run.',
+      'EnviroDB works out what each file is – quote, lab results, chain of custody, invoice … – the lab, and the job and report numbers in its name and first pages. All of it can be changed (Details…), with a date and notes. PDFs, pictures and text files open in EnviroDB; anything else downloads.',
+      'Linked to data when you choose: a result sheet from one of the project’s lab jobs offers Link to lab job, one click – those samples, and any imported later under the job. Or link a file to an import’s samples, or samples you pick.',
+      'A linked file shows in its samples’ details on the Data tab, where Add files adds one straight to the sample; the samples get a paperclip beside their site.',
+      'Importing a lab file keeps it with the project’s files, linked to the results it brought in (Keep the file …, on the import’s last step) – and it’s listed under the import in Import history. Undoing the import leaves the file, unlinked.',
+      'Removing a file deletes its copy in the shared folder – with Undo straight after. Search (Ctrl K) finds files by name, lab, number or notes; the tab keys are 1 – 8 now.',
+    ],
+  },
+  {
     version: '1.31.1',
     date: '2026-11-01',
     title: 'A formula says why it isn’t working',

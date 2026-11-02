@@ -9,6 +9,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { useAllBundles } from '../hooks/useAllData';
 import { KIND_TEXT, searchAll, type SearchHit, type SearchSource } from '../lib/search';
+import { kindLabel } from '../lib/projectFiles';
 
 export function SearchButton({ onClick }: { onClick: () => void }) {
   return (
@@ -25,6 +26,7 @@ export function SearchModal({ opened, onClose }: { opened: boolean; onClose: () 
   const { bundles, projects } = useAllBundles();
   const templates = useLiveQuery(() => db.templates.toArray(), []) ?? [];
   const guidelineSets = useLiveQuery(() => db.guidelineSets.toArray(), []) ?? [];
+  const files = useLiveQuery(() => db.files.toArray(), []) ?? [];
   const [q, setQ] = useState('');
   const [at, setAt] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -44,8 +46,9 @@ export function SearchModal({ opened, onClose }: { opened: boolean; onClose: () 
       obligations: bundles.flatMap((b) => b.obligations.map((o) => ({ ...o, projectName: name.get(o.projectId) }))),
       templates,
       guidelineSets,
+      files: files.filter((f) => name.has(f.projectId)).map((f) => ({ projectId: f.projectId, name: f.name, detail: [kindLabel(f.kind), f.lab, f.ref, name.get(f.projectId)].filter(Boolean).join(' · '), words: [f.ref, f.lab, kindLabel(f.kind), f.notes] })),
     };
-  }, [bundles, projects, templates, guidelineSets]);
+  }, [bundles, projects, templates, guidelineSets, files]);
   const hits = useMemo(() => searchAll(q, src), [q, src]);
   const go = (h: SearchHit) => {
     onClose();

@@ -51,7 +51,7 @@ export function useShortcuts(onSearch: () => void, onHelp: () => void) {
         return;
       }
       const m = /^\/projects\/([^/]+)/.exec(here.current);
-      if (m && /^[1-7]$/.test(e.key)) {
+      if (m && /^[1-8]$/.test(e.key)) {
         const tab = PROJECT_TABS[Number(e.key) - 1];
         if (tab) {
           e.preventDefault();
