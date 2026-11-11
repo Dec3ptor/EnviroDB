@@ -3,6 +3,7 @@
 // never needs the team's shared folder.
 
 import { gunzip, gzip } from '../lib/issued';
+import { checkPurge, type PurgeLog } from '../lib/purge';
 import { b64url, fromB64url, fromBase32, lock, lockedWith, toBase32, unlock, type TeamKey } from './lock';
 
 export const FIELD_APP = 'EnviroDB';
@@ -38,6 +39,8 @@ export interface FieldSite {
   measures?: string[];
   /** Readings filled in before the visit (a bore's stick-up and depth from its details), to check or change. */
   preset?: Record<string, number>;
+  /** A bore's depth (m below the top of the casing) and its casing's inside diameter (mm): for how much to purge. */
+  bore?: { depth?: number; diameter?: number };
   /** A site added on the phone: a new monitoring point, with its kind (Surface water, Groundwater …). */
   added?: boolean;
   /** Its code was given by the phone (P1, P2 …), not typed: on the computer it can join a site nearby. */
@@ -87,6 +90,8 @@ export interface FieldVisit {
   notSampled?: string;
   gps?: { lat: number; lng: number; acc?: number };
   photos?: FieldPhoto[];
+  /** A bore's purge before it was sampled: what was taken out, and the readings as it settled. */
+  purge?: PurgeLog;
   done?: boolean;
 }
 
@@ -264,7 +269,19 @@ export function checkSheet(x: unknown): FieldSheet {
     const last = isObj(s.last) && isObj(s.last.values) ? { date: str(s.last.date, 20) ?? '', values: Object.fromEntries(Object.entries(s.last.values).filter(([, v]) => num(v) !== undefined).slice(0, 50)) as Record<string, number> } : undefined;
     const measures = Array.isArray(s.measures) ? s.measures.filter((m): m is string => typeof m === 'string').slice(0, 40) : undefined;
     const preset = isObj(s.preset) ? (Object.fromEntries(Object.entries(s.preset).filter(([, v]) => num(v) !== undefined).slice(0, 20)) as Record<string, number>) : undefined;
-    return { id: str(s.id, 80) ?? '', code: str(s.code, 40) ?? '?', name: str(s.name, 120), lat: num(s.lat), lng: num(s.lng), note: str(s.note, 1000), last, ...(measures ? { measures } : {}), ...(preset && Object.keys(preset).length ? { preset } : {}) };
+    const bore = isObj(s.bore) ? { ...(num(s.bore.depth) !== undefined ? { depth: num(s.bore.depth) } : {}), ...(num(s.bore.diameter) !== undefined ? { diameter: num(s.bore.diameter) } : {}) } : undefined;
+    return {
+      id: str(s.id, 80) ?? '',
+      code: str(s.code, 40) ?? '?',
+      name: str(s.name, 120),
+      lat: num(s.lat),
+      lng: num(s.lng),
+      note: str(s.note, 1000),
+      last,
+      ...(measures ? { measures } : {}),
+      ...(preset && Object.keys(preset).length ? { preset } : {}),
+      ...(bore && Object.keys(bore).length ? { bore } : {}),
+    };
   });
   const measures = (Array.isArray(x.measures) ? x.measures : []).filter(isObj).slice(0, 40).map((m): FieldMeasure => ({ id: str(m.id, 80) ?? '', name: str(m.name, 120) ?? '', unit: str(m.unit, 30) ?? '', dp: num(m.dp), min: num(m.min), max: num(m.max), ...(m.optional ? { optional: true } : {}) }));
   const o = isObj(x.observe) ? x.observe : {};
@@ -329,6 +346,7 @@ export function checkResults(x: unknown): FieldResults {
       notSampled: str(v.notSampled, 200),
       gps: g,
       photos: photos.length ? photos : undefined,
+      ...(checkPurge(v.purge) ? { purge: checkPurge(v.purge) } : {}),
       done: !!v.done,
     };
   });

@@ -15,6 +15,7 @@ import { currentWorkspaceFolder } from '../sync/workspace';
 import { isQcSite } from '../lib/qc';
 import { logAudit } from './audit';
 import { boreSummary, depthBelowGround, depthWarning, hasBore, levelFromDepth, waterColumn } from '../lib/bore';
+import { purgeSummary } from '../lib/purge';
 import { photoDir, safeName, samplePhotoPaths } from '../lib/photos';
 import { withPhotoGps } from '../lib/exif';
 import { photoBytes } from '../field/package';
@@ -95,7 +96,19 @@ export function makeSheet(b: ProjectBundle, c: SheetChoices): FieldSheet {
         if (s.bore?.stickUp !== undefined && b.paramMap.has('stick-up')) preset['stick-up'] = s.bore.stickUp;
         if (s.bore?.depth !== undefined && b.paramMap.has('bore-depth')) preset['bore-depth'] = s.bore.depth;
       }
-      return { id: s.id, code: s.code, name: s.name || undefined, ...(ll ? { lat: Number(ll.lat.toFixed(6)), lng: Number(ll.lng.toFixed(6)) } : {}), note, last, ...(measures ? { measures } : {}), ...(Object.keys(preset).length ? { preset } : {}) };
+      // and what the purge is worked out from: the bore's depth and its casing's diameter
+      const bore = s.type === 'Groundwater' && (s.bore?.depth !== undefined || s.bore?.diameter !== undefined) ? { ...(s.bore.depth !== undefined ? { depth: s.bore.depth } : {}), ...(s.bore.diameter !== undefined ? { diameter: s.bore.diameter } : {}) } : undefined;
+      return {
+        id: s.id,
+        code: s.code,
+        name: s.name || undefined,
+        ...(ll ? { lat: Number(ll.lat.toFixed(6)), lng: Number(ll.lng.toFixed(6)) } : {}),
+        note,
+        last,
+        ...(measures ? { measures } : {}),
+        ...(Object.keys(preset).length ? { preset } : {}),
+        ...(bore ? { bore } : {}),
+      };
     }),
     measures,
     observe: c.observe,
@@ -259,7 +272,7 @@ export function planField(b: Pick<ProjectBundle, 'siteMap' | 'paramMap' | 'proje
       add('water-column', waterColumn(bore, swl.value), `from the bore depth ${bore.depth} m less SWL ${swl.value} m`);
     }
     const date = v.time && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v.time) ? v.time.slice(0, 16) : results.sheet.date;
-    if (values.length || v.notes || v.weather || v.flow || v.appearance || v.photos?.length) rows.push({ visit: v, site, date, values });
+    if (values.length || v.notes || v.weather || v.flow || v.appearance || v.photos?.length || v.purge) rows.push({ visit: v, site, date, values });
   }
   return { results, rows, notSampled, unknownSites, unknownParams: [...unknownParams], newSites, located };
 }
@@ -292,13 +305,16 @@ export function defaultProject(plan: FieldPlan): Set<string> {
   return new Set(plan.newSites.filter((n) => !n.existing && n.suggest === 'project').map((n) => n.field.id));
 }
 
-const FIELD_LINE = /^(Field( photos| location)?): /;
+const FIELD_LINE = /^(Field( photos| location| purge)?): /;
 
 /** What was seen at the site, for the sample's notes. */
 function fieldNotes(v: FieldVisit, by: string | undefined, photos: string[]): string[] {
   const seen = [v.weather && `weather ${v.weather.toLowerCase()}`, v.flow && `flow ${v.flow.toLowerCase()}`, v.appearance && v.appearance.toLowerCase()].filter(Boolean).join(', ');
   const lines = [`Field: ${[seen, v.notes?.trim()].filter(Boolean).join('. ') || (!Object.keys(v.values).length && v.photos?.length ? 'photos taken' : 'sampled')}${by ? ` (${by})` : ''}`];
   if (v.gps) lines.push(`Field location: ${v.gps.lat}, ${v.gps.lng}${v.gps.acc ? ` (±${v.gps.acc} m)` : ''}`);
+  // a bore's purge, in a line (the readings themselves are kept with the sample)
+  const purged = v.purge ? purgeSummary(v.purge) : '';
+  if (purged) lines.push(`Field purge: ${purged}`);
   if (photos.length) lines.push(`Field photos: ${photos.join('; ')}`);
   return lines;
 }
@@ -419,9 +435,11 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
     // a bore's stick-up or depth measured in the field fills in what the site didn't have
     for (const row of plan.rows) {
       const su = row.values.find((x) => x.param.id === 'stick-up')?.value;
-      const dp = row.values.find((x) => x.param.id === 'bore-depth')?.value;
+      // (the depth and the casing's diameter typed in to work out the purge count too)
+      const dp = row.values.find((x) => x.param.id === 'bore-depth')?.value ?? row.visit.purge?.depth;
+      const dia = row.visit.purge?.diameter;
       const had = row.site.bore ?? {};
-      const bore = { ...had, ...(su !== undefined && had.stickUp === undefined ? { stickUp: su } : {}), ...(dp !== undefined && had.depth === undefined ? { depth: dp } : {}) };
+      const bore = { ...had, ...(su !== undefined && had.stickUp === undefined ? { stickUp: su } : {}), ...(dp !== undefined && had.depth === undefined ? { depth: dp } : {}), ...(dia !== undefined && dia > 0 && had.diameter === undefined ? { diameter: dia } : {}) };
       if (JSON.stringify(bore) !== JSON.stringify(had)) await db.sites.update(row.site.id, { bore });
     }
     const qcSites = new Set((await db.sites.where('projectId').equals(projectId).toArray()).filter((s) => isQcSite(s)).map((s) => s.id));
@@ -443,12 +461,14 @@ export async function commitField(projectId: string, plan: FieldPlan, fileName: 
       const before = samplePhotoPaths(sample?.notes);
       const paths = [...new Set([...before, ...rowsHere.flatMap((r) => photoPaths.get(r) ?? [])])];
       const notes = [...rowsHere.flatMap((r) => fieldNotes(r.visit, by, [])), ...(paths.length ? [`Field photos: ${paths.join('; ')}`] : [])];
+      // the bore's purge, as the phone recorded it
+      const purge = rowsHere.map((r) => r.visit.purge).find((p) => !!p);
       if (!sample) {
-        sample = { id: stableId('s', projectId, site.id, day), projectId, siteId: site.id, date: when, importId: batch.id, notes: notes.join('\n') };
+        sample = { id: stableId('s', projectId, site.id, day), projectId, siteId: site.id, date: when, importId: batch.id, notes: notes.join('\n'), ...(purge ? { purge } : {}) };
         existing.push(sample);
       } else {
         const kept = (sample.notes ?? '').split('\n').filter((l) => l.trim() && !FIELD_LINE.test(l));
-        sample = { ...sample, date: sample.date.length === 10 && when.length > 10 ? when : sample.date, notes: [...kept, ...notes].join('\n') };
+        sample = { ...sample, date: sample.date.length === 10 && when.length > 10 ? when : sample.date, notes: [...kept, ...notes].join('\n'), ...(purge ? { purge } : {}) };
       }
       await db.samples.put(sample);
       batch.samples++;

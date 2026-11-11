@@ -11,6 +11,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.36.0',
+    date: '2026-11-11',
+    title: 'More ways to graph; purging a bore on the phone',
+    items: [
+      'Graphs has four ways to show the results, chosen at the top. By site: each site’s spread over the dates as a box plot – the middle half of its results with the median, whiskers, outliers as dots – with the limits and guideline values drawn across.',
+      'Upstream v downstream: each day sampled at both sites as a point, downstream against upstream, with the line of no change and what the pairs show – how many, the two medians, and whether it’s significantly higher or lower downstream (the Wilcoxon signed-rank test, as in the report table). The sites come from their roles.',
+      'One against another: each sample that has both as a point – turbidity against suspended solids, a metal against hardness – coloured by site, with how strongly they go together (Spearman’s rank correlation) in words.',
+      'A report’s Graphs section can be box plots by site, and All graphs to Word takes whichever kind is showing.',
+      'Purging a bore, in field mode on the phone: from the bore’s depth, the depth to water and the casing’s diameter it works out the water standing in the casing and how much to take out (one, three or five casing volumes). Log the meter’s readings as it’s purged and it says when the last three have settled – by the usual low-flow criteria, or your sampling plan’s. Use the last puts the last reading in as the sample’s readings.',
+      'The purge comes back with the results: the sample’s details show what was taken out, the readings and whether they’d settled; the bore learns its casing’s diameter.',
+    ],
+  },
+  {
     version: '1.35.0',
     date: '2026-11-11',
     title: 'Paste from Excel; merge duplicates; common calculations; one project from a backup',

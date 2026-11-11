@@ -155,7 +155,7 @@ export function blockSummary(b: ReportBlock): string {
     case 'resultsTable':
       return `${b.captionText || b.title || 'Results'} · ${b.layout === 'parametersAsRows' ? 'parameters down' : 'dates down'}${b.splitBySite ? ' · one table per site' : ''}${b.ruleColumns === 'all' ? ' · with consent limits & triggers' : b.ruleColumns === 'limits' ? ' · with consent limits' : ''}${b.calcColumns?.length ? ` · ${b.calcColumns.map(calcHead).join(', ')}` : ''}`;
     case 'chart':
-      return `${b.parameterIds.length ? `${b.parameterIds.length} parameters` : 'Key parameters (those with consent rules)'} · ${b.range === 'years' ? `last ${b.years} years` : b.range === 'all' ? 'all data' : 'report period'} · ${(b.size ?? 'full') === 'full' ? 'full width' : b.size === 'half' ? 'two per row' : `${b.widthCm} × ${b.heightCm} cm`}`;
+      return `${b.graph === 'box' ? 'Box plots by site · ' : ''}${b.parameterIds.length ? `${b.parameterIds.length} parameters` : 'Key parameters (those with consent rules)'} · ${b.range === 'years' ? `last ${b.years} years` : b.range === 'all' ? 'all data' : 'report period'} · ${(b.size ?? 'full') === 'full' ? 'full width' : b.size === 'half' ? 'two per row' : `${b.widthCm} × ${b.heightCm} cm`}`;
     case 'roundReview':
       return `${b.captionText || b.title || 'Results'} · ${b.historyYears ? `last ${b.historyYears} years` : 'all earlier results'}`;
     case 'roundTable':
@@ -733,6 +733,25 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
       return (
         <Stack gap="xs">
           <BlockParamsField block={block} params={params} onChange={onChange} all="The parameters with consent rules" />
+          <div>
+            <Text size="sm" fw={500} mb={4}>
+              Graph
+            </Text>
+            <SegmentedControl
+              size="xs"
+              value={block.graph ?? 'time'}
+              onChange={(v) => set({ graph: v as typeof block.graph })}
+              data={[
+                { value: 'time', label: 'Over time' },
+                { value: 'box', label: 'By site (box plots)' },
+              ]}
+            />
+            {block.graph === 'box' && (
+              <Text size="xs" c="dimmed" mt={4}>
+                A box for each site: the middle half of its results over the dates, with the median; whiskers to the furthest results within 1.5 box-heights; dots beyond. Limits and guideline values are drawn across.
+              </Text>
+            )}
+          </div>
           <Group align="flex-end">
             <Select label="Time range" data={[{ value: 'period', label: 'Report period' }, { value: 'years', label: 'Years up to period end' }, { value: 'all', label: 'All data' }]} value={block.range} onChange={(v) => v && set({ range: v as typeof block.range })} w={200} allowDeselect={false} />
             {block.range === 'years' && <NumberInput label="Years" min={1} max={30} value={block.years ?? 3} onChange={(v) => set({ years: Number(v) || 3 })} w={90} />}

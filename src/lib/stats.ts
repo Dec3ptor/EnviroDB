@@ -100,3 +100,69 @@ export function ordinal(n: number): string {
   const v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
+
+// ------------------------------------------------------------ box plots, and how two things go together
+
+export interface BoxSummary {
+  n: number;
+  min: number;
+  q1: number;
+  median: number;
+  q3: number;
+  max: number;
+  /** The whiskers' ends: the furthest values within 1.5 times the box's height of it (Tukey). */
+  low: number;
+  high: number;
+  /** The values beyond the whiskers. */
+  outliers: number[];
+}
+
+/** A box plot's numbers for some values – null when there are none. */
+export function boxSummary(values: number[], method: PercentileMethod = 'excel'): BoxSummary | null {
+  const v = values.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const q1 = percentile(v, 25, method)!;
+  const med = percentile(v, 50, method)!;
+  const q3 = percentile(v, 75, method)!;
+  const reach = 1.5 * (q3 - q1);
+  const inside = v.filter((x) => x >= q1 - reach && x <= q3 + reach);
+  // (with few values the quartiles can sit inside the furthest ones: the whiskers never end inside the box)
+  const low = Math.min(inside.length ? inside[0] : q1, q1);
+  const high = Math.max(inside.length ? inside[inside.length - 1] : q3, q3);
+  return { n: v.length, min: v[0], q1, median: med, q3, max: v[v.length - 1], low, high, outliers: v.filter((x) => x < low || x > high) };
+}
+
+/** The ranks of some values, 1 for the smallest; equal values share the mean of their ranks. */
+export function rankOf(values: number[]): number[] {
+  const order = values.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+  const out = new Array<number>(values.length);
+  for (let i = 0; i < order.length; ) {
+    let j = i;
+    while (j + 1 < order.length && order[j + 1].v === order[i].v) j++;
+    const r = (i + j) / 2 + 1;
+    for (let k = i; k <= j; k++) out[order[k].i] = r;
+    i = j + 1;
+  }
+  return out;
+}
+
+/** Pearson's correlation of two lists – null with fewer than three pairs, or when either doesn't vary. */
+export function pearson(x: number[], y: number[]): number | null {
+  const n = Math.min(x.length, y.length);
+  if (n < 3) return null;
+  const mx = x.slice(0, n).reduce((s, v) => s + v, 0) / n;
+  const my = y.slice(0, n).reduce((s, v) => s + v, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    sxy += (x[i] - mx) * (y[i] - my);
+    sxx += (x[i] - mx) ** 2;
+    syy += (y[i] - my) ** 2;
+  }
+  return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : null;
+}
+
+/** Spearman's rank correlation: how steadily one rises with the other (−1 to 1), whatever the shape. */
+export const spearman = (x: number[], y: number[]): number | null => {
+  const n = Math.min(x.length, y.length);
+  return pearson(rankOf(x.slice(0, n)), rankOf(y.slice(0, n)));
+};

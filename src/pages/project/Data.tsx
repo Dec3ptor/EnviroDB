@@ -18,6 +18,7 @@ import { unitLabel } from '../../lib/units';
 import { exportPivotCsv, exportPivotXlsx } from '../../reports/excel';
 import { exportProjectWorkbook } from '../../reports/workbook';
 import { SamplePhotos } from '../../components/SamplePhotos';
+import { SamplePurge } from '../../components/SamplePurge';
 import { SampleFiles } from '../../components/SampleFiles';
 import { FileIcon, FileViewer } from '../../components/FileViewer';
 import { useProjectFiles, useRoundRows } from '../../hooks/useProjectFiles';
@@ -185,6 +186,7 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
           <TextInput label="Lab number" value={s.labNumber ?? ''} onChange={(e) => setDraft({ ...s, labNumber: e.currentTarget.value })} />
         </Group>
         <Textarea label="Notes" autosize minRows={2} value={s.notes ?? ''} onChange={(e) => setDraft({ ...s, notes: e.currentTarget.value })} placeholder="e.g. sampled after heavy rain" />
+        <SamplePurge sample={s} paramMap={paramMap} />
         <SamplePhotos sample={s} site={sites.find((x) => x.id === s.siteId)} project={project} />
         <SampleFiles sample={sample ?? s} results={results} project={project} siteCode={sites.find((x) => x.id === s.siteId)?.code} onViewing={setFileOpen} />
         {rainSeries(continuous).map(({ series, years }) => {

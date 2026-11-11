@@ -12,6 +12,7 @@ import { addFromCode, addSheet, addSite, addTeamKeys, deleteSheet, fieldDb, forg
 import { isSetupText, LockedError, readSetupText, showKeyId } from './lock';
 import { currentPosition, LocationPicker, NavigateMenu, SheetMap, useMyPosition, type Placed, type SiteStatus } from './FieldMap';
 import { APPEARANCE, checkSheet, decodeCode, decodeSheet, distanceM, fieldLinkPath, FLOW, newFieldSiteId, NOT_SAMPLED, readingWarning, unlockCode, unlockFile, unlockSheet, WEATHER, type FieldCodeFill, type FieldResults, type FieldSheet, type FieldSite, type FieldVisit } from './model';
+import { PurgeHelper, isBoreSite } from './Purge';
 import { AddReading, addFromGallery, EditJobModal, EditPointModal, GalleryButton, NewJobModal, PhotoBadge, PhotoSection, photoSizeText, usePhotoCounts } from './JobParts';
 import { jobFileName, jobZip, jobZipBlob, lockedJob, readyPhotos, withPhotoEntries } from './package';
 import type { LinkPhoto } from './link/payload';
@@ -920,6 +921,7 @@ function SitePage() {
             );
           })}
           <AddReading sheet={sheet} />
+          {isBoreSite(site, sheet) && <PurgeHelper site={site} sheet={sheet} visit={v} onChange={update} />}
           {sheet.observe.weather && <Select size="md" label="Weather" data={[...WEATHER]} value={v.weather ?? null} onChange={(x) => update({ weather: x ?? undefined })} clearable />}
           {sheet.observe.flow && <Select size="md" label="Flow" data={[...FLOW]} value={v.flow ?? null} onChange={(x) => update({ flow: x ?? undefined })} clearable />}
           {sheet.observe.appearance && <Select size="md" label="Appearance" data={[...APPEARANCE]} value={v.appearance ?? null} onChange={(x) => update({ appearance: x ?? undefined })} clearable />}

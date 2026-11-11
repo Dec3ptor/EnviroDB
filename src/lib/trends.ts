@@ -437,8 +437,8 @@ export interface PairedComparison {
   bothNd: number;
 }
 
-/** Pairs results by date (the nearest within `days`), and compares downstream with upstream. */
-export function comparePaired(up: TrendPoint[], down: TrendPoint[], days = 1): PairedComparison {
+/** Upstream and downstream results paired by date: each downstream result with the nearest upstream one within `days`, each used once. */
+export function pairByDate(up: TrendPoint[], down: TrendPoint[], days = 1): Array<[TrendPoint, TrendPoint]> {
   const ups = [...up].sort((a, b) => (a.date < b.date ? -1 : 1));
   const used = new Set<number>();
   const pairs: Array<[TrendPoint, TrendPoint]> = [];
@@ -459,6 +459,12 @@ export function comparePaired(up: TrendPoint[], down: TrendPoint[], days = 1): P
       pairs.push([ups[best], d]);
     }
   }
+  return pairs;
+}
+
+/** Pairs results by date (the nearest within `days`), and compares downstream with upstream. */
+export function comparePaired(up: TrendPoint[], down: TrendPoint[], days = 1): PairedComparison {
+  const pairs = pairByDate(up, down, days);
   let bothNd = 0;
   const diffs: number[] = [];
   for (const [u, d] of pairs) {

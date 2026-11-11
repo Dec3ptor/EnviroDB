@@ -343,7 +343,7 @@ export function resultsOf(sheet: FieldSheet, visits: FieldVisit[], by: string, w
     sheet: { id: sheet.id, project: sheet.project, round: sheet.round, date: sheet.date },
     by: by.trim() || undefined,
     sent: new Date().toISOString(),
-    visits: visits.filter((v) => order.has(v.siteId) && (v.done || v.notSampled || Object.keys(v.values).length || v.notes || withPhotos.has(v.siteId))).sort((a, b) => order.get(a.siteId)! - order.get(b.siteId)!),
+    visits: visits.filter((v) => order.has(v.siteId) && (v.done || v.notSampled || Object.keys(v.values).length || v.notes || v.purge || withPhotos.has(v.siteId))).sort((a, b) => order.get(a.siteId)! - order.get(b.siteId)!),
     ...(added.length ? { newSites: added.map((s) => ({ id: s.id, code: s.code, name: s.name, type: s.type, lat: s.lat, lng: s.lng, acc: s.located?.acc, how: s.located?.how, note: s.note, ...(s.auto ? { auto: true } : {}) })) } : {}),
     ...(located.length ? { located: located.map((s) => ({ siteId: s.id, lat: s.lat!, lng: s.lng!, acc: s.located!.acc, how: s.located!.how, at: s.located!.at })) } : {}),
   };

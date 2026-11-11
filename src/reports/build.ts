@@ -20,6 +20,7 @@ import { imageSize, logoSizeMm } from '../lib/image';
 import { attachedTitle, type AttachedDoc } from '../lib/attachments';
 import { fitPage } from '../lib/pdfPages';
 import { buildChartSpec, chartOption, chartOverlay } from '../charts/timeSeries';
+import { boxOption, boxSpec } from '../charts/moreGraphs';
 import { overlayFor } from '../lib/continuous';
 import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
 import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type RefTarget, type ReportDoc, type ReportLook, type Run, type TocEntry, SUMMARY_GAP_PT } from './model';
@@ -854,7 +855,12 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         if (overlay) spec.overlay = chartOverlay(overlay.series, overlay.years, cStart, end);
         if (!spec.series.length) continue;
         const caption = figCaption(capText(blk, { parameter: p.name, unit: unitLabel(p.unit), sites: listText(spec.series.map((s) => s.name)), dates: `${formatDate(cStart ?? spec.series[0].points[0].date)} – ${formatDate(end)}` }));
-        const option = chartOption({ ...spec, subtitle: undefined, title: `${p.name} (${unitLabel(p.unit)})` }, { forExport: true, width: Math.round((size.widthCm / 2.54) * 96) });
+        const px = Math.round((size.widthCm / 2.54) * 96);
+        // each site's spread as a box, or the results over time
+        const option =
+          blk.graph === 'box'
+            ? boxOption({ ...boxSpec(spec, b.project.ndHandling, b.project.percentileMethod), subtitle: undefined }, { forExport: true, width: px })
+            : chartOption({ ...spec, subtitle: undefined, title: `${p.name} (${unitLabel(p.unit)})` }, { forExport: true, width: px });
         const dataUrl = opts.renderChart ? opts.renderChart(option, size.widthCm, size.heightCm) : '';
         figures.push({ dataUrl, ...size, caption });
       }

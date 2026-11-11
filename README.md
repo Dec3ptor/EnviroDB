@@ -69,6 +69,16 @@ there as they work and show up for the others within seconds.
   by colour-blind readers). Client data packs draw them the same way. Graphs export
   as high-resolution PNGs, can be copied straight into Word, or exported all at once to a
   Word document.
+- **Four ways to graph the results.** At the top of *Graphs*, choose how: **Over time** (the usual – a line a
+  site); **By site** – each site's spread over the dates as a box plot: the middle half of its results with the
+  median, whiskers to the furthest results within 1.5 box-heights, dots beyond, the number of results under each
+  site, and the limits and guideline values drawn across; **Upstream v downstream** – each day sampled at both
+  sites as a point, downstream against upstream, with the line of no change and what the pairs show (*40 pairs ·
+  median 3 upstream, 8 downstream mg/L · higher downstream (p < 0.001)* – the Wilcoxon signed-rank test, as in the
+  report table), the sites chosen from their roles; **One against another** – each sample that has both as a
+  point (turbidity against suspended solids, a metal against hardness), coloured by site, with Spearman's rank
+  correlation in words. Each graph copies and downloads like the others, and *All graphs to Word* takes whichever
+  kind is showing. A report's *Graphs* section can be **By site (box plots)** too.
 - **Make a graph your own.** The sliders button on a graph opens *Customise*: its title and subtitle, the
   axis label, which sites show, the results as lines and points, points only or lines only (light to bold),
   the site legend, the value axis fitted to the data, from zero or a range you set, log scale, and larger
@@ -265,6 +275,17 @@ there as they work and show up for the others within seconds.
   with the top-of-casing level, *Water Column* with the depth – each noting how. In field mode the stick-up and
   bore depth are optional readings pre-filled from the bore, and a site learns them from the first visit that
   measures them. An SWL deeper than the bore is flagged.
+- **Purging a bore, on the phone.** At a bore, the field sheet has *Purging the bore*: with the bore's depth, the
+  depth to water and the casing's inside diameter (from the bore's details, or typed in – a site learns the
+  diameter too) it works out the water standing in the casing (*9.8 L – 5 m at 1.96 L a metre*) and how much to
+  take out: one, three or five casing volumes. *Log a reading* keeps the meter's readings as it's purged – the time,
+  the litres out so far, pH, EC, temperature and DO (and redox or turbidity where the sheet asks for them), and the
+  water level for the drawdown – with a bar for how far the purge has got. Once there are three it says whether
+  they've **settled**: each of the last three within the criteria of each other (pH 0.1, EC 3%, temperature 0.2 °C,
+  DO 0.3 mg/L, DO % and turbidity 10%, redox 10 mV – the usual low-flow criteria; *Change the criteria* sets them
+  to your sampling plan's, kept on the phone). *Use the last* puts the last reading in as the sample's readings,
+  with the litres purged. The log comes back with the results: the sample's details show the purge – what was
+  taken out, in casing volumes, the readings and whether they'd settled – and its notes have it in a line.
 - **Teach EnviroDB a file.** When you put a sheet's layout right on import, tick *Teach EnviroDB this layout* and
   the next file of the same shape – the words in its first rows, not the numbers – uses it by itself, for the whole
   team. The Layout step says when a taught layout is in use, with *Forget it*.

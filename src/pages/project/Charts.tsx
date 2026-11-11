@@ -4,7 +4,10 @@ import { notifications } from '@mantine/notifications';
 import { IconAdjustmentsHorizontal, IconCloudRain, IconCopy, IconDownload, IconFileTypeDocx, IconPhoto, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { DateField, EmptyState, GuidelinePicker, NoResultsYet, ParamPicker, PeriodPicker, SitePicker, consentPresets, defaultPeriod, type PeriodValue } from '../../components/common';
-import { buildChartSpec, chartOption, chartOverlay, NOTE_COLOR, type ChartSpec } from '../../charts/timeSeries';
+import type { EChartsCoreOption } from 'echarts/core';
+import { buildChartSpec, chartOption, chartOverlay, NOTE_COLOR, type ChartSpec, type RenderOpts } from '../../charts/timeSeries';
+import { BOX_KEY, boxOption, boxSpec, pairOption, pairSpec, xyOption, xySpec } from '../../charts/moreGraphs';
+import { defaultPairs } from '../../lib/projectTrends';
 import { applyGraphSettings, followShared, graphSettings, hasOwn, reviveGraphs, reviveOne, shareLook, type GraphOverrides, type GraphSettings } from '../../charts/custom';
 import { KIND_TEXT } from '../../lib/continuous';
 import { Link } from 'react-router-dom';
@@ -82,6 +85,75 @@ function ChartCard({ spec, size, dark, customised, onCustomise }: { spec: ChartS
         <Text c="dimmed" size="sm" py="xl" ta="center">
           No data for the selected sites and period.
         </Text>
+      )}
+    </Card>
+  );
+}
+
+/** The ways to graph the results. */
+type GraphKind = 'time' | 'box' | 'pair' | 'xy';
+const GRAPH_KINDS: Array<{ value: GraphKind; label: string }> = [
+  { value: 'time', label: 'Over time' },
+  { value: 'box', label: 'By site' },
+  { value: 'pair', label: 'Upstream v downstream' },
+  { value: 'xy', label: 'One against another' },
+];
+
+/** A graph that isn't a time series: drawn from `make`, with the same copy and download. */
+interface Plot {
+  key: string;
+  title: string;
+  subtitle?: string;
+  make: (o: RenderOpts) => EChartsCoreOption;
+  empty: boolean;
+  /** Why it's empty. */
+  why?: string;
+}
+
+function PlotCard({ plot, size, dark }: { plot: Plot; size: { w: number; h: number }; dark: boolean }) {
+  const png = () => renderChartPng(plot.make({ forExport: true, width: cmToPx(size.w) }), cmToPx(size.w), cmToPx(size.h), 3);
+  const option = useMemo(() => (width: number) => plot.make({ dark, showTitle: false, width }), [plot, dark]);
+  return (
+    <Card padding="md">
+      <Group justify="space-between" mb={4} wrap="nowrap" align="flex-start">
+        <div style={{ minWidth: 0 }}>
+          <Text fw={600} size="sm" truncate>
+            {plot.title}
+          </Text>
+          {plot.subtitle && (
+            <Text size="xs" c="dimmed" lineClamp={2}>
+              {plot.subtitle}
+            </Text>
+          )}
+        </div>
+        {!plot.empty && (
+          <Group gap={4} wrap="nowrap">
+            <Tooltip label="Copy image – paste straight into Word or an email">
+              <ActionIcon
+                variant="default"
+                aria-label="Copy image"
+                onClick={async () => {
+                  const ok = await copyPngToClipboard(png());
+                  notifications.show({ message: ok ? 'Graph copied – paste it into your document' : 'Copying images is not supported in this browser – use Download instead', color: ok ? 'teal' : 'orange' });
+                }}
+              >
+                <IconCopy size={16} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="Download PNG (high resolution)">
+              <ActionIcon variant="default" aria-label="Download PNG" onClick={() => downloadBlob(dataUrlToBlob(png()), `${safeFileName(plot.title)}.png`)}>
+                <IconDownload size={16} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        )}
+      </Group>
+      {plot.empty ? (
+        <Text c="dimmed" size="sm" py="xl" ta="center">
+          {plot.why ?? 'No data for the selected sites and period.'}
+        </Text>
+      ) : (
+        <EChart option={option} height={Math.round(Math.max(260, Math.min(460, (size.h / size.w) * 720)))} />
       )}
     </Card>
   );
@@ -288,6 +360,14 @@ export function ChartsTab() {
   const [shared, setShared] = useViewState<Partial<GraphSettings>>(k('shared'), () => ({ rules: oldRules, log: oldLog, trends: oldTrends }), (v) => reviveOne(v));
   const [graphs, setGraphs] = useViewState<Record<string, GraphOverrides>>(k('graphs'), () => Object.fromEntries(Object.entries(oldTitles).map(([id, title]) => [id, { title }])), reviveGraphs);
   const [panel, setPanel] = useState<string | 'all' | null>(null);
+  // the way the results are graphed: over time, each site's spread, downstream against upstream, one against another
+  const [kind, setKind] = useViewState<GraphKind>(k('kind'), 'time', (v) => (GRAPH_KINDS.some((x) => x.value === v) ? v : undefined));
+  const pairs = useMemo(() => defaultPairs(data), [data]);
+  const [upId, setUpId] = useViewState<string | null>(k('up'), null, (v) => (v === null || data.siteMap.has(v) ? v : undefined));
+  const [downId, setDownId] = useViewState<string | null>(k('down'), null, (v) => (v === null || data.siteMap.has(v) ? v : undefined));
+  const [pairDays, setPairDays] = useViewState(k('pairDays'), 1, (v) => (typeof v === 'number' && v >= 0 && v <= 31 ? v : undefined));
+  const [xId, setXId] = useViewState<string | null>(k('x'), null, (v) => (v === null || data.paramMap.has(v) ? v : undefined));
+  const [logX, setLogX] = useViewState(k('logX'), false);
   // rainfall, flow or level behind the graphs
   const [overlayId, setOverlayId] = useViewState<string | null>(k('overlay'), null, (v) => (v === null || data.continuous.series.some((x) => x.id === v) ? v : undefined));
   const overlaySeries = continuous ? data.continuous.series.find((x) => x.id === overlayId) : undefined;
@@ -330,10 +410,44 @@ export function ChartsTab() {
     [paramIds, data, index, sites, siteIds, period, sets, limitRules, overlaySeries, shared, graphs],
   );
 
+  // the other ways to graph them: a plot for each parameter chosen
+  const up = data.siteMap.get(upId ?? pairs[0]?.upId ?? '');
+  const down = data.siteMap.get(downId ?? pairs[0]?.downId ?? '');
+  const xParam = data.paramMap.get(xId ?? '') ?? undefined;
+  const plots = useMemo<Plot[]>(() => {
+    if (kind === 'time') return [];
+    const chosen = paramIds.map((pid) => data.paramMap.get(pid)).filter((p): p is NonNullable<typeof p> => !!p);
+    const g = graphSettings(shared, undefined);
+    if (kind === 'box')
+      return chosen.map((p) => {
+        const spec = boxSpec(buildChartSpec({ index, param: p, sites, siteIds, start: period.start, end: period.end, guidelineSets: sets, rules: limitRules, setMap, showRules: g.rules, log: g.log }), project.ndHandling, project.percentileMethod);
+        return { key: p.id, title: `${p.name} by site`, subtitle: spec.subtitle, make: (o) => boxOption(spec, o), empty: !spec.boxes.length };
+      });
+    if (kind === 'pair') {
+      if (!up || !down || up.id === down.id) return [];
+      return chosen.map((p) => {
+        const spec = pairSpec({ index, param: p, up, down, start: period.start, end: period.end, days: pairDays, log: g.log });
+        return { key: p.id, title: `${p.name}: ${down.code} against ${up.code}`, subtitle: spec.subtitle, make: (o) => pairOption(spec, o), empty: !spec.points.length, why: `No results of ${p.name} at both ${up.code} and ${down.code} ${pairDays ? `within ${pairDays} day${pairDays === 1 ? '' : 's'} of each other` : 'on the same day'}.` };
+      });
+    }
+    if (!xParam) return [];
+    return chosen
+      .filter((p) => p.id !== xParam.id)
+      .map((p) => {
+        const spec = xySpec({ index, x: xParam, y: p, sites, siteIds, start: period.start, end: period.end, nd: project.ndHandling, logX, logY: g.log });
+        return { key: p.id, title: spec.title, subtitle: spec.subtitle, make: (o) => xyOption(spec, o), empty: !spec.n, why: `No sample has both ${p.name} and ${xParam.name}.` };
+      });
+  }, [kind, paramIds, data, index, sites, siteIds, period, sets, limitRules, setMap, shared, project.ndHandling, project.percentileMethod, up, down, pairDays, xParam, logX]);
+
   const exportDocx = async () => {
     setBusy(true);
     try {
       const { chartsToDocx } = await import('../../reports/docx');
+      if (kind !== 'time') {
+        const made = plots.filter((x) => !x.empty).map((x) => ({ title: x.title, dataUrl: renderChartPng(x.make({ forExport: true, width: cmToPx(size.w) }), cmToPx(size.w), cmToPx(size.h), 3), widthCm: size.w, heightCm: size.h }));
+        downloadBlob(await chartsToDocx(`${project.name} – graphs`, `${period.label} · generated ${formatDate(new Date().toISOString().slice(0, 10))}`, made), `${safeFileName(project.name)} graphs.docx`);
+        return;
+      }
       const images = specs.filter((x) => x.spec.series.length).map((x) => ({ title: x.spec.title, dataUrl: renderChartPng(chartOption(x.spec, { forExport: true, width: cmToPx(size.w) }), cmToPx(size.w), cmToPx(size.h), 3), widthCm: size.w, heightCm: size.h }));
       const blob = await chartsToDocx(`${project.name} – graphs`, `${period.label} · generated ${formatDate(new Date().toISOString().slice(0, 10))}`, images);
       downloadBlob(blob, `${safeFileName(project.name)} graphs.docx`);
@@ -353,19 +467,55 @@ export function ChartsTab() {
     <Stack gap="md">
       <Card padding="md">
         <Stack gap="sm">
+          <SegmentedControl size="xs" value={kind} onChange={(v) => setKind(v as GraphKind)} data={GRAPH_KINDS} style={{ alignSelf: 'flex-start' }} aria-label="The kind of graph" />
           <Group align="flex-end" gap="sm" wrap="wrap">
             <ParamPicker compact params={params} value={paramIds} onChange={setParamIds} onlyIds={withData} presets={presets} w={{ base: '100%', xs: 230 }} label="Graphs of" placeholder="Choose parameters" title="Choose what to graph" />
-            <SitePicker compact sites={sites} value={siteIds} onChange={setSiteIds} w={{ base: '100%', xs: 180 }} />
+            {kind === 'xy' && (
+              <Select
+                label="Against"
+                placeholder="Choose a parameter"
+                searchable
+                data={params.filter((p) => withData.has(p.id)).map((p) => ({ value: p.id, label: p.name }))}
+                value={xParam?.id ?? null}
+                onChange={setXId}
+                w={{ base: '100%', xs: 220 }}
+                comboboxProps={{ width: 'max-content' }}
+              />
+            )}
+            {kind === 'pair' ? (
+              <>
+                <Select label="Upstream" placeholder="Choose a site" data={sites.map((x) => ({ value: x.id, label: x.code }))} value={up?.id ?? null} onChange={setUpId} w={{ base: '48%', xs: 130 }} allowDeselect={false} />
+                <Select label="Downstream" placeholder="Choose a site" data={sites.map((x) => ({ value: x.id, label: x.code }))} value={down?.id ?? null} onChange={setDownId} w={{ base: '48%', xs: 130 }} allowDeselect={false} />
+                <Select
+                  label="Paired"
+                  data={[
+                    { value: '0', label: 'On the same day' },
+                    { value: '1', label: 'Within a day' },
+                    { value: '3', label: 'Within 3 days' },
+                    { value: '7', label: 'Within a week' },
+                  ]}
+                  value={String(pairDays)}
+                  onChange={(v) => v !== null && setPairDays(Number(v))}
+                  w={{ base: '100%', xs: 150 }}
+                  allowDeselect={false}
+                />
+              </>
+            ) : (
+              <SitePicker compact sites={sites} value={siteIds} onChange={setSiteIds} w={{ base: '100%', xs: 180 }} />
+            )}
             <PeriodPicker value={period} onChange={setPeriod} yearStartMonth={project.yearStartMonth} width={{ base: '100%', xs: 250 }} />
-            <GuidelinePicker compact sets={guidelineSets} value={setIds} onChange={setSetIds} w={{ base: '100%', xs: 210 }} label="Guideline lines" placeholder="No guideline lines" />
+            {(kind === 'time' || kind === 'box') && <GuidelinePicker compact sets={guidelineSets} value={setIds} onChange={setSetIds} w={{ base: '100%', xs: 210 }} label="Guideline lines" placeholder="No guideline lines" />}
           </Group>
           <Group align="center" gap="lg" wrap="wrap">
-            <Switch label="Consent limits / triggers" checked={sharedSettings.rules} onChange={(e) => forAll({ rules: e.currentTarget.checked })} />
-            <Switch label="Log scale" checked={sharedSettings.log} onChange={(e) => forAll({ log: e.currentTarget.checked })} />
-            <Tooltip label="Each site’s Sen’s slope over the dates shown, where there are enough results (see Graphs → Trends)">
-              <Switch label="Trend lines" checked={sharedSettings.trends} onChange={(e) => forAll({ trends: e.currentTarget.checked })} />
-            </Tooltip>
-            {continuous && data.continuous.series.length ? (
+            {(kind === 'time' || kind === 'box') && <Switch label="Consent limits / triggers" checked={sharedSettings.rules} onChange={(e) => forAll({ rules: e.currentTarget.checked })} />}
+            <Switch label={kind === 'xy' ? 'Log scale (up)' : 'Log scale'} checked={sharedSettings.log} onChange={(e) => forAll({ log: e.currentTarget.checked })} />
+            {kind === 'xy' && <Switch label="Log scale (across)" checked={logX} onChange={(e) => setLogX(e.currentTarget.checked)} />}
+            {kind === 'time' && (
+              <Tooltip label="Each site’s Sen’s slope over the dates shown, where there are enough results (see Graphs → Trends)">
+                <Switch label="Trend lines" checked={sharedSettings.trends} onChange={(e) => forAll({ trends: e.currentTarget.checked })} />
+              </Tooltip>
+            )}
+            {kind !== 'time' ? null : continuous && data.continuous.series.length ? (
               <Select
                 aria-label="Rainfall or flow behind the graphs"
                 placeholder="No rainfall or flow"
@@ -394,18 +544,51 @@ export function ChartsTab() {
               </Text>
             ) : null}
             <Group gap="sm" ml="auto" wrap="wrap">
-              <Button variant="default" leftSection={<IconAdjustmentsHorizontal size={16} />} onClick={() => setPanel('all')} rightSection={customisedCount ? <Badge size="xs" variant="light" circle={customisedCount < 10}>{customisedCount}</Badge> : undefined}>
+              <Button variant="default" leftSection={<IconAdjustmentsHorizontal size={16} />} onClick={() => setPanel('all')} style={kind === 'time' ? undefined : { display: 'none' }} rightSection={customisedCount ? <Badge size="xs" variant="light" circle={customisedCount < 10}>{customisedCount}</Badge> : undefined}>
                 Customise all graphs
               </Button>
               <Select aria-label="Graph size" data={Object.entries(SIZE_PRESETS).map(([value, v]) => ({ value, label: v.label }))} value={sizeKey} onChange={(v) => v && setSizeKey(v)} w={230} allowDeselect={false} comboboxProps={{ width: 'max-content' }} />
-              <Button variant="default" leftSection={<IconFileTypeDocx size={16} />} loading={busy} onClick={exportDocx} disabled={!specs.length}>
+              <Button variant="default" leftSection={<IconFileTypeDocx size={16} />} loading={busy} onClick={exportDocx} disabled={kind === 'time' ? !specs.length : !plots.some((x) => !x.empty)}>
                 All graphs to Word
               </Button>
             </Group>
           </Group>
         </Stack>
       </Card>
-      {!specs.length ? (
+      {kind !== 'time' ? (
+        !paramIds.length ? (
+          <EmptyState icon={<IconPhoto size={32} />} title="Choose one or more parameters">
+            Each parameter gets its own graph.
+          </EmptyState>
+        ) : kind === 'pair' && (!up || !down || up.id === down.id) ? (
+          <EmptyState icon={<IconPhoto size={32} />} title="Choose the upstream and the downstream site">
+            Each parameter’s results at the two sites are paired by date and graphed one against the other. A site’s role (Setup → Sites) – upstream / control, downstream / impact – chooses them for you.
+          </EmptyState>
+        ) : kind === 'xy' && !xParam ? (
+          <EmptyState icon={<IconPhoto size={32} />} title="Choose what to graph them against">
+            Each sample that has both is a point – turbidity against total suspended solids, say, or a metal against hardness.
+          </EmptyState>
+        ) : !plots.length ? (
+          <EmptyState icon={<IconPhoto size={32} />} title="Choose another parameter">
+            A parameter isn’t graphed against itself.
+          </EmptyState>
+        ) : (
+          <>
+            <SimpleGrid cols={{ base: 1, xl: plots.length > 1 ? 2 : 1 }}>
+              {plots.map((plot) => (
+                <PlotCard key={`${kind}-${plot.key}`} plot={plot} size={size} dark={scheme === 'dark'} />
+              ))}
+            </SimpleGrid>
+            <Text size="xs" c="dimmed">
+              {kind === 'box'
+                ? `${BOX_KEY} Results below detection are taken as the project takes them for statistics.`
+                : kind === 'pair'
+                  ? 'Each point is a day sampled at both sites: above the dashed line it was higher downstream. Hollow points have a result below detection. The test is the Wilcoxon signed-rank test on the paired differences (as in the Upstream vs downstream report table).'
+                  : 'Each point is a sample with both results; hollow points have one below detection. Spearman’s rank correlation says how steadily one rises with the other, whatever the shape – it doesn’t say one causes the other.'}
+            </Text>
+          </>
+        )
+      ) : !specs.length ? (
         <EmptyState icon={<IconPhoto size={32} />} title="Choose one or more parameters">
           Each parameter gets its own graph, with one line per site. Consent limits, triggers and guideline values are drawn as solid, dashed and dotted lines, with a key below the graph.
         </EmptyState>
@@ -416,9 +599,11 @@ export function ChartsTab() {
           ))}
         </SimpleGrid>
       )}
-      <Text size="xs" c="dimmed">
-        Tip: the sliders button on a graph customises it – its title, colours, sites, axis, and lines or dates of your own. Copy pastes a graph straight into Word; downloads are 3× resolution so they stay sharp when printed.
-      </Text>
+      {kind === 'time' && (
+        <Text size="xs" c="dimmed">
+          Tip: the sliders button on a graph customises it – its title, colours, sites, axis, and lines or dates of your own. Copy pastes a graph straight into Word; downloads are 3× resolution so they stay sharp when printed.
+        </Text>
+      )}
       {open && (
         <GraphPanel
           opened

@@ -3,6 +3,7 @@
 // (no timezone), so a sample taken at 10:30 am in NZ is always 10:30 am.
 
 import type { TeamKey } from '../field/lock';
+import type { PurgeLog } from '../lib/purge';
 
 export type ID = string;
 
@@ -220,6 +221,8 @@ export interface Sample {
   qc?: 'duplicate' | 'blank';
   /** A duplicate's original sample. */
   qcOf?: ID;
+  /** A bore's purge before it was sampled – what was taken out, the readings as it settled – from the phone. */
+  purge?: PurgeLog;
   /** When the lab received it ('YYYY-MM-DD' or with a time), from the lab's file – for holding times. */
   receivedOn?: string;
 }
@@ -921,6 +924,8 @@ export interface StatsTableBlock extends ReportBlockBase {
 }
 export interface ChartBlock extends ReportBlockBase {
   type: 'chart';
+  /** Each parameter over time, a line a site (the usual) – or each site's spread over the dates as a box plot. */
+  graph?: 'time' | 'box';
   parameterIds: ID[];
   siteIds: ID[];
   range: 'period' | 'all' | 'years';
