@@ -1,5 +1,5 @@
-// A sample's files, in its details: those linked to it (a lab job's result sheet, an import's file, or one added here),
-// each opened here – and Add files, kept in the shared folder and linked to the sample.
+// A sample's files, in its details: those linked to it (a lab job's result sheet, an import's file, its round's chain
+// of custody, or one added here), each opened here – and Add files, kept in the shared folder and linked to the sample.
 
 import { useState } from 'react';
 import { Anchor, Badge, Button, FileButton, Group, Stack, Text } from '@mantine/core';
@@ -7,7 +7,7 @@ import { notifications } from '@mantine/notifications';
 import { Link } from 'react-router-dom';
 import { IconExternalLink, IconPaperclip } from '@tabler/icons-react';
 import type { Project, ProjectFile, Result, Sample } from '../db/types';
-import { useProjectFiles } from '../hooks/useProjectFiles';
+import { useProjectFiles, useRoundRows } from '../hooks/useProjectFiles';
 import { addProjectFiles, fileIsAbout, kindLabel, linkProjectFile, webAddress } from '../lib/projectFiles';
 import { currentWorkspaceFolder, useWorkspace } from '../sync/workspace';
 import { FileIcon, FileViewer } from './FileViewer';
@@ -15,6 +15,7 @@ import { FileIcon, FileViewer } from './FileViewer';
 /** `onViewing`: told when a file is open over the details (so Escape closes only the file). */
 export function SampleFiles({ sample, results, project, siteCode, onViewing }: { sample: Sample; results: Result[]; project: Pick<Project, 'id' | 'code' | 'name'>; siteCode?: string; onViewing?: (open: boolean) => void }) {
   const files = useProjectFiles(project.id);
+  const rounds = useRoundRows(project.id);
   const ws = useWorkspace();
   const [viewing, setShown] = useState<ProjectFile | null>(null);
   const setViewing = (f: ProjectFile | null) => {
@@ -22,7 +23,7 @@ export function SampleFiles({ sample, results, project, siteCode, onViewing }: {
     onViewing?.(!!f);
   };
   const [busy, setBusy] = useState(false);
-  const mine = files.filter((f) => fileIsAbout(f, sample, results));
+  const mine = files.filter((f) => fileIsAbout(f, sample, results, rounds));
   const canKeep = ws.phase === 'ready' && !!currentWorkspaceFolder()?.writeBlob;
   if (!mine.length && !canKeep) return null;
   const add = async (list: File[]) => {

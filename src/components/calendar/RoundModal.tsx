@@ -1,5 +1,6 @@
 // A sampling round on the monitoring calendar, stage by stage: sampled, sent to the lab (which lab, its job or chain
-// of custody number), results back, results sent (to whom) – with what EnviroDB already knows filled in.
+// of custody number), results back, results sent (to whom) – with what EnviroDB already knows filled in – and its
+// paperwork: the chain of custody kept with it, and the sample list and labels made for it.
 
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Autocomplete, Button, Checkbox, Group, Modal, Stack, Switch, Text, TextInput, Textarea } from '@mantine/core';
@@ -10,6 +11,7 @@ import { DateField } from '../common';
 import { cellValue, markId, monthName, type CalendarSheet } from '../../lib/calendar';
 import { formatDate, todayStr } from '../../lib/dates';
 import { roundEdits, roundOf, type RoundOptions, type StageKey } from '../../lib/rounds';
+import { RoundFiles } from './RoundFiles';
 
 const LABS = ['Hill Labs', 'ALS', 'Linnaeus', 'Analytica', 'Eurofins', 'Watercare Laboratory Services', 'NIWA'];
 
@@ -37,6 +39,8 @@ export function RoundModal({ sheet, row, month, opts, onClose, run }: { sheet: C
   const [note, setNote] = useState(mark.note ?? '');
   const [cancelled, setCancelled] = useState(mark.status === 'cancelled');
   useEffect(() => setCancelled(mark.status === 'cancelled'), [mark.status]);
+  // a file or the paperwork open over the dialog: Escape closes that, not the round
+  const [over, setOver] = useState(false);
 
   const labsUsed = useMemo(() => [...new Set([...LABS, ...[...sheet.marks.values()].map((m) => m.lab).filter(Boolean)] as string[])].sort(), [sheet.marks]);
   const recipients = useMemo(() => [...new Set([project?.client, project?.regulator, 'The client', 'The council', ...[...sheet.marks.values()].map((m) => m.sentTo)].filter(Boolean) as string[])], [project, sheet.marks]);
@@ -100,7 +104,7 @@ export function RoundModal({ sheet, row, month, opts, onClose, run }: { sheet: C
   const sitesIn = [...new Set(res.flatMap((r) => r!.sites))].map((id) => sheet.sites.get(id)?.code ?? '?');
 
   return (
-    <Modal opened onClose={onClose} title={<Text fw={700}>Sampling round – {job}, {when}</Text>} size="lg">
+    <Modal opened onClose={onClose} closeOnEscape={!over} title={<Text fw={700}>Sampling round – {job}, {when}</Text>} size="lg">
       <Stack gap="sm">
         {round?.overdue && !cancelled ? (
           <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />} p="xs">
@@ -143,6 +147,7 @@ export function RoundModal({ sheet, row, month, opts, onClose, run }: { sheet: C
             <Autocomplete size="xs" label="Sent to" placeholder="e.g. the client, the council" data={recipients} value={sentTo} onChange={setSentTo} disabled={cancelled} />
           </Group>,
         )}
+        {project && <RoundFiles project={project} row={row} months={months} label={when} lab={lab.trim() || round?.lab} cocNumber={labRef.trim() || undefined} onOver={setOver} />}
         <Textarea size="xs" label="Note" placeholder="e.g. GW2 dry – not sampled; results to the client by the 20th" autosize minRows={2} value={note} onChange={(e) => setNote(e.currentTarget.value)} />
         <Switch size="sm" label="Cancelled or on hold this round" checked={cancelled} onChange={(e) => setCancelled(e.currentTarget.checked)} />
         <Text size="xs" c="dimmed">

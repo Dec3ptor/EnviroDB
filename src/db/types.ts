@@ -46,6 +46,9 @@ export interface Project {
   salutation?: string;
   /** Purchase order number, for the monitoring calendar. */
   purchaseOrder?: string;
+  /** The laboratory the project's samples go to, and its quote number – on a sampling round's paperwork. */
+  lab?: string;
+  labQuote?: string;
   /** The project's folder: a link or a path to copy (e.g. a SharePoint link or G:\\CLIENTS\\…). */
   folder?: string;
   /**
@@ -633,8 +636,12 @@ export interface ProjectPhoto {
 /** What a project's file is. */
 export type FileKind = 'results' | 'quote' | 'coc' | 'field' | 'consent' | 'report' | 'correspondence' | 'invoice' | 'other';
 
-/** The data a file is about: a lab job's samples, an import's, or samples chosen one by one. */
-export type FileLink = { kind: 'job'; job: string } | { kind: 'import'; importId: ID } | { kind: 'samples'; sampleIds: ID[] };
+/**
+ * The data a file is about: a lab job's samples, an import's, samples chosen one by one – or a sampling round: the
+ * project's samples of a month ('YYYY-MM'), or of a monitoring calendar row's round that starts that month (the row's
+ * sites, its whole sampling window). A round's chain of custody is linked this way before there are any results.
+ */
+export type FileLink = { kind: 'job'; job: string } | { kind: 'import'; importId: ID } | { kind: 'samples'; sampleIds: ID[] } | { kind: 'round'; month: string; row?: ID };
 
 /**
  * A document kept with a project – a lab's quote or result sheet, a chain of custody, the consent. Uploaded, it's a
@@ -667,6 +674,11 @@ export interface ProjectFile {
   linked?: FileLink;
   /** Kept by the import of its results. */
   fromImport?: ID;
+  /**
+   * A form to print with every round's paperwork – the lab's chain of custody, filled in for the project (its
+   * details, the quote, the tests), ready for the day's samples.
+   */
+  eachRound?: boolean;
   addedAt: string;
   addedBy?: string;
 }
@@ -812,7 +824,8 @@ export type ReportBlockType =
   | 'trendTable'
   | 'upDownTable'
   | 'npsfmTable'
-  | 'complianceRegister';
+  | 'complianceRegister'
+  | 'labReports';
 
 export interface ReportBlockBase {
   id: string;
@@ -1161,7 +1174,20 @@ export interface ReportingTableBlock extends ReportBlockBase {
   title?: string;
 }
 
+/**
+ * The lab's own reports at the back of a report: the project's files that are about the period's samples – the lab's
+ * result sheets and, if wanted, the chains of custody and field sheets – each page a picture, a page to itself.
+ */
+export interface LabReportsBlock extends ReportBlockBase {
+  type: 'labReports';
+  /** The kinds of file put in (lab results when none are named). */
+  kinds: Array<'results' | 'coc' | 'field'>;
+  /** A line over each document: its name and the samples it's about (shown unless false). */
+  titles?: boolean;
+}
+
 export type ReportBlock =
+  | LabReportsBlock
   | ComplianceRegisterBlock
   | NpsfmTableBlock
   | QaSummaryBlock

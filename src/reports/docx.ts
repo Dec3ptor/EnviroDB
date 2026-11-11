@@ -297,7 +297,7 @@ function nodeToDocx(n: DocNode, x: Ctx, contentWidthMm: number): Array<Paragraph
       const out: Array<Paragraph | Table> = [];
       const wCm = Math.min(n.widthCm, contentWidthMm / 10);
       const hCm = n.heightCm * (wCm / n.widthCm);
-      if (n.dataUrl) out.push(new Paragraph({ keepNext: true, spacing: { before: 120, after: 40 }, indent: ind, children: [new ImageRun({ type: 'png', data: dataUrlToBytes(n.dataUrl), transformation: { width: Math.round(wCm * PX_PER_CM), height: Math.round(hCm * PX_PER_CM) } })] }));
+      if (n.dataUrl) out.push(new Paragraph({ keepNext: !!n.caption, spacing: { before: 120, after: 40 }, indent: ind, children: [new ImageRun({ type: imageType(n.dataUrl), data: dataUrlToBytes(n.dataUrl), transformation: { width: Math.round(wCm * PX_PER_CM), height: Math.round(hCm * PX_PER_CM) } })] }));
       if (n.caption) out.push(new Paragraph({ style: 'Caption', indent: ind, children: marked(n.anchor, n.caption) }));
       return out;
     }

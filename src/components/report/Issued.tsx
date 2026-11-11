@@ -14,6 +14,7 @@ import { fullReport, reportFile, type ExportKind } from '../../reports/export';
 import { downloadBlob } from '../../db/backup';
 import { formatDate, todayStr } from '../../lib/dates';
 import { checksSummary, type ReportCheck } from '../../reports/checks';
+import { attachedRefs, loadAllAttachments, type AttachedRef } from '../../lib/attachments';
 import { Link } from 'react-router-dom';
 
 /** What the report would be built from now – to issue, or to compare with what was issued. */
@@ -24,6 +25,8 @@ export interface ReportNow {
   settings: Settings;
   promptTexts: Record<string, string>;
   figures: Record<string, FigureImage[]>;
+  /** The documents its Laboratory reports sections put in – which files; their pages are read when it's built. */
+  attached?: Record<string, AttachedRef[]>;
   siteIds?: string[];
 }
 
@@ -48,7 +51,8 @@ export function useIssuedContent(issue: IssuedReport | undefined): { content?: S
 
 /** Download an issued report, rebuilt from what it was built from. */
 async function downloadIssued(issue: IssuedReport, kind: ExportKind) {
-  const file = await reportFile(kind, fullReport(issuedBuildOptions(await loadIssued(issue), issue)));
+  const content = await loadIssued(issue);
+  const file = await reportFile(kind, fullReport({ ...issuedBuildOptions(content, issue), attachments: await loadAllAttachments(content.attached) }));
   downloadBlob(file.blob, file.name);
 }
 
@@ -87,7 +91,7 @@ export function ChecksList({ checks, projectId }: { checks: ReportCheck[]; proje
         <Text size="sm">Nothing missing: every site has results, the commentary is written, references resolve.</Text>
       </Group>
     );
-  const where: Record<NonNullable<ReportCheck['where']>, string> = { data: 'Data', compliance: 'Compliance', reports: 'Reports', setup: 'Setup', schedule: 'Sampling & reporting' };
+  const where: Record<NonNullable<ReportCheck['where']>, string> = { data: 'Data', compliance: 'Compliance', reports: 'Reports', setup: 'Setup', schedule: 'Sampling & reporting', files: 'Files' };
   return (
     <Stack gap={4}>
       {checks.map((c, i) => (
@@ -171,10 +175,12 @@ export function IssueModal({
     setBusy(true);
     try {
       const today = todayStr();
-      const doc = fullReport({ ...now, today, issue: { revision: revision.trim() } });
+      // the lab's reports put in: read from the shared folder now, and what went in is kept with the issue
+      const attachments = await loadAllAttachments(now.attached);
+      const doc = fullReport({ ...now, attachments, today, issue: { revision: revision.trim() } });
       const files: Array<{ kind: ExportKind; name: string; blob: Blob }> = [];
       for (const kind of kinds) files.push({ kind, ...(await reportFile(kind, doc)) });
-      const content = snapshotContent({ ...now, issuedOn: today });
+      const content = snapshotContent({ ...now, attached: attachedRefs(attachments), issuedOn: today });
       const rec = await issueReport({
         content,
         templateId: now.template.id,

@@ -1,9 +1,10 @@
 // The project's files: lab quotes and result sheets, chains of custody, the consent … Dropped or uploaded here, a copy
 // is kept in the shared folder; a link points to one kept elsewhere. Each can be linked to the data it's about – a
-// lab job, an import, or samples – and then shows in those samples' details.
+// lab job, an import, samples, or a sampling round (its chain of custody) – and then shows in those samples' details.
 
 import { useMemo, useState } from 'react';
-import { ActionIcon, Anchor, Autocomplete, Badge, Button, Card, Chip, FileButton, Group, Menu, Modal, MultiSelect, SegmentedControl, Select, Stack, Table, Text, TextInput, Textarea, ThemeIcon, Tooltip } from '@mantine/core';
+import { ActionIcon, Anchor, Autocomplete, Badge, Button, Card, Chip, FileButton, Group, Menu, Modal, MultiSelect, SegmentedControl, Select, Stack, Switch, Table, Text, TextInput, Textarea, ThemeIcon, Tooltip } from '@mantine/core';
+import { MonthPickerInput } from '@mantine/dates';
 import { Dropzone } from '@mantine/dropzone';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -11,9 +12,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   IconCopy, IconDots, IconDownload, IconExternalLink, IconEye, IconLink, IconPencil, IconSearch, IconTrash, IconUnlink, IconUpload,
 } from '@tabler/icons-react';
-import type { FileKind, FileLink, ImportBatch, ProjectFile, Sample } from '../../db/types';
+import type { CalendarRow, FileKind, FileLink, ImportBatch, ProjectFile, Sample } from '../../db/types';
 import { useProject } from '../../hooks/useProjectData';
-import { useProjectFiles } from '../../hooks/useProjectFiles';
+import { useProjectFiles, useProjectRows } from '../../hooks/useProjectFiles';
 import { useViewState, seedViewState } from '../../hooks/useViewState';
 import { useWorkspace, currentWorkspaceFolder } from '../../sync/workspace';
 import { downloadBlob } from '../../db/backup';
@@ -21,10 +22,11 @@ import { same } from '../../sync/model';
 import { copyText } from '../../lib/clipboard';
 import { addMonths, formatDate, todayStr } from '../../lib/dates';
 import {
-  addProjectFiles, addProjectLink, FILE_KINDS, fileSize, jobsWithoutSheet, kindLabel, linkedSampleIds, linkProjectFile, linkTarget, nameOfTarget, projectFilesDir, projectJobs, removeProjectFile, sampleSummary, saveProjectFile, samplesByImport, sharedCopy, suggestedJob, webAddress, type LabJob,
+  addProjectFiles, addProjectLink, FILE_KINDS, fileSize, jobsWithoutSheet, kindLabel, linkedSampleIds, linkProjectFile, linkTarget, nameOfTarget, projectFilesDir, projectJobs, removeProjectFile, roundName, sampleSummary, saveProjectFile, samplesByImport, sharedCopy, suggestedJob, webAddress, type LabJob, type RoundRows,
 } from '../../lib/projectFiles';
 import { FileIcon, FileViewer } from '../../components/FileViewer';
-import { DateField, defaultPeriod } from '../../components/common';
+import { DateField, dateToStr, defaultPeriod, strToDate } from '../../components/common';
+import { cellValue } from '../../lib/calendar';
 import { SaveButton } from '../../components/Unsaved';
 
 const KIND_COLOR: Record<FileKind, string> = { results: 'teal', quote: 'blue', coc: 'grape', field: 'lime', consent: 'orange', report: 'indigo', correspondence: 'gray', invoice: 'yellow', other: 'gray' };
@@ -32,10 +34,11 @@ const KIND_COLOR: Record<FileKind, string> = { results: 'teal', quote: 'blue', c
 /** The labs a project's files and samples name, and the usual ones – offered for a file's lab. */
 const LABS = ['Hill Labs', 'Eurofins', 'ALS', 'Analytica', 'Watercare', 'Linnaeus'];
 
-/** The data a link names, in words: "Lab job 3300139", "Import of Hill.csv", "Samples". */
-function linkLabel(l: FileLink, imports: ImportBatch[]): string {
+/** The data a link names, in words: "Lab job 3300139", "Import of Hill.csv", "The October 2026 round", "Samples". */
+function linkLabel(l: FileLink, imports: ImportBatch[], rounds: RoundRows): string {
   if (l.kind === 'job') return `Lab job ${l.job}`;
   if (l.kind === 'import') return `Import of ${imports.find((b) => b.id === l.importId)?.fileName ?? 'a file'}`;
+  if (l.kind === 'round') return `The ${roundName(l, rounds, rounds.size > 1)} round`;
   return 'Chosen samples';
 }
 
@@ -45,6 +48,8 @@ export function FilesTab() {
   const navigate = useNavigate();
   const ws = useWorkspace();
   const files = useProjectFiles(project.id);
+  const calendarRows = useProjectRows(project.id);
+  const rounds: RoundRows = useMemo(() => new Map(calendarRows.map((r) => [r.id, r])), [calendarRows]);
   const allSamples = useMemo(() => [...data.samples, ...data.qc.samples], [data.samples, data.qc.samples]);
   const sampleById = useMemo(() => new Map(allSamples.map((s) => [s.id, s])), [allSamples]);
   const jobs = useMemo(() => projectJobs(allSamples), [allSamples]);
@@ -65,12 +70,12 @@ export function FilesTab() {
   const rows = useMemo(() => {
     return files
       .map((f) => {
-        const ids = linkedSampleIds(f, allSamples, byImport);
+        const ids = linkedSampleIds(f, allSamples, byImport, rounds);
         const days = ids.map((id) => sampleById.get(id)?.date.slice(0, 10) ?? '').filter(Boolean).sort();
         return { f, ids, suggestion: suggestedJob(f, jobs), when: f.date ?? days[days.length - 1] ?? f.addedAt.slice(0, 10) };
       })
       .sort((a, b) => (a.when < b.when ? 1 : a.when > b.when ? -1 : a.f.name.localeCompare(b.f.name)));
-  }, [files, allSamples, byImport, jobs, sampleById]);
+  }, [files, allSamples, byImport, jobs, sampleById, rounds]);
   const counts = useMemo(() => {
     const m = new Map<FileKind, number>();
     for (const { f } of rows) m.set(f.kind, (m.get(f.kind) ?? 0) + 1);
@@ -79,9 +84,9 @@ export function FilesTab() {
   // a kind remembered that has no files now: all of them
   const showing = kind !== 'all' && counts.get(kind) ? kind : 'all';
   // lab jobs of the last year with no result sheet on file – said once the project keeps any (till then it isn't used that way)
-  const unfiled = useMemo(() => (files.some((f) => f.kind === 'results') ? jobsWithoutSheet(jobs, files, allSamples, byImport, addMonths(todayStr(), -12)) : []), [files, jobs, allSamples, byImport]);
+  const unfiled = useMemo(() => (files.some((f) => f.kind === 'results') ? jobsWithoutSheet(jobs, files, allSamples, byImport, addMonths(todayStr(), -12), rounds) : []), [files, jobs, allSamples, byImport, rounds]);
   const q = search.trim().toLowerCase();
-  const shown = rows.filter(({ f }) => (showing === 'all' || f.kind === showing) && (!q || [f.name, f.lab, f.ref, f.notes, kindLabel(f.kind), f.linked?.kind === 'job' ? f.linked.job : ''].filter(Boolean).join(' ').toLowerCase().includes(q)));
+  const shown = rows.filter(({ f }) => (showing === 'all' || f.kind === showing) && (!q || [f.name, f.lab, f.ref, f.notes, kindLabel(f.kind), f.linked?.kind === 'job' ? f.linked.job : f.linked?.kind === 'round' ? roundName(f.linked, rounds, true) : '', f.eachRound ? 'every round' : ''].filter(Boolean).join(' ').toLowerCase().includes(q)));
 
   const upload = async (list: File[]) => {
     if (!list.length) return;
@@ -271,6 +276,13 @@ export function FilesTab() {
                       <Badge variant="light" color={KIND_COLOR[f.kind]} style={{ whiteSpace: 'nowrap' }}>
                         {kindLabel(f.kind)}
                       </Badge>
+                      {f.eachRound && (
+                        <Tooltip label="Printed with every round’s paperwork">
+                          <Text size="xs" c="dimmed" mt={2}>
+                            every round
+                          </Text>
+                        </Tooltip>
+                      )}
                     </Table.Td>
                     <Table.Td>
                       <Text size="sm">{[f.lab, f.ref].filter(Boolean).join(' · ') || '–'}</Text>
@@ -280,10 +292,10 @@ export function FilesTab() {
                         <Stack gap={0}>
                           <Anchor component="button" type="button" size="sm" ta="left" onClick={() => setLinking(f)}>
                             <IconLink size={12} style={{ verticalAlign: -1, marginRight: 4 }} />
-                            {linkLabel(f.linked, imports)}
+                            {linkLabel(f.linked, imports, rounds)}
                           </Anchor>
                           <Text size="xs" c={ids.length ? 'dimmed' : 'orange.8'}>
-                            {ids.length ? sampleSummary(ids, (id) => sampleById.get(id), siteCode) : f.linked.kind === 'job' ? 'no samples with that lab job yet' : 'its samples have gone'}
+                            {ids.length ? sampleSummary(ids, (id) => sampleById.get(id), siteCode) : f.linked.kind === 'job' ? 'no samples with that lab job yet' : f.linked.kind === 'round' ? 'no samples from it yet' : 'its samples have gone'}
                           </Text>
                         </Stack>
                       ) : suggestion ? (
@@ -370,6 +382,7 @@ export function FilesTab() {
           imports={imports}
           samples={allSamples}
           byImport={byImport}
+          rows={calendarRows}
           siteCode={siteCode}
           onClose={() => setLinking(null)}
           onShow={(search) => {
@@ -383,6 +396,9 @@ export function FilesTab() {
     </Stack>
   );
 }
+
+/** A PDF or a picture: what can be printed with a round's paperwork. */
+const printsWithPaperwork = (f: Pick<ProjectFile, 'name' | 'type'>) => /\.(pdf|png|jpe?g)$/i.test(f.name) || /^(application\/pdf|image\/(png|jpeg))$/.test(f.type ?? '');
 
 /** A file's details: its name, kind, lab, number, date and notes – and a link's address. */
 function FileDetails({ file, labs, onClose }: { file: ProjectFile; labs: string[]; onClose: () => void }) {
@@ -410,6 +426,14 @@ function FileDetails({ file, labs, onClose }: { file: ProjectFile; labs: string[
         </Group>
         {file.href !== undefined && <TextInput label="Link or path" value={d.href ?? ''} onChange={(e) => setD({ ...d, href: e.currentTarget.value })} error={error || undefined} />}
         <Textarea label="Notes" autosize minRows={2} value={d.notes ?? ''} onChange={(e) => setD({ ...d, notes: e.currentTarget.value || undefined })} placeholder="e.g. quote valid to 30 June; covers quarterly rounds" />
+        {file.path && printsWithPaperwork(file) && (
+          <Switch
+            label="Print with every round’s paperwork"
+            description="For a form used each round – the lab’s chain of custody filled in for this project, say. It’s added to the paperwork made for a sampling round."
+            checked={!!d.eachRound}
+            onChange={(e) => setD({ ...d, eachRound: e.currentTarget.checked || undefined })}
+          />
+        )}
         {file.path && (
           <Text size="xs" c="dimmed">
             Kept in the shared folder: {file.path}
@@ -433,25 +457,45 @@ function FileDetails({ file, labs, onClose }: { file: ProjectFile; labs: string[
   );
 }
 
-/** What a file is linked to: a lab job (its samples – those imported later too), an import's samples, or samples chosen. */
-function LinkModal({ file, jobs, imports, samples, byImport, siteCode, onClose, onShow }: {
+/**
+ * What a file is linked to: a lab job (its samples – those imported later too), an import's samples, a sampling round
+ * (a month's samples, there yet or not – a chain of custody's), or samples chosen.
+ */
+function LinkModal({ file, jobs, imports, samples, byImport, rows, siteCode, onClose, onShow }: {
   file: ProjectFile;
   jobs: LabJob[];
   imports: ImportBatch[];
   samples: Sample[];
   byImport: Map<string, Set<string>>;
+  /** The project's rows on the monitoring calendar. */
+  rows: CalendarRow[];
   siteCode: (siteId: string) => string | undefined;
   onClose: () => void;
   onShow: (search: string) => void;
 }) {
   const suggestion = suggestedJob(file, jobs);
   const l = file.linked;
-  const [how, setHow] = useState<'job' | 'import' | 'samples' | 'none'>(l?.kind ?? (suggestion || jobs.length ? 'job' : file.fromImport ? 'import' : 'samples'));
+  const rounds: RoundRows = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
+  // a chain of custody or a field sheet is a round's, unless it names a lab job
+  const ofRound = file.kind === 'coc' || file.kind === 'field';
+  const [how, setHow] = useState<'job' | 'import' | 'round' | 'samples' | 'none'>(l?.kind ?? (suggestion ? 'job' : ofRound ? 'round' : jobs.length ? 'job' : file.fromImport ? 'import' : 'samples'));
   const [job, setJob] = useState<string | null>(l?.kind === 'job' ? l.job : (suggestion?.job ?? null));
   const [importId, setImportId] = useState<string | null>(l?.kind === 'import' ? l.importId : (file.fromImport ?? null));
-  const [ids, setIds] = useState<string[]>(l ? linkedSampleIds(file, samples, byImport) : []);
-  const next: FileLink | undefined = how === 'job' && job ? { kind: 'job', job } : how === 'import' && importId ? { kind: 'import', importId } : how === 'samples' && ids.length ? { kind: 'samples', sampleIds: ids } : undefined;
-  const linkedIds = next ? linkedSampleIds({ linked: next }, samples, byImport) : [];
+  const [month, setMonth] = useState<string>(l?.kind === 'round' ? l.month : (file.date ?? file.addedAt).slice(0, 7));
+  const [rowId, setRowId] = useState<string | null>(l?.kind === 'round' ? (l.row ?? null) : rows.length === 1 ? rows[0].id : null);
+  const [ids, setIds] = useState<string[]>(l && l.kind !== 'round' ? linkedSampleIds(file, samples, byImport) : []);
+  const row = rowId && rounds.has(rowId) ? rowId : undefined;
+  const next: FileLink | undefined =
+    how === 'job' && job
+      ? { kind: 'job', job }
+      : how === 'import' && importId
+        ? { kind: 'import', importId }
+        : how === 'round' && /^\d{4}-\d{2}$/.test(month)
+          ? { kind: 'round', month, ...(row ? { row } : {}) }
+          : how === 'samples' && ids.length
+            ? { kind: 'samples', sampleIds: ids }
+            : undefined;
+  const linkedIds = next ? linkedSampleIds({ linked: next }, samples, byImport, rounds) : [];
   const sampleById = useMemo(() => new Map(samples.map((s) => [s.id, s])), [samples]);
   // the samples to choose from, a group for each month, the latest first
   const sampleOptions = useMemo(() => {
@@ -465,7 +509,11 @@ function LinkModal({ file, jobs, imports, samples, byImport, siteCode, onClose, 
     return [...groups].map(([group, items]) => ({ group, items }));
   }, [samples]);
   const save = async () => {
-    await linkProjectFile(file, next, next?.kind === 'job' ? `lab job ${next.job}` : next?.kind === 'import' ? `the import of ${imports.find((b) => b.id === next.importId)?.fileName ?? 'a file'}` : `${linkedIds.length} samples`);
+    await linkProjectFile(
+      file,
+      next,
+      next?.kind === 'job' ? `lab job ${next.job}` : next?.kind === 'import' ? `the import of ${imports.find((b) => b.id === next.importId)?.fileName ?? 'a file'}` : next?.kind === 'round' ? `the ${roundName(next, rounds, rows.length > 1)} round` : `${linkedIds.length} samples`,
+    );
     onClose();
   };
   // to see them in the Data tab: their lab job, or their day
@@ -481,6 +529,7 @@ function LinkModal({ file, jobs, imports, samples, byImport, siteCode, onClose, 
           data={[
             { value: 'job', label: 'A lab job' },
             { value: 'import', label: 'An import' },
+            { value: 'round', label: 'A sampling round' },
             { value: 'samples', label: 'Samples' },
             { value: 'none', label: 'Nothing' },
           ]}
@@ -517,8 +566,32 @@ function LinkModal({ file, jobs, imports, samples, byImport, siteCode, onClose, 
               Nothing’s been imported into this project yet.
             </Text>
           ))}
+        {how === 'round' && (
+          <Group grow align="flex-start">
+            <MonthPickerInput
+              label="Round"
+              description="The month it was sampled in (a sampling window’s first month)"
+              valueFormat="MMMM YYYY"
+              value={strToDate(`${month}-01`)}
+              onChange={(d) => setMonth((dateToStr(d) ?? '').slice(0, 7))}
+              popoverProps={{ withinPortal: true }}
+            />
+            {rows.length > 1 && (
+              <Select
+                label="Job on the monitoring calendar"
+                description="Its sites and sampling window – or the whole project’s month"
+                placeholder="The whole project"
+                clearable
+                data={rows.map((r) => ({ value: r.id, label: cellValue(r, 'job') || 'The project’s row' }))}
+                value={row ?? null}
+                onChange={setRowId}
+                comboboxProps={{ withinPortal: true }}
+              />
+            )}
+          </Group>
+        )}
         {how === 'samples' && <MultiSelect label="Samples" placeholder="Search by date or site…" searchable clearable data={sampleOptions} value={ids} onChange={setIds} maxDropdownHeight={280} comboboxProps={{ withinPortal: true }} />}
-        <Text size="sm">{how === 'none' ? 'It won’t be linked to any data.' : next ? (linkedIds.length ? `Linked to ${sampleSummary(linkedIds, (id) => sampleById.get(id), siteCode)}.` : 'No samples with it yet – they’ll show it when they’re imported.') : 'Choose what it’s about.'}</Text>
+        <Text size="sm">{how === 'none' ? 'It won’t be linked to any data.' : next ? (linkedIds.length ? `Linked to ${sampleSummary(linkedIds, (id) => sampleById.get(id), siteCode)}.` : next.kind === 'round' ? 'No samples from that round yet – it’s with the round on the monitoring calendar, and they’ll show it when they’re in.' : 'No samples with it yet – they’ll show it when they’re imported.') : 'Choose what it’s about.'}</Text>
         <Text size="xs" c="dimmed">
           A file linked to samples shows in their details on the Data tab, and the samples are marked with a paperclip there.
         </Text>

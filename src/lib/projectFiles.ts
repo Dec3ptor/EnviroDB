@@ -1,18 +1,21 @@
 // A project's files: lab quotes and result sheets, chains of custody, the consent … A file uploaded here is copied as
 // it is into the team's shared folder – Project files/<project>/ – where everyone's EnviroDB, and File Explorer, finds
 // it; a link points to one kept elsewhere: a SharePoint or web address, or a path on the network drive. A file can be
-// linked to the data it's about – a lab job's samples, an import's, or samples chosen – and then shows with them.
+// linked to the data it's about – a lab job's samples, an import's, samples chosen, or a sampling round (its chain of
+// custody, before there are any results) – and then shows with them.
 
 import { db } from '../db/db';
 import { logAudit, whoAmI } from '../db/audit';
 import { saveEdited } from '../db/repo';
-import type { FileKind, FileLink, ImportBatch, Project, ProjectFile, Result, Sample } from '../db/types';
+import type { CalendarRow, FileKind, FileLink, ImportBatch, Project, ProjectFile, Result, Sample } from '../db/types';
 import { nowIso, uid } from './ids';
 import { safeName } from './photos';
 import { currentWorkspaceFolder } from '../sync/workspace';
 import type { WorkspaceFolder } from '../sync/folder';
 import { labOfText, peekText } from '../importers/sniff';
 import { formatDate } from './dates';
+import { cellValue, monthName } from './calendar';
+import { roundMonths } from './rounds';
 
 export const FILE_KINDS: Array<{ value: FileKind; label: string }> = [
   { value: 'results', label: 'Lab results' },
@@ -170,13 +173,60 @@ export function samplesByImport(samples: Array<Pick<Sample, 'id' | 'importId'>>,
   return out;
 }
 
+/** A sampling round a file is linked to. */
+export type RoundLink = Extract<FileLink, { kind: 'round' }>;
+/** The monitoring calendar's rows, by id – what a round link's row is looked up in. */
+export type RoundRows = ReadonlyMap<string, CalendarRow>;
+/** A sample as the links see it: what a round goes by is its day and site. */
+type LinkSample = Pick<Sample, 'id' | 'labJob'> & Partial<Pick<Sample, 'date' | 'siteId' | 'qc'>>;
+
+/**
+ * The months and sites of a round a file is linked to: the calendar row's round that starts that month – its whole
+ * sampling window, the row's sites – or, with no row (or one since deleted), the month and every site.
+ */
+export function roundSpan(l: Pick<RoundLink, 'month' | 'row'>, rows?: RoundRows): { months: string[]; siteIds?: string[] } {
+  const row = l.row ? rows?.get(l.row) : undefined;
+  if (!row) return { months: [l.month] };
+  return { months: roundMonths(row, l.month), siteIds: row.siteIds?.length ? row.siteIds : undefined };
+}
+
+/** Whether a sample is of a round: taken in its months, at its sites (a duplicate or blank goes with whatever round it's taken in). */
+const inRound = (s: Partial<Pick<Sample, 'date' | 'siteId' | 'qc'>>, span: { months: string[]; siteIds?: string[] }): boolean =>
+  !!s.date && span.months.includes(s.date.slice(0, 7)) && (!span.siteIds || !!s.qc || (!!s.siteId && span.siteIds.includes(s.siteId)));
+
+/** A round in words: "October 2026", "October – December 2026"; with the row's job when the project has several rows. */
+export function roundName(l: Pick<RoundLink, 'month' | 'row'>, rows?: RoundRows, withJob = false): string {
+  const { months } = roundSpan(l, rows);
+  const last = months[months.length - 1];
+  const year = (m: string) => m.slice(0, 4);
+  const when = months.length > 1 ? `${monthName(months[0], true)}${year(months[0]) === year(last) ? '' : ` ${year(months[0])}`} – ${monthName(last, true)} ${year(last)}` : `${monthName(l.month, true)} ${year(l.month)}`;
+  const row = l.row ? rows?.get(l.row) : undefined;
+  const job = withJob && row ? cellValue(row, 'job') : '';
+  return job ? `${when} (${job})` : when;
+}
+
+/** A round's files, of a project's: those linked to the calendar row's round, or to one of its months alone. */
+export function roundFiles(files: ProjectFile[], round: { row?: string; months: string[] }): ProjectFile[] {
+  return files.filter((f) => {
+    const l = f.linked;
+    return l?.kind === 'round' && round.months.includes(l.month) && (!l.row || l.row === round.row);
+  });
+}
+
+/** The forms printed with every round's paperwork (the lab's chain of custody, filled in for the project) – PDFs and pictures kept here. */
+export const roundForms = (files: ProjectFile[]): ProjectFile[] => files.filter((f) => f.eachRound && !!f.path);
+
 /** The samples a file is linked to (those still in the project). */
-export function linkedSampleIds(f: Pick<ProjectFile, 'linked'>, samples: Array<Pick<Sample, 'id' | 'labJob'>>, byImport: Map<string, Set<string>>): string[] {
+export function linkedSampleIds(f: Pick<ProjectFile, 'linked'>, samples: LinkSample[], byImport: Map<string, Set<string>>, rows?: RoundRows): string[] {
   const l = f.linked;
   if (!l) return [];
   if (l.kind === 'job') {
     const k = refKey(l.job);
     return samples.filter((s) => !!s.labJob && refKey(s.labJob) === k).map((s) => s.id);
+  }
+  if (l.kind === 'round') {
+    const span = roundSpan(l, rows);
+    return samples.filter((s) => inRound(s, span)).map((s) => s.id);
   }
   const have = new Set(samples.map((s) => s.id));
   if (l.kind === 'import') return [...(byImport.get(l.importId) ?? [])].filter((id) => have.has(id));
@@ -184,10 +234,10 @@ export function linkedSampleIds(f: Pick<ProjectFile, 'linked'>, samples: Array<P
 }
 
 /** Each sample's files: those linked to it. */
-export function filesBySample(files: ProjectFile[], samples: Array<Pick<Sample, 'id' | 'labJob'>>, byImport: Map<string, Set<string>>): Map<string, ProjectFile[]> {
+export function filesBySample(files: ProjectFile[], samples: LinkSample[], byImport: Map<string, Set<string>>, rows?: RoundRows): Map<string, ProjectFile[]> {
   const out = new Map<string, ProjectFile[]>();
   for (const f of files)
-    for (const id of linkedSampleIds(f, samples, byImport)) {
+    for (const id of linkedSampleIds(f, samples, byImport, rows)) {
       const list = out.get(id);
       if (list) list.push(f);
       else out.set(id, [f]);
@@ -199,9 +249,9 @@ export function filesBySample(files: ProjectFile[], samples: Array<Pick<Sample, 
  * The lab jobs with no result sheet on file: none of the job's samples has a file of lab results linked to it. Only
  * jobs sampled on or after `since` ('YYYY-MM-DD'), the latest first.
  */
-export function jobsWithoutSheet(jobs: LabJob[], files: ProjectFile[], samples: Array<Pick<Sample, 'id' | 'labJob'>>, byImport: Map<string, Set<string>>, since = ''): LabJob[] {
+export function jobsWithoutSheet(jobs: LabJob[], files: ProjectFile[], samples: LinkSample[], byImport: Map<string, Set<string>>, since = '', rows?: RoundRows): LabJob[] {
   const withSheet = new Set<string>();
-  for (const f of files) if (f.kind === 'results') for (const id of linkedSampleIds(f, samples, byImport)) withSheet.add(id);
+  for (const f of files) if (f.kind === 'results') for (const id of linkedSampleIds(f, samples, byImport, rows)) withSheet.add(id);
   return jobs.filter((j) => j.dates[j.dates.length - 1] >= since && !j.sampleIds.some((id) => withSheet.has(id)));
 }
 
@@ -216,10 +266,11 @@ export function sampleSummary(ids: string[], sampleOf: (id: string) => Pick<Samp
 }
 
 /** Whether a file is linked to this sample – `results`: the sample's (for a link to an import). */
-export function fileIsAbout(f: Pick<ProjectFile, 'linked'>, sample: Pick<Sample, 'id' | 'labJob' | 'importId'>, results: Array<Pick<Result, 'importId'>>): boolean {
+export function fileIsAbout(f: Pick<ProjectFile, 'linked'>, sample: Pick<Sample, 'id' | 'labJob' | 'importId'> & Partial<Pick<Sample, 'date' | 'siteId' | 'qc'>>, results: Array<Pick<Result, 'importId'>>, rows?: RoundRows): boolean {
   const l = f.linked;
   if (!l) return false;
   if (l.kind === 'job') return !!sample.labJob && refKey(sample.labJob) === refKey(l.job);
+  if (l.kind === 'round') return inRound(sample, roundSpan(l, rows));
   if (l.kind === 'import') return sample.importId === l.importId || results.some((r) => r.importId === l.importId);
   return l.sampleIds.includes(sample.id);
 }
@@ -333,6 +384,8 @@ export interface AddedFiles {
   added: ProjectFile[];
   /** There already (the same name and size). */
   skipped: string[];
+  /** There already, and now linked (when the files are added to a round). */
+  relinked: ProjectFile[];
   errors: string[];
 }
 
@@ -341,9 +394,21 @@ export interface AddedFiles {
  * what it seems to be – a quote, lab results – its lab, and the numbers in it, to offer the lab job it's about. One
  * there already (the same name and size) is left. Nothing is linked to data until you choose to.
  */
-export async function addProjectFiles(project: Pick<Project, 'id' | 'code' | 'name'>, files: File[], opts: { jobs?: LabJob[]; folder?: WorkspaceFolder | null; readText?: (f: File) => Promise<string> } = {}): Promise<AddedFiles> {
+export async function addProjectFiles(
+  project: Pick<Project, 'id' | 'code' | 'name'>,
+  files: File[],
+  opts: {
+    jobs?: LabJob[];
+    folder?: WorkspaceFolder | null;
+    readText?: (f: File) => Promise<string>;
+    /** What the files are about, when they're added to it (a round's paperwork): they're linked as they're added. */
+    linked?: FileLink;
+    /** What they are, when their names and words don't say (a round's: its chain of custody). */
+    kind?: FileKind;
+  } = {},
+): Promise<AddedFiles> {
   const folder = opts.folder === undefined ? currentWorkspaceFolder() : opts.folder;
-  const out: AddedFiles = { added: [], skipped: [], errors: [] };
+  const out: AddedFiles = { added: [], skipped: [], relinked: [], errors: [] };
   if (!folder?.writeBlob) {
     out.errors.push('The shared folder isn’t connected, so files can’t be kept here – add a link to them instead.');
     return out;
@@ -352,8 +417,15 @@ export async function addProjectFiles(project: Pick<Project, 'id' | 'code' | 'na
   const dir = projectFilesDir(project);
   const by = whoAmI() || undefined;
   for (const file of files) {
-    if (have.some((f) => f.path && f.name === file.name && f.size === file.size)) {
-      out.skipped.push(file.name);
+    const there = have.find((f) => f.path && f.name === file.name && f.size === file.size);
+    if (there) {
+      // here already: linked to what it's added to now, if it wasn't linked to anything
+      if (opts.linked && !there.linked) {
+        const next = { ...there, linked: opts.linked, kind: there.kind === 'other' && opts.kind ? opts.kind : there.kind };
+        await saveEdited(db.files, next, there);
+        have[have.indexOf(there)] = next;
+        out.relinked.push(next);
+      } else out.skipped.push(file.name);
       continue;
     }
     try {
@@ -361,7 +433,21 @@ export async function addProjectFiles(project: Pick<Project, 'id' | 'code' | 'na
       await folder.writeBlob(path, file);
       const text = await (opts.readText ?? fileText)(file).catch(() => '');
       const d = describeFile(file.name, text, opts.jobs ?? []);
-      const f = clean<ProjectFile>({ id: uid('file'), projectId: project.id, name: file.name, kind: d.kind, path, size: file.size, type: file.type || undefined, lab: d.lab, ref: d.ref, numbers: d.numbers.length ? d.numbers : undefined, addedAt: nowIso(), addedBy: by });
+      const f = clean<ProjectFile>({
+        id: uid('file'),
+        projectId: project.id,
+        name: file.name,
+        kind: d.kind === 'other' && opts.kind ? opts.kind : d.kind,
+        path,
+        size: file.size,
+        type: file.type || undefined,
+        lab: d.lab,
+        ref: d.ref,
+        numbers: d.numbers.length ? d.numbers : undefined,
+        linked: opts.linked,
+        addedAt: nowIso(),
+        addedBy: by,
+      });
       await db.files.put(f);
       have.push(f);
       out.added.push(f);

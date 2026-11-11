@@ -19,7 +19,7 @@ import { exportProjectWorkbook } from '../../reports/workbook';
 import { SamplePhotos } from '../../components/SamplePhotos';
 import { SampleFiles } from '../../components/SampleFiles';
 import { FileIcon, FileViewer } from '../../components/FileViewer';
-import { useProjectFiles } from '../../hooks/useProjectFiles';
+import { useProjectFiles, useRoundRows } from '../../hooks/useProjectFiles';
 import { filesBySample, samplesByImport } from '../../lib/projectFiles';
 import { deleteImport, deleteSamples, saveEdited, setResultComment, setReviewed } from '../../db/repo';
 import { db } from '../../db/db';
@@ -855,11 +855,12 @@ export function DataTab() {
   const [search, setSearch] = useViewState(k('search'), '');
   // each sample's files (a paperclip on its row)
   const projectFiles = useProjectFiles(project.id);
+  const roundRows = useRoundRows(project.id);
   const sampleFiles = useMemo(() => {
     if (!projectFiles.length) return new Map<string, ProjectFile[]>();
     const all = [...data.samples, ...data.qc.samples];
-    return filesBySample(projectFiles, all, samplesByImport(all, data.results));
-  }, [projectFiles, data.samples, data.qc.samples, data.results]);
+    return filesBySample(projectFiles, all, samplesByImport(all, data.results), roundRows);
+  }, [projectFiles, data.samples, data.qc.samples, data.results, roundRows]);
   const [draft, setDraft] = useState<ValueFilter | null>(null);
   const [consentView, setConsentView] = useViewState<'all' | ConsentView>(k('consent'), 'all');
   const consent = useMemo(() => ({ consent: consentParameterIds(data, 'consent'), limits: consentParameterIds(data, 'limits'), triggers: consentParameterIds(data, 'triggers') }), [data]);

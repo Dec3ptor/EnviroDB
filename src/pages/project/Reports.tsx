@@ -37,10 +37,14 @@ import { IssuedPanel, IssueModal, useIssuedContent, useLatestIssues, type Report
 import { issuedBuildOptions } from '../../db/issues';
 import type { IssuedReport } from '../../db/types';
 import { preIssueChecks } from '../../reports/checks';
+import { useReportAttachments } from '../../hooks/useReportAttachments';
+import { loadAllAttachments, printable } from '../../lib/attachments';
 import { noteFirstReport } from '../../components/Onboarding';
 
 /** No images added yet (one object, so the preview isn't rebuilt for nothing). */
 const NO_FIGURES: Record<string, FigureImage[]> = {};
+/** An issued report with no lab reports put in. */
+const NO_ATTACHED = {};
 
 const same = (a: ReportTemplate, b: ReportTemplate) => JSON.stringify({ ...a, updatedAt: '' }) === JSON.stringify({ ...b, updatedAt: '' });
 
@@ -242,9 +246,14 @@ export function ReportsTab() {
   useEffect(() => setShowCurrent(false), [latestIssue?.id]);
   const asIssued = locked && !showCurrent;
   const [issuing, setIssuing] = useState(false);
+  // the lab's reports its Laboratory reports sections put in: the project's files about the period's samples
+  const everySample = useMemo(() => [...data.samples, ...data.qc.samples], [data.samples, data.qc.samples]);
+  const issuedAttached = asIssued ? (issued.content?.attached ?? NO_ATTACHED) : undefined;
+  const attached = useReportAttachments({ projectId: project.id, template: asIssued ? (issued.content?.template ?? template) : template, period, samples: everySample, results: data.results, siteIds: chosenSites ?? undefined, issued: issuedAttached });
+  const attachedNow = useMemo(() => (asIssued ? undefined : printable(attached.refs)), [asIssued, attached.refs]);
   const reportNow = useMemo<ReportNow | null>(
-    () => (template ? { bundle: data, template, period, settings, promptTexts: prompts, figures: reportFigures, siteIds: chosenSites ?? undefined } : null),
-    [data, template, period, settings, prompts, reportFigures, chosenSites],
+    () => (template ? { bundle: data, template, period, settings, promptTexts: prompts, figures: reportFigures, attached: attachedNow, siteIds: chosenSites ?? undefined } : null),
+    [data, template, period, settings, prompts, reportFigures, attachedNow, chosenSites],
   );
   // open an issued report of the project: its template and period
   const openIssued = (i: IssuedReport) => {
@@ -272,24 +281,24 @@ export function ReportsTab() {
     const h = setTimeout(() => {
       try {
         const renderChart = (opt: Parameters<typeof renderChartPng>[0], w: number, hh: number) => renderChartPng(opt, cmToPx(w), cmToPx(hh), 1.5);
-        if (asIssued && issued.content) setDoc(buildReport({ ...issuedBuildOptions(issued.content, latestIssue!), preview: true, renderChart }));
-        else setDoc(buildReport({ bundle: data, template, period, settings, promptTexts: prompts, figures: reportFigures, preview: true, siteIds: chosenSites ?? undefined, renderChart }));
+        if (asIssued && issued.content) setDoc(buildReport({ ...issuedBuildOptions(issued.content, latestIssue!), attachments: attached.docs, preview: true, renderChart }));
+        else setDoc(buildReport({ bundle: data, template, period, settings, promptTexts: prompts, figures: reportFigures, attachments: attached.docs, preview: true, siteIds: chosenSites ?? undefined, renderChart }));
       } finally {
         setBuilding(false);
       }
     }, 600);
     return () => clearTimeout(h);
-  }, [data, template, period, settings, prompts, chosenSites, reportFigures, asIssued, issued.content, issued.error]);
+  }, [data, template, period, settings, prompts, chosenSites, reportFigures, attached.docs, asIssued, issued.content, issued.error]);
 
   // what's missing before issuing (warnings, not stops)
-  const checks = useMemo(() => (template && !asIssued ? preIssueChecks({ bundle: data, template, period, doc, promptTexts: prompts, figures: reportFigures, imports: data.imports, siteIds: chosenSites ?? undefined }) : []), [data, template, period, doc, prompts, reportFigures, chosenSites, asIssued]);
+  const checks = useMemo(() => (template && !asIssued ? preIssueChecks({ bundle: data, template, period, doc, promptTexts: prompts, figures: reportFigures, attached: attachedNow, imports: data.imports, siteIds: chosenSites ?? undefined }) : []), [attachedNow, data, template, period, doc, prompts, reportFigures, chosenSites, asIssued]);
 
   const [busy, setBusy] = useState<'pdf' | 'docx' | null>(null);
   const exportDoc = async (kind: 'pdf' | 'docx') => {
     if (!template) return;
     setBusy(kind);
     try {
-      await exportReport(kind, { bundle: data, template, period, settings, promptTexts: prompts, figures: reportFigures, siteIds: chosenSites ?? undefined });
+      await exportReport(kind, { bundle: data, template, period, settings, promptTexts: prompts, figures: reportFigures, attachments: await loadAllAttachments(attached.refs), siteIds: chosenSites ?? undefined });
       noteFirstReport();
     } catch (e) {
       notifications.show({ title: 'Export failed', message: (e as Error).message, color: 'red' });
@@ -609,6 +618,51 @@ export function ReportsTab() {
               </Stack>
             </Card>
           ))}
+          {Object.keys(attached.refs).length > 0 && (
+            <Card padding="md">
+              <Group justify="space-between" mb={4}>
+                <Title order={5}>Laboratory reports in this report</Title>
+                {attached.loading && <Loader size="xs" />}
+              </Group>
+              <Text size="xs" c="dimmed" mb="sm">
+                {asIssued ? 'The documents it was issued with.' : 'The project’s files about this period’s samples – a page each, in the order sampled.'}
+              </Text>
+              {Object.values(attached.refs).every((v) => !v.length) ? (
+                <Text size="sm" c="dimmed">
+                  None yet. Upload the lab’s reports on the{' '}
+                  <Anchor component={Link} to={`/projects/${project.id}/files`} inherit>
+                    Files tab
+                  </Anchor>{' '}
+                  and link each to its lab job – importing a lab’s file keeps and links it.
+                </Text>
+              ) : (
+                <Stack gap={4}>
+                  {Object.entries(attached.refs).flatMap(([blockId, list]) =>
+                    list.map((r) => {
+                      const d = attached.docs?.[blockId]?.find((x) => x.fileId === r.fileId);
+                      return (
+                        <Group key={`${blockId}|${r.fileId}`} gap="xs" wrap="nowrap" align="flex-start">
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <Text size="sm" truncate>
+                              {r.name}
+                            </Text>
+                            {r.about && (
+                              <Text size="xs" c="dimmed" truncate>
+                                {r.about}
+                              </Text>
+                            )}
+                          </div>
+                          <Text size="xs" c={d?.missing ? 'orange.8' : 'dimmed'} style={{ flexShrink: 0, maxWidth: 170 }} ta="right">
+                            {!d ? '…' : d.missing ? `not put in: ${d.missing}` : `${d.pages.length} page${d.pages.length === 1 ? '' : 's'}${d.more ? ` of ${d.pages.length + d.more}` : ''}`}
+                          </Text>
+                        </Group>
+                      );
+                    }),
+                  )}
+                </Stack>
+              )}
+            </Card>
+          )}
           {!data.samples.length && (
             <Alert color="orange" variant="light">
               This project has no data yet – the report will be mostly empty.

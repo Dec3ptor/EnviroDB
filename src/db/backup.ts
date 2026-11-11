@@ -224,7 +224,15 @@ export async function importProjectPackage(obj: unknown): Promise<string> {
     // the project's files (their copies are in the shared folder they came from), linked to the same data
     await put('files', (r) => {
       const l = r.linked as FileLink | undefined;
-      const linked: FileLink | undefined = !l ? undefined : l.kind === 'import' ? { kind: 'import', importId: remap(l.importId)! } : l.kind === 'samples' ? { kind: 'samples', sampleIds: l.sampleIds.map((x) => remap(x)!) } : l;
+      const linked: FileLink | undefined = !l
+        ? undefined
+        : l.kind === 'import'
+          ? { kind: 'import', importId: remap(l.importId)! }
+          : l.kind === 'samples'
+            ? { kind: 'samples', sampleIds: l.sampleIds.map((x) => remap(x)!) }
+            : l.kind === 'round' && l.row
+              ? { kind: 'round', month: l.month, row: remap(l.row) }
+              : l;
       return { ...r, id: remap(r.id)!, projectId: newProjectId, linked, fromImport: remap(r.fromImport as string) };
     });
     await put('notes', (r) => {

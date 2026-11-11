@@ -201,6 +201,38 @@ there as they work and show up for the others within seconds.
   (the import's *Keep the file …* option; it's listed under the import in *Import history*). Undoing an import
   leaves its file, unlinked; removing a file deletes its copy in the shared folder, with *Undo* straight after.
   Files are found by *Search* (Ctrl K) too.
+- **A round's paperwork.** *Paperwork…* – on a sampling schedule's card (*Overview → Sampling & reporting*), or in
+  a round's dialog on the monitoring calendar – makes what goes out with a sampling round, as PDFs to print:
+  - **The sample list and analysis request**: each site to sample with what the lab analyses it for, from the
+    analytes its sampling schedules name. Samples analysed for the same things share a letter (A, B …), listed
+    once underneath. Where a schedule names no analytes, the list takes what the lab reported for the site last
+    time (and says so). With its sign-off boxes – relinquished by, received by – it serves as a chain of custody.
+  - **A field record sheet**, to write the readings on: a row for each sample, a column for each field reading
+    (a bore's readings greyed out at the other sites).
+  - **Your lab's own forms.** *Add a form* keeps your lab's chain of custody – filled in for the project, as a PDF
+    – with the project's files, marked *every round*: it's printed after the sample list each time, as it is. Any
+    PDF or picture in the project's files can be marked (*Details…* → *Print with every round's paperwork*).
+  - **Bottle labels**, as their own PDF for the label sheets: 21, 14, 8, 24 or 65 to an A4 sheet, as many for
+    each sample as it has bottles, starting part-way down a sheet that's been used. Each has the sample's name,
+    the site, the project, the date and who sampled, with room for the time and the preservative. *Outlines*
+    draws each label's edge, to check the fit on plain paper first; print at actual size.
+
+  Tick the schedules the round is for, untick a site that isn't sampled this time (a dry bore), add extra samples
+  by name (*DUP1*, *Field blank*), and set the sampling day – or leave it to write in. *Copy the sample list*
+  gives the same as text, for an email to the lab or a bottle order; *Keep with the round* saves the paperwork
+  in the project's files, linked to the round. The lab and its quote number are remembered for the project.
+- **A round's chain of custody, kept with the round.** A file can be linked to a **sampling round** – a month's
+  samples, or a monitoring calendar row's round (its sites, its whole sampling window) – before there are any
+  results: in the round's dialog on the calendar, *Add files* (or *Link a file*, for one already in the
+  project's files) keeps the signed chain of custody and field sheets with the round, and they show with the
+  round's samples once those are in. On the *Files* tab, *Link to data…* → *A sampling round* does the same.
+- **Laboratory reports at the back of a report.** A *Laboratory reports* section (under *From the results* when
+  adding a section) puts the lab's own reports in the report: each PDF or picture in the project's files that's
+  linked to samples taken in the report's period – a page to itself, turned to suit, in the order sampled, with a
+  line over each saying what it is. Chains of custody and field sheets can go in too. The Reports tab lists what
+  goes in (and what can't: a link, or a file that isn't a PDF or picture); *Before you issue* says which of the
+  period's lab jobs has no lab report on file. They're in the PDF and the Word file alike, and an issued report
+  keeps which documents it had.
 - **Bores.** A groundwater site keeps its bore's particulars (*Setup* → the droplet beside the site): top-of-casing
   level, stick-up, depth, screen, diameter. The *Static Water Level* (down from the top of the casing) is the
   reading; EnviroDB works the rest out: *Depth to Water (below ground)* with the stick-up, *Groundwater Level (RL)*
@@ -362,6 +394,8 @@ there as they work and show up for the others within seconds.
   - **Results back.** This ticks itself when the lab's results are imported, with the lab and job number
     from the file.
   - **Results sent**, and to whom. A report sent that covers the month counts as the results sent.
+  - **Paperwork**: the round's chain of custody and field sheets, kept with it, and *Paperwork…* to make the
+    sample list, bottle labels and your lab's form to print (see *A round's paperwork*).
 
   A sampling window is one round. The month's colour follows: under way once anything is recorded, done
   (green) once the results are sent. A strip along the foot of the month shows the four stages. A round

@@ -285,7 +285,7 @@ export const HELP: Record<string, HelpText> = {
   library: { title: 'the Library', text: 'Reference data shared by every project: guideline values, report templates and the analyte dictionary – names, units and the aliases labs use.', more: 'finding-your-way-around' },
   settings: { title: 'Settings', text: 'You: your name, signature and colours. Team: the features in use, the company, letterhead, workspace and backups. Advanced: the rarely changed.', more: 'finding-your-way-around' },
   overview: { title: 'Overview', text: 'The project at a glance: samples in the period, the latest results against the consent, key trends and the next report due.', more: 'finding-your-way-around' },
-  schedule: { title: 'Sampling & reporting', text: 'The project’s rows on the monitoring calendar, its sampling schedules and its reporting obligations – with each report or plan due as a card.', more: 'finding-your-way-around' },
+  schedule: { title: 'Sampling & reporting', text: 'The project’s rows on the monitoring calendar, its sampling schedules and its reporting obligations – with each report or plan due as a card. Paperwork… on a schedule makes a round’s sample list, bottle labels and your lab’s chain of custody form to print.', more: 'finding-your-way-around' },
   data: { title: 'Data', text: 'Every result, sorted and filtered; click a row for the sample’s details, comments and QA. Imports are listed below, to review or undo.', more: 'finding-your-way-around' },
   qa: { title: 'QA/QC', text: 'Duplicates that disagree, unusual results and bottles that may have been swapped, for you to accept, leave out or query.', more: 'finding-your-way-around' },
   charts: { title: 'Graphs', text: 'Each parameter over time, one line per site, with the consent limits and guideline values. Customise a graph with the sliders button.', more: 'finding-your-way-around' },
@@ -295,7 +295,7 @@ export const HELP: Record<string, HelpText> = {
   npsfm: { title: 'NPS-FM', text: 'Freshwater sites graded against the NPS-FM attribute bands, with the statistics behind each grade.', more: 'finding-your-way-around' },
   reports: { title: 'Reports', text: 'A template, a period and your commentary make the report; download Word or PDF, or Issue it to lock it as sent. The check beside Issue says what’s missing.', more: 'finding-your-way-around' },
   pack: { title: 'the Client data pack', text: 'One HTML file of the project’s data for the client – graphs, a map and tables – set up the way you want them to see it.', more: 'finding-your-way-around' },
-  files: { title: 'Files', text: 'The project’s documents – lab quotes, result sheets, chains of custody, the consent. Drop files to keep a copy in the shared folder, or add a link to one kept elsewhere; link a result sheet to its lab job and it shows with those samples.', more: 'finding-your-way-around' },
+  files: { title: 'Files', text: 'The project’s documents – lab quotes, result sheets, chains of custody, the consent. Drop files to keep a copy in the shared folder, or add a link to one kept elsewhere; link a result sheet to its lab job and it shows with those samples; link a chain of custody to its sampling round.', more: 'finding-your-way-around' },
   setup: { title: 'Setup', text: 'The project’s details, sites and what it shows; the parameters in it; its history of who did what; archive or delete.', more: 'finding-your-way-around' },
 };
 

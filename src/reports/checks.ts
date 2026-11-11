@@ -1,7 +1,7 @@
 // Before a report is issued: what's missing or not quite ready – sites with no results in the period, rules with
 // nothing to assess, commentary left as drafted, references to tables or figures that don't exist, figures sections
-// with no pictures, results nobody has reviewed, exceedances without a follow-up, a period not yet over. Warnings,
-// not stops: the report can still be issued.
+// with no pictures, lab jobs with no lab report on file, results nobody has reviewed, exceedances without a follow-up,
+// a period not yet over. Warnings, not stops: the report can still be issued.
 
 import type { ImportBatch, ReportTemplate } from '../db/types';
 import type { ProjectBundle } from '../lib/analysis';
@@ -13,7 +13,7 @@ export interface ReportCheck {
   level: 'warn' | 'info';
   text: string;
   /** Where to put it right: a tab of the project. */
-  where?: 'data' | 'compliance' | 'reports' | 'setup' | 'schedule';
+  where?: 'data' | 'compliance' | 'reports' | 'setup' | 'schedule' | 'files';
 }
 
 export interface CheckInput {
@@ -26,6 +26,8 @@ export interface CheckInput {
   promptTexts: Record<string, string>;
   /** Pictures added for the figures sections, by block id. */
   figures: Record<string, unknown[]>;
+  /** The documents the Laboratory reports sections put in, by block id (each with the lab job it's for, in `about`). */
+  attached?: Record<string, Array<{ kind: string; name: string; jobs?: string[] }>>;
   imports: ImportBatch[];
   siteIds?: string[];
   today?: string;
@@ -90,6 +92,21 @@ export function preIssueChecks(x: CheckInput): ReportCheck[] {
     if (blk.type !== 'figures') continue;
     const n = (blk.images?.length ?? 0) + (x.figures[blk.id]?.length ?? 0);
     if (!n) out.push({ level: 'info', text: `The figures section${blk.label ? ` (${blk.label}s)` : ''} has no pictures yet.`, where: 'reports' });
+  }
+
+  // a Laboratory reports section: the period's lab jobs with no lab report on file
+  for (const blk of x.template.blocks) {
+    if (blk.type !== 'labReports' || !x.attached) continue;
+    const docs = x.attached[blk.id] ?? [];
+    if (blk.kinds.length && !blk.kinds.includes('results')) {
+      if (!docs.length) out.push({ level: 'info', text: 'The laboratory reports section has no documents: none of the project’s files of those kinds is linked to this period’s samples or rounds.', where: 'files' });
+      continue;
+    }
+    const have = new Set(docs.filter((d) => d.kind === 'results').flatMap((d) => d.jobs ?? []));
+    const jobs = [...new Set([...b.samples, ...(b.qc?.samples ?? [])].filter((s) => inPeriod(s.date) && s.labJob && (!x.siteIds?.length || !!s.qc || x.siteIds.includes(s.siteId))).map((s) => s.labJob!.trim()))].filter(Boolean);
+    const without = jobs.filter((j) => !have.has(j));
+    if (without.length) out.push({ level: 'warn', text: `No lab report on file for lab job${without.length === 1 ? '' : 's'} ${list(without)} – the laboratory reports section won’t have ${without.length === 1 ? 'it' : 'them'}. Upload the lab’s PDF on the Files tab and link it to its job.`, where: 'files' });
+    else if (!jobs.length && !docs.length) out.push({ level: 'info', text: 'The laboratory reports section has no documents for this period.', where: 'files' });
   }
 
   return out;

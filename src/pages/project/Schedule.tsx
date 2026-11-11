@@ -3,7 +3,7 @@ import { ActionIcon, Badge, Box, Button, Card, Group, Menu, Modal, NumberInput, 
 import { modals } from '@mantine/modals';
 import { useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { IconCalendarPlus, IconCheck, IconDots, IconEdit, IconFileReport, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
+import { IconCalendarPlus, IconCheck, IconDots, IconEdit, IconFileReport, IconPlus, IconPrinter, IconTrash, IconX } from '@tabler/icons-react';
 import { useProject } from '../../hooks/useProjectData';
 import { DateField, EmptyState, ParamPicker, SitePicker, consentPresets } from '../../components/common';
 import { addMonths, formatDate, relativeDays, todayStr } from '../../lib/dates';
@@ -15,7 +15,9 @@ import { db } from '../../db/db';
 import { downloadBlob, safeFileName } from '../../db/backup';
 import { CalendarSheet } from '../../components/calendar/CalendarSheet';
 import { RoundsList } from '../../components/calendar/RoundsList';
-import { CALENDAR_SYMBOLS, scheduleSymbols } from '../../lib/calendar';
+import { CALENDAR_SYMBOLS, monthName, scheduleSymbols } from '../../lib/calendar';
+import { useProjectRows } from '../../hooks/useProjectFiles';
+import { RoundPaperworkModal, type PaperworkRound } from '../../components/RoundPaperwork';
 import { DueItemDrawer, OBLIGATION_KIND_TEXT } from '../../components/DueItem';
 
 function ScheduleModal({ value, onClose }: { value: MonitoringSchedule; onClose: () => void }) {
@@ -179,10 +181,24 @@ export function ScheduleTab() {
   const due = dueO ? { o: dueO, index: Math.max(0, Number(params.get('period') ?? 0) || 0) } : null;
   const [editS, setEditS] = useState<MonitoringSchedule | null>(null);
   const [editO, setEditO] = useState<ReportObligation | null>(null);
+  // the paperwork for a schedule's round: its sample list, labels and the lab's forms
+  const [paperwork, setPaperwork] = useState<{ round: PaperworkRound; scheduleId: string } | null>(null);
+  const calendarRows = useProjectRows(project.id);
   const today = todayStr();
   const statuses = useMemo(() => schedules.map((s) => scheduleStatus(s, samples, index.bySample, today, 730)), [schedules, samples, index, today]);
   // the latest rounds' results against what each schedule names: an analyte the lab left off
   const gaps = useMemo(() => recentGaps(schedules, samples, (id) => index.allBySample.get(id) ?? [], fromLab(data.imports), today).filter((g) => g.incomplete.length), [schedules, samples, index, data.imports, today]);
+
+  /** A schedule's round now: the months it's sampled in (its window, from the period's start) – this month when it isn't running. */
+  const roundNow = (sch: MonitoringSchedule, start?: string): PaperworkRound => {
+    const first = (start ?? today).slice(0, 7);
+    const span = start && (sch.unit === 'month' || sch.unit === 'year') ? Math.max(1, Math.round(sch.window ?? 1)) : 1;
+    const months = Array.from({ length: span }, (_, i) => addMonths(`${first}-01`, i).slice(0, 7));
+    const last = months[months.length - 1];
+    const label = months.length > 1 ? `${monthName(first, true)} – ${monthName(last, true)} ${last.slice(0, 4)}` : `${monthName(first, true)} ${first.slice(0, 4)}`;
+    // kept with the round on the project's row of the monitoring calendar, when it has just the one
+    return { months, label, rowId: calendarRows.length === 1 ? calendarRows[0].id : undefined };
+  };
 
   const exportIcs = () => {
     const events: Array<{ uid: string; date: string; title: string; description?: string }> = [];
@@ -253,6 +269,9 @@ export function ScheduleTab() {
                         <Menu.Item leftSection={<IconEdit size={14} />} onClick={() => setEditS(st.schedule)}>
                           Edit
                         </Menu.Item>
+                        <Menu.Item leftSection={<IconPrinter size={14} />} onClick={() => setPaperwork({ round: roundNow(st.schedule, st.current?.start), scheduleId: st.schedule.id })}>
+                          Paperwork for the round…
+                        </Menu.Item>
                         <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => modals.openConfirmModal({ title: 'Delete schedule?', labels: { confirm: 'Delete', cancel: 'Cancel' }, confirmProps: { color: 'red' }, onConfirm: () => deleteSchedule(st.schedule.id) })}>
                           Delete
                         </Menu.Item>
@@ -261,9 +280,16 @@ export function ScheduleTab() {
                   </Group>
                   {st.current ? (
                     <Stack gap={6}>
-                      <Text size="sm">
-                        Current period: <b>{formatDate(st.current.start)} – {formatDate(st.current.end)}</b>
-                      </Text>
+                      <Group justify="space-between" gap="xs" wrap="nowrap">
+                        <Text size="sm">
+                          Current period: <b>{formatDate(st.current.start)} – {formatDate(st.current.end)}</b>
+                        </Text>
+                        <Tooltip label="The sample list and analysis request, bottle labels and your lab’s chain of custody form, to print" multiline maw={280}>
+                          <Button size="compact-xs" variant="light" leftSection={<IconPrinter size={13} />} style={{ flexShrink: 0 }} onClick={() => setPaperwork({ round: roundNow(st.schedule, st.current?.start), scheduleId: st.schedule.id })}>
+                            Paperwork…
+                          </Button>
+                        </Tooltip>
+                      </Group>
                       <Group gap={6}>
                         {st.schedule.siteIds.map((id) => {
                           const done = st.current!.sampled[id];
@@ -422,6 +448,7 @@ export function ScheduleTab() {
         )}
       </Card>
       {editS && <ScheduleModal key={editS.id} value={editS} onClose={() => setEditS(null)} />}
+      {paperwork && <RoundPaperworkModal projectId={project.id} round={paperwork.round} scheduleIds={[paperwork.scheduleId]} onClose={() => setPaperwork(null)} />}
       {editO && <ObligationModal key={editO.id} value={editO} onClose={() => setEditO(null)} />}
       {due && (
         <DueItemDrawer

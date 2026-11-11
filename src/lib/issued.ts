@@ -26,6 +26,7 @@ import type {
   Settings,
   Site,
 } from '../db/types';
+import type { AttachedRef } from './attachments';
 import { overlayFor } from './continuous';
 import type { ProjectBundle } from './analysis';
 import { buildIndex } from './dataIndex';
@@ -107,6 +108,11 @@ export interface SnapshotContent {
   siteIds?: string[];
   promptTexts: Record<string, string>;
   figures: Record<string, FigureImage[]>;
+  /**
+   * The documents its Laboratory reports sections put in, by section – which files, not their pages: the report as
+   * issued reads them from the shared folder again (its issued file has them whatever happens to the folder).
+   */
+  attached?: Record<string, AttachedRef[]>;
   settings: Partial<Settings>;
   /** QA/QC decisions name results by id: the result each named (sample, parameter, which of them). */
   resultRefs: Record<string, [string, string, number]>;
@@ -123,6 +129,8 @@ export interface SnapshotInput {
   settings: Settings;
   promptTexts?: Record<string, string>;
   figures?: Record<string, FigureImage[]>;
+  /** The documents put in by its Laboratory reports sections. */
+  attached?: Record<string, AttachedRef[]>;
   siteIds?: string[];
   issuedOn: string;
 }
@@ -198,6 +206,7 @@ export function snapshotContent(input: SnapshotInput): SnapshotContent {
     siteIds: input.siteIds?.length ? [...input.siteIds] : undefined,
     promptTexts: input.promptTexts ?? {},
     figures: input.figures ?? {},
+    ...(input.attached && Object.values(input.attached).some((v) => v.length) ? { attached: input.attached } : {}),
     settings: kept,
     resultRefs,
     continuous: usedContinuous(b, template),
@@ -396,7 +405,7 @@ export function sizeText(bytes: number): string {
 
 // ------------------------------------------------------------ what has changed since
 
-export type ChangeArea = 'results' | 'samples' | 'sites' | 'rules' | 'guidelines' | 'project' | 'layout' | 'commentary' | 'figures' | 'qa' | 'register' | 'notes' | 'other';
+export type ChangeArea = 'results' | 'samples' | 'sites' | 'rules' | 'guidelines' | 'project' | 'layout' | 'commentary' | 'figures' | 'attached' | 'qa' | 'register' | 'notes' | 'other';
 
 export interface IssueChange {
   area: ChangeArea;
@@ -424,6 +433,7 @@ export const AREA_TEXT: Record<ChangeArea, string> = {
   layout: 'Layout',
   commentary: 'Commentary',
   figures: 'Figures',
+  attached: 'Laboratory reports',
   qa: 'QA/QC decisions',
   register: 'Compliance register',
   notes: 'Exceedance notes',
@@ -565,6 +575,12 @@ export function diffSnapshots(old: SnapshotContent, cur: SnapshotContent): Issue
   if (edited) add('commentary', `Edited in ${plural(edited, 'section')}`);
   const figs = (c: SnapshotContent) => json(Object.fromEntries(Object.entries(c.figures).filter(([, v]) => v?.length)));
   if (figs(old) !== figs(cur)) add('figures', 'Images added, removed or changed');
+  // the lab's reports put in: by file (its name, and its size – a file replaced)
+  const docs = (c: SnapshotContent) => new Set(Object.values(c.attached ?? {}).flatMap((v) => v.map((d) => `${d.name}|${d.size ?? ''}`)));
+  const [od, nd] = [docs(old), docs(cur)];
+  const moreDocs = [...nd].filter((x) => !od.has(x)).length;
+  const fewerDocs = [...od].filter((x) => !nd.has(x)).length;
+  if (moreDocs || fewerDocs) add('attached', [moreDocs && `${plural(moreDocs, 'document')} more`, fewerDocs && `${plural(fewerDocs, 'document')} fewer`].filter(Boolean).join(', '));
 
   // ---- decisions made since: QA/QC, the register, exceedance notes
   const ours = (ids?: string[]) => !ids?.length || ids.some((id) => scope.has(id));
@@ -610,6 +626,7 @@ const AREA_PHRASE: Record<ChangeArea, string> = {
   layout: 'the layout changed',
   commentary: 'the commentary edited',
   figures: 'the figures changed',
+  attached: 'the laboratory reports put in changed',
   qa: 'QA/QC decisions made',
   register: 'compliance grades changed',
   notes: 'exceedance notes changed',

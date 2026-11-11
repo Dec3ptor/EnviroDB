@@ -17,6 +17,8 @@ import { scheduleStep, frequencyLabel, nextObligation } from '../lib/schedule';
 import { unitLabel } from '../lib/units';
 import { fmtNum } from '../lib/values';
 import { imageSize, logoSizeMm } from '../lib/image';
+import { attachedTitle, type AttachedDoc } from '../lib/attachments';
+import { fitPage } from '../lib/pdfPages';
 import { buildChartSpec, chartOption, chartOverlay } from '../charts/timeSeries';
 import { overlayFor } from '../lib/continuous';
 import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
@@ -39,6 +41,11 @@ export interface BuildOptions {
   siteIds?: string[];
   /** Images added for this report to its Figures sections, by section id. */
   figures?: Record<string, FigureImage[]>;
+  /**
+   * The documents a Laboratory reports section puts in, by section id, their pages read from the shared folder (a
+   * section with none here is still being read).
+   */
+  attachments?: Record<string, AttachedDoc[]>;
   /** A preview on screen: sections still waiting for something (images, who a letter is to) say so. */
   preview?: boolean;
   /** The report's date (default today): an issued report keeps the day it was issued. */
@@ -1513,6 +1520,35 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         imageHeightMm,
         items: items.map(({ image, ...s }) => ({ ...s, image: image ? { dataUrl: image, ...logoSizeMm(image, imageHeightMm, colWidthMm - 2) } : undefined })),
       });
+    },
+    labReports: (blk) => {
+      const docs = opts.attachments?.[blk.id];
+      if (!docs) {
+        if (opts.preview) nodes.push({ t: 'note', text: 'Laboratory reports: being read from the shared folder …' });
+        return;
+      }
+      const shown = docs.filter((d) => d.pages.length);
+      // what should have gone in and couldn't be read (a spreadsheet or a link never could: the Reports tab lists those)
+      const left = docs.filter((d) => !d.pages.length && !d.unprintable);
+      if (opts.preview && !shown.length && !left.length) {
+        nodes.push({ t: 'note', text: 'Laboratory reports: no PDF or picture in the project’s files is about this period’s samples. Upload the lab’s reports on the Files tab and link each to its lab job.' });
+        return;
+      }
+      // what couldn't be put in is said while the report is worked on (not in the report itself)
+      if (opts.preview && left.length) nodes.push({ t: 'note', text: `Laboratory reports: not put in – ${left.map((d) => `${d.name} (${d.missing ?? 'no pages'})`).join('; ')}.` });
+      for (const d of shown) {
+        d.pages.forEach((pg, i) => {
+          // a page each, the paper turned to suit it
+          const o: Orientation = pg.width > pg.height ? 'landscape' : 'portrait';
+          nodes.push({ t: 'pagebreak', orientation: o });
+          orientation = o;
+          width = usableWidthMm(t, o, geo);
+          const titled = blk.titles !== false && i === 0;
+          if (titled) nodes.push({ t: 'p', runs: [{ text: attachedTitle(d), bold: true }, ...(d.more ? [{ text: ` (its first ${d.pages.length} pages of ${d.pages.length + d.more})`, italic: true }] : [])] });
+          const size = fitPage(pg, width, (usableHeightMm(t, o, geo) - (titled ? 14 : 4)) * 0.97);
+          nodes.push({ t: 'image', dataUrl: pg.dataUrl, widthCm: size.width / 10, heightCm: size.height / 10 });
+        });
+      }
     },
     pageBreak: () => {}, // see below
   };

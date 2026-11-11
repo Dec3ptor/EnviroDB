@@ -48,12 +48,13 @@ export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string
   trendTable: { label: 'Trends', help: 'Each site’s trend for each analyte – improving, degrading or indeterminate – with Sen’s slope, over the years up to the report’s end' },
   upDownTable: { label: 'Upstream vs downstream', help: 'Downstream results against upstream ones taken the same day: medians, the difference, and whether it is significant' },
   qaSummary: { label: 'QA/QC', help: 'Field duplicates (RPDs), blanks, the checks run on the results, and the results left out or samples swapped – with why' },
+  labReports: { label: 'Laboratory reports', help: 'The lab’s own reports for the period’s samples – from the project’s Files – a page each at the back of the report; chains of custody and field sheets too, if wanted' },
 };
 
 /** The sections offered to add, grouped as in the palette. */
 export const BLOCK_GROUPS: Array<{ label: string; types: ReportBlockType[] }> = [
   { label: 'Text and layout', types: ['heading', 'text', 'spacer', 'pageBreak', 'title', 'toc', 'letter', 'signatures'] },
-  { label: 'From the results', types: ['summary', 'calc', 'resultsTable', 'roundTable', 'roundReview', 'statsTable', 'chart', 'trendTable', 'upDownTable', 'figures', 'qaSummary'] },
+  { label: 'From the results', types: ['summary', 'calc', 'resultsTable', 'roundTable', 'roundReview', 'statsTable', 'chart', 'trendTable', 'upDownTable', 'figures', 'qaSummary', 'labReports'] },
   { label: 'Compliance', types: ['complianceRegister', 'complianceTable', 'exceedances', 'triggerTable', 'npsfmTable'] },
   { label: 'Programme and plans', types: ['programmeTable', 'tarpTable', 'reportingTable', 'siteTable', 'samplingTable'] },
 ];
@@ -128,6 +129,8 @@ export function newBlock(type: ReportBlockType): ReportBlock {
       return { id, type, title: '' };
     case 'qaSummary':
       return { id, type, duplicates: 'all', decisions: true };
+    case 'labReports':
+      return { id, type, kinds: ['results'], titles: true };
     case 'trendTable':
       return { id, type, siteIds: [], parameterIds: [], years: 10, seasons: 'auto' };
     case 'npsfmTable':
@@ -183,6 +186,8 @@ export function blockSummary(b: ReportBlock): string {
       return `${b.parameterIds.length ? `${b.parameterIds.length} analytes` : 'Consent analytes'} · ${b.years ? `last ${b.years} years` : 'all results'}${b.seasons && b.seasons !== 'auto' ? ` · seasons: ${b.seasons}` : ''}`;
     case 'upDownTable':
       return `${b.parameterIds.length ? `${b.parameterIds.length} analytes` : 'Consent analytes'} · ${b.years ? `last ${b.years} years` : 'the report period'} · paired ${b.days ? `within ${b.days} day${b.days === 1 ? '' : 's'}` : 'on the same day'}`;
+    case 'labReports':
+      return `${[b.kinds.includes('results') || !b.kinds.length ? 'the lab’s reports' : '', b.kinds.includes('coc') ? 'chains of custody' : '', b.kinds.includes('field') ? 'field sheets' : ''].filter(Boolean).join(', ')} for the period’s samples, a page each`.replace(/^t/, 'T');
     case 'qaSummary':
       return ['A summary of the checks', b.duplicates === 'none' ? '' : b.duplicates === 'outside' ? 'duplicates outside the limits' : 'every duplicate RPD', b.decisions === false ? '' : 'the decisions made'].filter(Boolean).join(' · ');
     default:
@@ -1017,6 +1022,25 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
           </Text>
         </Stack>
       );
+    case 'labReports': {
+      const kinds = block.kinds.length ? block.kinds : (['results'] as typeof block.kinds);
+      const toggle = (k: (typeof kinds)[number], on: boolean) => set({ kinds: on ? [...new Set([...kinds, k])] : kinds.filter((x) => x !== k) });
+      return (
+        <Stack gap="xs">
+          <Text size="sm" fw={500}>
+            Put in
+          </Text>
+          <Checkbox label="The lab’s reports (files of the kind Lab results)" checked={kinds.includes('results')} onChange={(e) => toggle('results', e.currentTarget.checked)} />
+          <Checkbox label="Chains of custody" checked={kinds.includes('coc')} onChange={(e) => toggle('coc', e.currentTarget.checked)} />
+          <Checkbox label="Field sheets" checked={kinds.includes('field')} onChange={(e) => toggle('field', e.currentTarget.checked)} />
+          <Switch label="A line over each document: its name and the samples it’s about" checked={block.titles !== false} onChange={(e) => set({ titles: e.currentTarget.checked })} />
+          <Text size="xs" c="dimmed">
+            From the project’s Files: each PDF or picture that’s linked to samples taken in the report’s period (or to a sampling round in it) goes in, a page to itself, in the order sampled. Put a heading before it – “Appendix A: Laboratory reports” – and a
+            new page.
+          </Text>
+        </Stack>
+      );
+    }
     case 'qaSummary':
       return (
         <Stack gap="xs">

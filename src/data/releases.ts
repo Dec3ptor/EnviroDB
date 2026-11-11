@@ -11,6 +11,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.34.0',
+    date: '2026-11-11',
+    title: 'A round’s paperwork, with your lab’s chain of custody; lab reports at the back of a report',
+    items: [
+      'Paperwork… – on a sampling schedule’s card, and in a round’s dialog on the monitoring calendar – makes what goes out with a sampling round, to print: the sample list and analysis request (each site with what the lab analyses it for, from the analytes its schedules name; with sign-off boxes it serves as a chain of custody), a field record sheet to write the readings on, and bottle labels.',
+      'Your lab’s own chain of custody form goes with it: Add a form keeps the PDF – filled in for the project – with the project’s files, marked “every round”, and it’s printed after the sample list each time, as it is. Any PDF or picture in the Files tab can be marked the same way (Details… → Print with every round’s paperwork).',
+      'Bottle labels come as their own PDF for the label sheets – 21, 14, 8, 24 or 65 to an A4 sheet – as many for each sample as it has bottles, starting part-way down a part-used sheet. Outlines checks the fit on plain paper first.',
+      'Tick the schedules a round is for, untick a site that isn’t sampled this time, add duplicates and blanks by name, and set the sampling day or leave it to write in. Where a schedule names no analytes, the list takes what the lab reported for the site last time. Copy the sample list gives it as text for an email to the lab; Keep with the round saves the paperwork in the project’s files.',
+      'A file can be linked to a sampling round – before there are any results. In a round’s dialog on the calendar, Add files keeps the signed chain of custody and field sheets with the round; they show with the round’s samples once those are in. On the Files tab, Link to data… has A sampling round.',
+      'A Laboratory reports section for reports puts the lab’s own reports at the back: each PDF or picture in the project’s files that’s linked to the period’s samples, a page to itself, in the PDF and the Word file. Chains of custody and field sheets can go in too. Before you issue says which of the period’s lab jobs has no lab report on file.',
+    ],
+  },
+  {
     version: '1.33.0',
     date: '2026-11-11',
     title: 'What a round is missing; ammonia at each sample’s pH; exceedance notices',
