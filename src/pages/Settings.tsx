@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { APP_BUILD, APP_VERSION } from '../lib/version';
 import { QA_DEFAULTS } from '../lib/qa';
 import { DEFAULT_LAB_DAYS, DEFAULT_SEND_DAYS } from '../lib/rounds';
-import { Anchor, Badge, Button, Card, ColorInput, FileButton, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Tabs, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { Anchor, Badge, Box, Button, Card, ColorInput, FileButton, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Tabs, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { IconAdjustments, IconCloudUpload, IconDatabaseExport, IconDatabaseImport, IconShieldLock, IconUser, IconUsers } from '@tabler/icons-react';
 import { db, ensureBuiltIns, saveSettings } from '../db/db';
 import { downloadWorkspaceBackup, readJsonFile, restoreWorkspace } from '../db/backup';
+import { RestoreProjectCard } from '../components/RestoreProject';
 import { WorkspaceCard } from '../components/workspace/Workspace';
 import { setMyName } from '../sync/workspace';
 import { useSettings } from '../hooks/useSettings';
@@ -183,6 +184,9 @@ export function SettingsPage() {
                   </FileButton>
                 </Group>
               </Card>
+              <Box mt="md">
+                <RestoreProjectCard />
+              </Box>
               <Group gap="lg" mt="md">
                 <Text size="sm" c="dimmed">
                   {counts ? `${counts.projects} projects · ${counts.samples.toLocaleString()} samples · ${counts.results.toLocaleString()} results` : ''}

@@ -153,6 +153,13 @@ there as they work and show up for the others within seconds.
   *Add* (beside *Export*) adds a **sample** – a site on a day, to type its values in – a **column** to type into
   (a parameter the table hasn't got yet), or a **new parameter**. A column's heading menu has *Edit the
   parameter…*: its name, unit, group, decimals, the names labs use for it – and a formula.
+- **Paste from Excel.** Copy a block of cells in a spreadsheet, click the cell it starts at in the Data tab, and
+  paste (Ctrl+V): the block goes across and down from there, as the table is shown. Before anything changes,
+  EnviroDB says what the paste would do – how many values it adds, each value it would change (*DS1 9 Oct 2026 TSS:
+  77 → 68*), and the cells it leaves: ones that aren't values, ones beyond the table's edge, results left out after
+  a QA/QC check. An empty cell in the block leaves its value alone – pasting never takes a value off. One *Undo*
+  takes the whole paste back, it's one entry in the project's history, and each value keeps what it was before.
+  **Ctrl+D** in a cell puts in the value of the cell above (the same again).
 - **Calculated parameters.** A parameter with a **formula** is worked out from the sample's other values – e.g.
   dissolved oxygen in mg/L from DO % saturation and temperature: `[DO %] / 100 * DO_SAT([Temperature])`.
   Parameters go in square brackets (by name, short name or id), each the sample's value in its own unit; numbers,
@@ -174,6 +181,25 @@ there as they work and show up for the others within seconds.
   each row's calculated values. A value changed by hand says in its Excel note what it was. QA/QC checks leave them out. A formula can use another calculated parameter; one that loops back
   on itself is left out. On the Library's Parameters page, *Add parameter* and each parameter's *ƒ* button open
   the same editor.
+- **Common calculations.** The formula box's *Common calculations…* has the usual ones ready-made, written with
+  your library's own parameters (those with results first) and saying where each formula is from: dissolved
+  oxygen in mg/L from % saturation and back; un-ionised ammonia-N from total ammoniacal-N, pH and temperature
+  (Emerson et al. 1975); total nitrogen, nitrate + nitrite, dissolved inorganic and organic nitrogen from their
+  parts; total hardness from calcium and magnesium (APHA 2340 B); the sodium adsorption ratio; and a load in
+  kg/day from a concentration and the flow. A parameter kept in another unit than the formula takes (a flow in
+  m³/s) is converted in the formula, and said. For a new parameter the name, unit and group are filled in too;
+  where the library has the parameter already (Dissolved Oxygen, Total Nitrogen), put the formula on that one, so
+  it fills in wherever the lab gave no value.
+- **Two of the same thing made one.** A lab's name for an analyte that became a parameter of its own, or one place
+  imported as two sites: **merge** it into the other (the merge button beside a parameter on *Library →
+  Parameters*, and beside a site in a project's *Setup*). What it would do is listed first. A parameter's results
+  become the other's, in every project; rules, sampling schedules, your guideline sets, report templates and
+  formulas that named it name the other; its names become the other's, so the next import matches. A sample with
+  a value for both keeps the other's – the same value merged in is dropped, a different one is kept with the
+  sample, left out of the data and saying why. Parameters in different kinds of unit (NTU and mg/L) can't be
+  merged. A site's samples and results become the other's (a day sampled at both keeps both samples); rules,
+  schedules and calendar rows follow; its code and names become the other's other names. A merge can only be
+  undone from a backup.
 - **g/m³ or mg/L.** A project says how it writes concentrations in its details (*Concentrations written as*):
   the same quantity either way. Tables, graphs, reports and exports follow it, and a parameter added from an
   import with no unit takes it. The parameter library's own units stay, so other projects are unaffected.
@@ -807,6 +833,13 @@ Explorer; to rename or remove one, do it in EnviroDB, which keeps track of where
 
 - **Daily copies** are kept in the folder's *backups* folder. **Download a backup** (Settings & backup)
   at any time; *Restore…* opens either kind. Restoring changes the workspace for everyone.
+- **One project from a backup.** Something deleted by mistake – an import undone, a site, a whole project?
+  *Restore a project…* (Settings & backup → Team) takes one project out of a daily copy (or a backup file)
+  without touching the others. Choose the day and the project – each says how it compares with now – then either
+  **put back what's been deleted since** (the records the backup has and the workspace hasn't, listed first:
+  *1 site, 14 samples, 127 results*, with the days and sites; everything there now is left as it is, so nothing
+  changed since is undone), or **bring it in as it was, as a separate project** named for the backup's day, to
+  compare with or copy from. A project deleted altogether comes back as itself, with its rows on the calendar.
 - **Share a single project** with someone outside the team using the project menu → *Download project
   file*. They open it from the Projects page.
 

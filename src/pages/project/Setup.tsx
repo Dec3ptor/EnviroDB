@@ -3,13 +3,14 @@ import { ActionIcon, Anchor, Autocomplete, Badge, Box, Button, Card, Group, Moda
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { Link, useNavigate } from 'react-router-dom';
-import { IconArchive, IconArrowDown, IconArrowUp, IconHistory, IconPlus, IconTrash, IconListDetails, IconSparkles, IconMap, IconFileSpreadsheet } from '@tabler/icons-react';
+import { IconArchive, IconArrowDown, IconArrowMerge, IconArrowUp, IconHistory, IconPlus, IconTrash, IconListDetails, IconSparkles, IconMap, IconFileSpreadsheet } from '@tabler/icons-react';
 import { BoreButton } from '../../components/BoreDetails';
 import { exportProjectWorkbook } from '../../reports/workbook';
 import { useProject } from '../../hooks/useProjectData';
 import { useEditable } from '../../hooks/useEditable';
 import { ProjectForm } from '../Projects';
 import { deleteProject, deleteSite, newSite, saveProject, saveSite, setProjectStatus } from '../../db/repo';
+import { MergeSiteModal } from '../../components/MergeDialogs';
 import type { AuditEntry, NdHandling, Project, Site } from '../../db/types';
 import { SITE_ROLES, SITE_TYPES } from '../../db/types';
 import { COMMON_UNITS, unitLabel } from '../../lib/units';
@@ -26,7 +27,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { AUDIT_KIND_TEXT } from '../../db/audit';
 import { formatDate } from '../../lib/dates';
 
-function SiteRow({ site, index, count, onMove }: { site: Site; index: number; count: number; onMove: (dir: -1 | 1) => void }) {
+function SiteRow({ site, index, count, onMove, onMerge }: { site: Site; index: number; count: number; onMove: (dir: -1 | 1) => void; onMerge?: () => void }) {
   const [s, setS, { dirty, reset }] = useEditable(site);
   const { results } = useProject();
   const n = results.filter((r) => r.siteId === site.id).length;
@@ -72,6 +73,13 @@ function SiteRow({ site, index, count, onMove }: { site: Site; index: number; co
         <Group gap={4} wrap="nowrap">
           {s.type === 'Groundwater' && <BoreButton site={s} onSave={(bore) => saveSite({ ...s, bore }, site).then(reset)} />}
           <SaveIcon dirty={dirty} disabled={!s.code.trim()} onClick={() => saveSite(s, site).then(reset)} label="Save site" />
+          {onMerge && (
+            <Tooltip label="Merge into another site – for one place that became two" openDelay={300}>
+              <ActionIcon variant="subtle" color="gray" aria-label={`Merge ${site.code} into another site`} onClick={onMerge}>
+                <IconArrowMerge size={16} />
+              </ActionIcon>
+            </Tooltip>
+          )}
           <ActionIcon
             variant="subtle"
             color="red"
@@ -318,6 +326,7 @@ export function SetupTab() {
   // the details as saved, with your unsaved edits on top (a colleague's change to anything else shows straight away)
   const [p, setP, { dirty, reset }] = useEditable<Project>(project);
   const [bulk, setBulk] = useState(false);
+  const [merging, setMerging] = useState<Site | null>(null);
   const navigate = useNavigate();
   const on = useFeatures();
   const move = async (i: number, dir: -1 | 1) => {
@@ -452,10 +461,11 @@ export function SetupTab() {
               </Table.Thead>
               <Table.Tbody>
                 {sites.map((s, i) => (
-                  <SiteRow key={`${s.id}-${s.order}-${s.aliases.length}`} site={s} index={i} count={sites.length} onMove={(d) => move(i, d)} />
+                  <SiteRow key={`${s.id}-${s.order}-${s.aliases.length}`} site={s} index={i} count={sites.length} onMove={(d) => move(i, d)} onMerge={sites.length > 1 ? () => setMerging(s) : undefined} />
                 ))}
               </Table.Tbody>
             </Table>
+            {merging && <MergeSiteModal key={merging.id} site={merging} sites={sites} onClose={() => setMerging(null)} />}
           </Table.ScrollContainer>
         ) : (
           <Text size="sm" c="dimmed">

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActionIcon, Autocomplete, Button, Card, Group, NumberInput, Pagination, Select, Table, TagsInput, Text, TextInput, Tooltip } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { notifications } from '@mantine/notifications';
-import { IconMathFunction, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
+import { IconArrowMerge, IconMathFunction, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
 import { ParameterEditor } from '../components/ParameterEditor';
 import { db } from '../db/db';
 import type { Parameter } from '../db/types';
@@ -13,12 +13,13 @@ import { PageHeader } from '../components/common';
 import { useEditable } from '../hooks/useEditable';
 import { SaveIcon } from '../components/Unsaved';
 import { confirmDeleteParameter } from '../components/DeleteParameter';
+import { MergeParameterModal } from '../components/MergeDialogs';
 import { LIBRARY, SectionNav } from '../components/Shell';
 import { HELP } from '../components/Onboarding';
 
 // The analyte dictionary: every parameter's name, group, unit and the other names it goes by in lab files.
 
-function ParamRow({ p, onOpen }: { p: Parameter; onOpen: (id: string) => void }) {
+function ParamRow({ p, onOpen, onMerge }: { p: Parameter; onOpen: (id: string) => void; onMerge: (p: Parameter) => void }) {
   const [d, setD, { dirty, reset }] = useEditable(p);
   return (
     <Table.Tr className={dirty ? 'edb-unsaved-row' : undefined}>
@@ -72,6 +73,11 @@ function ParamRow({ p, onOpen }: { p: Parameter; onOpen: (id: string) => void })
               <IconMathFunction size={16} />
             </ActionIcon>
           </Tooltip>
+          <Tooltip label="Merge into another parameter – for two that are the same thing" openDelay={300}>
+            <ActionIcon variant="subtle" color="gray" onClick={() => onMerge(p)} aria-label={`Merge ${p.name} into another`}>
+              <IconArrowMerge size={16} />
+            </ActionIcon>
+          </Tooltip>
           <Tooltip label="Delete parameter…" openDelay={300}>
             <ActionIcon variant="subtle" color="red" onClick={() => confirmDeleteParameter(p)} aria-label={`Delete ${p.name}`}>
               <IconTrash size={16} />
@@ -100,6 +106,7 @@ export function ParametersPage() {
   const shown = list.slice((page - 1) * per, page * per);
   // the one open in full (a formula, a new one)
   const [open, setOpen] = useState<{ id: string | null } | null>(null);
+  const [merging, setMerging] = useState<Parameter | null>(null);
   const add = () => setOpen({ id: null });
   return (
     <>
@@ -136,7 +143,7 @@ export function ParametersPage() {
           </Table.Thead>
           <Table.Tbody>
             {shown.map((p) => (
-              <ParamRow key={`${p.id}-${p.aliases.length}-${p.unit}-${p.name}-${p.formula ?? ''}`} p={p} onOpen={(id) => setOpen({ id })} />
+              <ParamRow key={`${p.id}-${p.aliases.length}-${p.unit}-${p.name}-${p.formula ?? ''}`} p={p} onOpen={(id) => setOpen({ id })} onMerge={setMerging} />
             ))}
           </Table.Tbody>
         </Table>
@@ -144,6 +151,7 @@ export function ParametersPage() {
       {list.length > per && <Pagination mt="sm" total={Math.ceil(list.length / per)} value={page} onChange={setPage} size="sm" />}
       </Card>
       <ParameterEditor opened={!!open} paramId={open?.id} onClose={() => setOpen(null)} onSaved={(p) => !open?.id && setQ(p.name)} />
+      {merging && <MergeParameterModal key={merging.id} param={merging} onClose={() => setMerging(null)} />}
     </>
   );
 }

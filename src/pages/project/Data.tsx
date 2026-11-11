@@ -5,7 +5,8 @@ import { Link } from 'react-router-dom';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { IconDownload, IconFileSpreadsheet, IconHistory, IconTrash, IconUpload, IconArrowBackUp, IconFileTypeDocx, IconSparkles, IconArrowUp, IconArrowDown, IconChevronDown, IconFilter, IconSearch, IconSortAscending, IconSortDescending, IconEyeOff, IconCloudRain, IconChecks, IconMessage, IconMathFunction, IconPencil, IconX, IconPlus, IconCalendarPlus, IconColumnInsertRight, IconPaperclip } from '@tabler/icons-react';
-import { addSample, setCellValue, typedText } from '../../db/edits';
+import { addSample, setCellValue, setCellValues, typedText } from '../../db/edits';
+import { isBlock, parseBlock, pasteSummary, planPaste, type PasteTarget } from '../../lib/pasteBlock';
 import { logAudit, whoAmI } from '../../db/audit';
 import { ParameterEditor } from '../../components/ParameterEditor';
 import { excludeResult, restoreResults } from '../../db/qa';
@@ -423,10 +424,25 @@ interface CellEditing {
   /** `text`: what was typed (null: nothing changed); `move`: where to type next. */
   commit: (row: PivotRow, p: Parameter, text: string | null, move?: 'next' | 'across' | 'back') => void;
   cancel: () => void;
+  /** The value in the cell before this one, the way Enter goes (above it) – for Ctrl+D, "the same again". */
+  above: (row: PivotRow, p: Parameter) => string | undefined;
+  /** Cells copied from a spreadsheet, pasted into this cell: they go across and down from it. */
+  paste: (row: PivotRow, p: Parameter, block: string[][]) => void;
 }
 
-/** Typing into a cell: Enter keeps it (and goes on to the next), Tab to the next across, Esc leaves it as it was. */
-function CellInput({ initial, placeholder, label, onDone, onCancel }: { initial: string; placeholder?: string; label: string; onDone: (text: string | null, move?: 'next' | 'across' | 'back') => void; onCancel: () => void }) {
+/**
+ * Typing into a cell: Enter keeps it (and goes on to the next), Tab to the next across, Esc leaves it as it was.
+ * Ctrl+D puts in the value of the cell before; cells pasted from a spreadsheet go across and down from here.
+ */
+function CellInput({ initial, placeholder, label, onDone, onCancel, above, onBlock }: {
+  initial: string;
+  placeholder?: string;
+  label: string;
+  onDone: (text: string | null, move?: 'next' | 'across' | 'back') => void;
+  onCancel: () => void;
+  above?: () => string | undefined;
+  onBlock?: (block: string[][]) => void;
+}) {
   const [v, setV] = useState(initial);
   const done = useRef(false);
   const ref = useRef<HTMLInputElement>(null);
@@ -449,8 +465,23 @@ function CellInput({ initial, placeholder, label, onDone, onCancel }: { initial:
       aria-label={label}
       onChange={(e) => setV(e.currentTarget.value)}
       onClick={(e) => e.stopPropagation()}
+      onPaste={(e) => {
+        // more than one cell from a spreadsheet: across and down from here (one cell is typed in as usual)
+        const block = parseBlock(e.clipboardData.getData('text/plain'));
+        if (!onBlock || !isBlock(block)) return;
+        e.preventDefault();
+        done.current = true;
+        onBlock(block);
+      }}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') {
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'd') {
+          // the same as the cell before
+          e.preventDefault();
+          const same = above?.();
+          if (same === undefined || done.current) return;
+          done.current = true;
+          onDone(same.trim() === initial.trim() ? null : same, 'next');
+        } else if (e.key === 'Enter') {
           e.preventDefault();
           finish('next');
         } else if (e.key === 'Tab') {
@@ -478,7 +509,15 @@ function ValueCell({ row, p, flags, edit, hint }: { row: PivotRow; p: Parameter;
   if (edit.at?.sampleId === row.sample.id && edit.at.paramId === p.id)
     return (
       <td className="num edb-cell-editing">
-        <CellInput initial={r && !r.calc ? typedText(r) : ''} placeholder={r?.calc ? displayValue(r, p).text : unitLabel(p.unit)} label={label} onDone={(text, move) => edit.commit(row, p, text, move)} onCancel={edit.cancel} />
+        <CellInput
+          initial={r && !r.calc ? typedText(r) : ''}
+          placeholder={r?.calc ? displayValue(r, p).text : unitLabel(p.unit)}
+          label={label}
+          onDone={(text, move) => edit.commit(row, p, text, move)}
+          onCancel={edit.cancel}
+          above={() => edit.above(row, p)}
+          onBlock={(block) => edit.paste(row, p, block)}
+        />
       </td>
     );
   if (!r)
@@ -912,21 +951,109 @@ export function DataTab() {
     onRemove: (paramId) => setExtra(extra.filter((x) => x !== paramId)),
   };
   // where typing goes next: down the table (Enter) or across it (Tab), whichever way the table is laid out
-  const after = (sampleId: string, paramId: string, move?: 'next' | 'across' | 'back') => {
+  const after = (sampleId: string, paramId: string, move?: 'next' | 'across' | 'back' | 'back-down') => {
     if (!move) return null;
     const samples = layout === 'samplesAsRows' ? view : view.slice(-120);
-    const alongSamples = (layout === 'samplesAsRows') === (move === 'next');
+    // Enter goes down the table, Tab across it ('back-down': the cell above, the way Enter came)
+    const alongSamples = (layout === 'samplesAsRows') === (move === 'next' || move === 'back-down');
+    const step = move === 'back' || move === 'back-down' ? -1 : 1;
     if (alongSamples) {
-      const i = samples.findIndex((r) => r.sample.id === sampleId) + (move === 'back' ? -1 : 1);
+      const i = samples.findIndex((r) => r.sample.id === sampleId) + step;
       return samples[i] ? { sampleId: samples[i].sample.id, paramId } : null;
     }
-    const j = columns.findIndex((c) => c.id === paramId) + (move === 'back' ? -1 : 1);
+    const j = columns.findIndex((c) => c.id === paramId) + step;
     return columns[j] ? { sampleId, paramId: columns[j].id } : null;
+  };
+  // the table as it's shown, to paste a block into: rows down, columns across (samples one way, parameters the other)
+  const pasteBlock = (row: PivotRow, p: Parameter, block: string[][]) => {
+    setCell(null);
+    const byRows = layout === 'samplesAsRows';
+    const samples = byRows ? view : view.slice(-120);
+    const at = byRows ? { row: samples.findIndex((x) => x.sample.id === row.sample.id), col: columns.findIndex((c) => c.id === p.id) } : { row: columns.findIndex((c) => c.id === p.id), col: samples.findIndex((x) => x.sample.id === row.sample.id) };
+    if (at.row < 0 || at.col < 0) return;
+    type Target = { row: PivotRow; p: Parameter };
+    const target = (r: number, c: number): PasteTarget<Target> | null => {
+      const to = byRows ? samples[r] : samples[c];
+      const param = byRows ? columns[c] : columns[r];
+      if (!to || !param) return null;
+      const res = to.cells.get(param.id);
+      return {
+        cell: { row: to, p: param },
+        // a calculated value isn't one of the sample's own: a measured one pasted over it is added
+        current: res && !res.calc ? typedText(res) : undefined,
+        blocked: !res && !!to.withheld?.get(param.id)?.excluded,
+        label: `${to.site.code} ${formatDate(to.sample.date)} ${param.short ?? param.name}`,
+      };
+    };
+    const plan = planPaste(block, at, target);
+    const todo = [...plan.adds, ...plan.changes];
+    if (!todo.length) {
+      notifications.show({ color: 'orange', message: pasteSummary(plan) });
+      return;
+    }
+    const run = async () => {
+      const change = await setCellValues(project.id, todo.map((x) => ({ sample: x.cell.row.sample, param: x.cell.p, text: x.text, siteCode: x.cell.row.site.code })));
+      if (!change) return;
+      for (const e of change.errors.slice(0, 3)) notifications.show({ color: 'red', message: e });
+      if (!change.added && !change.changed) return;
+      const id = `paste-${Date.now()}`;
+      notifications.show({
+        id,
+        color: 'teal',
+        autoClose: 15000,
+        message: (
+          <Group gap="xs" wrap="nowrap" justify="space-between">
+            <Text size="sm">{change.said}.</Text>
+            <Button size="compact-xs" variant="light" style={{ flexShrink: 0 }} onClick={() => void change.undo().then(() => notifications.hide(id))}>
+              Undo
+            </Button>
+          </Group>
+        ),
+      });
+    };
+    modals.openConfirmModal({
+      title: `Paste ${plan.rows} × ${plan.cols} cells from ${row.site.code} ${formatDate(row.sample.date)}, ${p.short ?? p.name}?`,
+      size: 'lg',
+      children: (
+        <Stack gap="xs">
+          <Text size="sm">{pasteSummary(plan)}.</Text>
+          {plan.changes.length > 0 && (
+            <div>
+              <Text size="sm" fw={600}>
+                Values that change
+              </Text>
+              {plan.changes.slice(0, 8).map((c, i) => (
+                <Text key={i} size="sm">
+                  {c.label}: {c.before} → {c.text}
+                </Text>
+              ))}
+              {plan.changes.length > 8 && (
+                <Text size="sm" c="dimmed">
+                  … and {plan.changes.length - 8} more
+                </Text>
+              )}
+            </div>
+          )}
+          <Text size="xs" c="dimmed">
+            The block goes across and down from the cell you pasted into, as the table is shown now. An empty cell in it leaves its value alone. One Undo takes it all back; each value keeps what it was.
+          </Text>
+        </Stack>
+      ),
+      labels: { confirm: `Paste ${todo.length} value${todo.length === 1 ? '' : 's'}`, cancel: 'Cancel' },
+      onConfirm: () => void run(),
+    });
   };
   const edit: CellEditing = {
     at: cell,
     start: (row, p) => setCell({ sampleId: row.sample.id, paramId: p.id }),
     cancel: () => setCell(null),
+    above: (row, p) => {
+      const to = after(row.sample.id, p.id, 'back-down');
+      if (!to) return undefined;
+      const res = view.find((x) => x.sample.id === to.sampleId)?.cells.get(to.paramId);
+      return res && !res.calc ? typedText(res) : undefined;
+    },
+    paste: pasteBlock,
     commit: (row, p, text, move) => {
       setCell(after(row.sample.id, p.id, move));
       if (text === null) return;

@@ -11,6 +11,17 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.35.0',
+    date: '2026-11-11',
+    title: 'Paste from Excel; merge duplicates; common calculations; one project from a backup',
+    items: [
+      'Paste from Excel into the Data tab: copy a block of cells, click the cell it starts at and paste – it goes across and down from there. EnviroDB says first what the paste would do: the values it adds, each value it would change, and the cells it leaves (not values, beyond the table’s edge). One Undo takes the whole paste back. Ctrl+D in a cell puts in the value of the cell above.',
+      'Merge two of the same thing: a lab’s name that became a parameter of its own (the merge button beside a parameter on Library → Parameters), or one place imported as two sites (beside a site in a project’s Setup). What it would do is listed first; results, rules, schedules, guideline sets, report templates and formulas follow, and the names carry over so the next import matches. A sample with a different value for each keeps both, the one merged in left out of the data.',
+      'Common calculations… in the formula box: dissolved oxygen in mg/L from % saturation (and back), un-ionised ammonia-N from total ammoniacal-N, pH and temperature, total nitrogen and the other nitrogen sums, hardness from calcium and magnesium, the sodium adsorption ratio, and a load in kg/day – each written with your library’s own parameters, converting units where they differ, and saying where the formula is from.',
+      'Restore a project… (Settings & backup → Team) takes one project out of a daily copy or a backup file without touching the others: put back what’s been deleted since – listed first, with the days and sites – or bring the project in as it was, as a separate project to compare with.',
+    ],
+  },
+  {
     version: '1.34.0',
     date: '2026-11-11',
     title: 'A round’s paperwork, with your lab’s chain of custody; lab reports at the back of a report',

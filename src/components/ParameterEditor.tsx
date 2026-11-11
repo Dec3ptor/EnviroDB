@@ -14,6 +14,7 @@ import { compareParams, PARAMETER_GROUPS } from '../data/parameters';
 import { COMMON_UNITS, unitLabel } from '../lib/units';
 import { compileAll, compileFormula, explainFormula, likeParams, typicalGap, type FormulaReport, type InputUse } from '../lib/calculated';
 import { FUNCTION_HELP, refText, renameRefs } from '../lib/formula';
+import { FORMULA_PRESETS, fillPreset, presetGroups, presetNotes } from '../lib/formulaPresets';
 import { formulaPrompt } from '../lib/formulaPrompt';
 import type { ProjectData } from '../hooks/useProjectData';
 import { fmtNum } from '../lib/values';
@@ -42,10 +43,13 @@ export function ParameterEditor({ opened, paramId, bundle, onClose, onSaved }: {
   const library = useLiveQuery(() => db.parameters.toArray(), []);
   const [d, setD] = useState<Draft>(draftOf(null));
   const [helpOpen, setHelpOpen] = useState(false);
+  // a ready-made calculation just put in: what to know about it (units changed, inputs still to choose)
+  const [preset, setPreset] = useState<{ title: string; about: string; notes: string[]; target?: Parameter } | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (opened && stored !== undefined) setD(draftOf(stored));
     if (!opened) setHelpOpen(false);
+    setPreset(null);
   }, [opened, stored?.id]);
 
   const targetId = stored?.id ?? '__new__';
@@ -110,6 +114,21 @@ export function ParameterEditor({ opened, paramId, bundle, onClose, onSaved }: {
       el?.setSelectionRange(at + name.length + 2, at + name.length + 2);
     });
   };
+  /** A ready-made calculation: its formula with the library's parameters, and – for a new parameter – its name, unit and group. */
+  const usePreset = (id: string) => {
+    const pre = FORMULA_PRESETS.find((x) => x.id === id);
+    if (!pre) return;
+    const filled = fillPreset(pre, params, (pid) => counts.get(pid) ?? 0, stored?.id);
+    const fresh = !stored && !d.name.trim();
+    setD({
+      ...d,
+      formula: filled.formula,
+      ...(fresh ? { name: pre.make.name, short: pre.make.short ?? '', unit: pre.make.unit, group: pre.make.group, decimals: pre.make.decimals ?? '' } : {}),
+    });
+    // the library's own parameter for it: the formula belongs there (it fills in where the lab gave no value)
+    const own = !stored && pre.target ? params.find((x) => x.id === pre.target) : undefined;
+    setPreset({ title: pre.title, about: pre.about, notes: presetNotes(filled), target: own });
+  };
   const askAi = async () => {
     try {
       await navigator.clipboard.writeText(formulaPrompt({ name: d.name, unit: d.unit }, offered));
@@ -167,6 +186,7 @@ export function ParameterEditor({ opened, paramId, bundle, onClose, onSaved }: {
           error={problem ?? undefined}
         />
         <Group gap="xs" wrap="wrap" mt={-4}>
+          <Select size="xs" placeholder="Common calculations…" aria-label="Common calculations" data={presetGroups()} value={null} onChange={(v) => v && usePreset(v)} w={210} maxDropdownHeight={320} comboboxProps={{ withinPortal: true, width: 420, position: 'bottom-start' }} />
           <Select size="xs" placeholder="Insert a parameter…" data={offered.map((p) => ({ value: p.id, label: `${p.name}${unitLabel(p.unit) ? ` (${unitLabel(p.unit)})` : ''}` }))} value={null} onChange={(v) => v && insert(v)} searchable w={240} comboboxProps={{ withinPortal: true }} aria-label="Insert a parameter" />
           <Button size="xs" variant="light" leftSection={<IconCopy size={14} />} onClick={() => void askAi()}>
             Ask an AI…
@@ -175,6 +195,22 @@ export function ParameterEditor({ opened, paramId, bundle, onClose, onSaved }: {
             {helpOpen ? 'Hide the functions' : 'Functions'}
           </Button>
         </Group>
+        {preset && (
+          <Alert color="blue" variant="light" p="xs" withCloseButton onClose={() => setPreset(null)} title={preset.title}>
+            <Text size="xs">{preset.about}</Text>
+            {preset.notes.map((n) => (
+              <Text size="xs" key={n} mt={2}>
+                {n}
+              </Text>
+            ))}
+            {preset.target && (
+              <Text size="xs" mt={2}>
+                The library has {preset.target.name} already: to fill it in where the lab gave no value, put this formula on it instead (Library → Parameters → {preset.target.name}) – saved here, it becomes a second parameter, so name it apart (“
+                {preset.target.name} (calculated)”).
+              </Text>
+            )}
+          </Alert>
+        )}
         {helpOpen && (
           <Card withBorder padding="xs">
             <Text size="xs" mb={4}>
