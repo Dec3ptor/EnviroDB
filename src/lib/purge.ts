@@ -54,8 +54,9 @@ export interface StableRule {
 }
 
 /**
- * The usual criteria for a bore's readings to have settled (low-flow sampling): each of the last three readings within
- * these of each other. A sampling plan may set others – they can be changed where they're used.
+ * The criteria for a bore's readings to have settled that the helper starts with: each of the last three readings
+ * within these of each other. They're values in common use for low-flow sampling, not taken from one standard – a
+ * sampling plan sets its own, and they can be changed where they're used.
  */
 export const STABLE_RULES: StableRule[] = [
   { id: 'ph-field', label: 'pH', tol: 0.1, kind: 'abs' },

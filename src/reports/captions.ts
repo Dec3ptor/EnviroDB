@@ -141,6 +141,8 @@ export function defaultCaption(b: ReportBlock): string {
       return 'Calculated values, [period]';
     case 'programmeTable':
       return 'Monitoring programme';
+    case 'ecologyTable':
+      return b.show === 'taxa' ? 'Taxa found, [period]' : 'Ecology surveys, [period]';
     case 'reportingTable':
       return 'Reporting requirements';
     case 'tarpTable':

@@ -340,5 +340,9 @@ describe('report period wording', () => {
     expect(shown).not.toMatch(/1900|2199/);
     expect(shown.startsWith(String(+dates[0].slice(8, 10)))).toBe(true); // the first sample's day
     expect(doc.fileName).not.toMatch(/1900|2199/);
+    // nor do the tables' captions ("Samples collected, [period]")
+    const captions = doc.nodes.flatMap((n) => (n.t === 'table' && n.caption ? [n.caption] : []));
+    expect(captions.length).toBeGreaterThan(0);
+    expect(captions.join(' | ')).not.toMatch(/1900|2199/);
   });
 });

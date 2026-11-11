@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Center, Loader, Stack, Text, Button } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { db } from '../db/db';
-import type { ConditionAssessment, ConsentCondition, ContinuousSeries, ExceedanceNote, GuidelineSet, ImportBatch, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, SeriesYear, Site } from '../db/types';
+import type { ConditionAssessment, ConsentCondition, ContinuousSeries, EcoSurvey, ExceedanceNote, GuidelineSet, ImportBatch, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, SeriesYear, Site, Taxon } from '../db/types';
 import { isQcSite } from '../lib/qc';
 import { buildIndex, type DataIndex } from '../lib/dataIndex';
 import { withCalculated } from '../lib/calculated';
@@ -37,6 +37,8 @@ export interface ProjectData {
   register: { conditions: ConsentCondition[]; assessments: ConditionAssessment[] };
   /** Continuous data – rainfall, flow, level – as daily values. */
   continuous: { series: ContinuousSeries[]; days: SeriesYear[] };
+  /** The ecology surveys, and the team's taxa (their groups and tolerance scores). */
+  ecology: { surveys: EcoSurvey[]; taxa: Taxon[] };
   siteColor: (siteId: string) => string;
 }
 
@@ -71,9 +73,11 @@ export function ProjectDataProvider({ projectId, children }: { projectId: string
   const assessments = useLiveQuery(() => db.assessments.where('projectId').equals(projectId).toArray(), [projectId]);
   const series = useLiveQuery(() => db.series.where('projectId').equals(projectId).toArray(), [projectId]);
   const seriesDays = useLiveQuery(() => db.seriesDays.where('projectId').equals(projectId).toArray(), [projectId]);
+  const surveys = useLiveQuery(() => db.surveys.where('projectId').equals(projectId).toArray(), [projectId]);
+  const taxa = useLiveQuery(() => db.taxa.toArray(), []);
 
   const value = useMemo<ProjectData | null>(() => {
-    if (!project || !sites || !samples || !results || !rules || !notes || !schedules || !obligations || !imports || !params || !guidelineSets || !qaRecords || !conditions || !assessments || !series || !seriesDays) return null;
+    if (!project || !sites || !samples || !results || !rules || !notes || !schedules || !obligations || !imports || !params || !guidelineSets || !qaRecords || !conditions || !assessments || !series || !seriesDays || !surveys || !taxa) return null;
     const sortedSites = [...sites].sort((a, b) => a.order - b.order || a.code.localeCompare(b.code));
     // the parameters as this project writes them (g/m³ or mg/L)
     const sortedParams = withProjectUnits([...params].sort(compareParams), project.concUnit);
@@ -104,9 +108,10 @@ export function ProjectDataProvider({ projectId, children }: { projectId: string
       qc: { sites: sortedSites.filter((s) => qcSiteIds.has(s.id)), samples: byDate.filter(isQc), records: qaRecords },
       register: { conditions, assessments },
       continuous: { series: [...series].sort((a, b) => a.name.localeCompare(b.name)), days: seriesDays },
+      ecology: { surveys, taxa },
       siteColor: (id: string) => sortedSites.find((x) => x.id === id)?.colour ?? SERIES_LIGHT[(colorIdx.get(id) ?? 0) % SERIES_LIGHT.length],
     };
-  }, [project, sites, samples, results, rules, notes, schedules, obligations, imports, params, guidelineSets, qaRecords, conditions, assessments, series, seriesDays]);
+  }, [project, sites, samples, results, rules, notes, schedules, obligations, imports, params, guidelineSets, qaRecords, conditions, assessments, series, seriesDays, surveys, taxa]);
 
   if (project === null) {
     return (

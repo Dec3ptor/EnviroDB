@@ -4,7 +4,7 @@
 // project the report is for. A file from someone else is checked field by field – only what a template has, of the
 // right kinds, and pictures only as PNG or JPEG.
 
-import type { GuidelineSet, Parameter, ReportBlock, ReportBlockType, ReportKind, ReportTemplate } from '../db/types';
+import { ECO_KINDS, type GuidelineSet, type Parameter, type ReportBlock, type ReportBlockType, type ReportKind, type ReportTemplate } from '../db/types';
 import { BLOCK_LABELS, newBlock } from '../components/report/blocks';
 import { uid } from './ids';
 import { APP_VERSION } from './version';
@@ -211,6 +211,12 @@ export function readTemplateFile(raw: unknown, ctx: ReadContext): TemplateImport
         }));
       if (type === 'figures') b.images = (Array.isArray(b.images) ? b.images : []).filter((i) => isObj(i) && typeof i.src === 'string' && IMAGE.test(i.src)).map((i) => ({ id: uid('f'), src: (i as { src: string }).src, caption: str((i as Record<string, unknown>).caption, 2000) ?? '', ref: str((i as Record<string, unknown>).ref, 80) }));
       if (Array.isArray(b.calcColumns)) b.calcColumns = (b.calcColumns as unknown[]).filter(isObj).map((c) => ({ ...c, id: uid('cc') }));
+      // lists of kinds: only the kinds there are
+      if (type === 'labReports') b.kinds = (Array.isArray(b.kinds) ? b.kinds : []).filter((k) => k === 'results' || k === 'coc' || k === 'field');
+      if (type === 'ecologyTable') {
+        b.kinds = (Array.isArray(b.kinds) ? b.kinds : []).filter((k) => (ECO_KINDS as readonly unknown[]).includes(k));
+        if (b.show !== 'taxa') b.show = 'indices';
+      }
       blocks.push({ ...b, id: uid('b'), type } as unknown as ReportBlock);
     }
 

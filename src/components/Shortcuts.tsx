@@ -51,8 +51,9 @@ export function useShortcuts(onSearch: () => void, onHelp: () => void) {
         return;
       }
       const m = /^\/projects\/([^/]+)/.exec(here.current);
-      if (m && /^[1-8]$/.test(e.key)) {
-        const tab = PROJECT_TABS[Number(e.key) - 1];
+      if (m && /^[1-9]$/.test(e.key)) {
+        // (Ecology, which only some projects show, is last: the other tabs keep their numbers)
+        const tab = [...PROJECT_TABS.filter((t) => t.value !== 'ecology'), ...PROJECT_TABS.filter((t) => t.value === 'ecology')][Number(e.key) - 1];
         if (tab) {
           e.preventDefault();
           navigate(`/projects/${m[1]}/${tab.value}`);

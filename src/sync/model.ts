@@ -2,7 +2,7 @@
 
 /** Tables shared with everyone in the workspace. */
 export const SHARED_TABLES = [
-  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa', 'conditions', 'assessments', 'issues', 'archive', 'series', 'seriesDays', 'audit', 'layouts', 'files', 'meta',
+  'projects', 'sites', 'parameters', 'samples', 'results', 'guidelineSets', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'templates', 'calendarRows', 'calendarMarks', 'inbox', 'qa', 'conditions', 'assessments', 'issues', 'archive', 'series', 'seriesDays', 'audit', 'layouts', 'files', 'meta', 'surveys', 'taxa',
 ] as const;
 export type SharedTable = (typeof SHARED_TABLES)[number];
 export const SHARED = new Set<string>(SHARED_TABLES);
@@ -56,6 +56,7 @@ export function segmentOf(table: string, rec: Record<string, unknown>): string {
     case 'projects':
     case 'parameters':
     case 'templates':
+    case 'taxa':
       return table;
     case 'guidelineSets':
       return 'guidelines';

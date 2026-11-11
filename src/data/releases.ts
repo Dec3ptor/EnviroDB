@@ -11,6 +11,20 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.37.0',
+    date: '2026-11-11',
+    title: 'Ecology surveys',
+    items: [
+      'A project can have ecology surveys (switch them on in its Setup → What this project shows): an Ecology tab for what was found where – stream invertebrates, fish, periphyton and plants, birds, vegetation, lizards and frogs, land invertebrates, marine, wetland, eDNA. A survey has its site or place, its day, how it was done, and its taxa with how many: a number, a coded abundance (R, C, A, VA, VVA) or just present.',
+      'Type the taxa, paste a list from a spreadsheet, or paste a whole results table – the taxa down the side, a column of counts for each site or sample, as a taxonomist’s or an eDNA lab’s spreadsheet has it. Each column becomes a survey at the site its heading names; replicates at a site can be added up into one.',
+      'Each survey works out its taxa, individuals, Shannon’s diversity, evenness and Simpson’s index – and for stream invertebrates the EPT taxa, the MCI and the QMCI (SQMCI from coded abundances).',
+      'EnviroDB has no tolerance scores of its own. Taxa and scores… is the team’s taxa list, for every project: each taxon’s group, its hard-bottom and soft-bottom scores and whether it counts for EPT – paste the published list you work to, and say on a survey which list it is. Taxa with no score are left out of the MCI and named.',
+      'Reports have an Ecology surveys section: the period’s surveys a line each with their indices, or the taxa found with a column a survey – with what the abbreviations mean and where the scores are from underneath. Export gives the surveys or every record as CSV.',
+      'With “All data” as a report’s period, table captions give the dates the data covers (they said 1900 to 2199).',
+      'The bore purging helper’s criteria are described as what they are: values to start from, to set to your sampling plan’s.',
+    ],
+  },
+  {
     version: '1.36.0',
     date: '2026-11-11',
     title: 'More ways to graph; purging a bore on the phone',
@@ -19,7 +33,7 @@ export const RELEASES: Release[] = [
       'Upstream v downstream: each day sampled at both sites as a point, downstream against upstream, with the line of no change and what the pairs show – how many, the two medians, and whether it’s significantly higher or lower downstream (the Wilcoxon signed-rank test, as in the report table). The sites come from their roles.',
       'One against another: each sample that has both as a point – turbidity against suspended solids, a metal against hardness – coloured by site, with how strongly they go together (Spearman’s rank correlation) in words.',
       'A report’s Graphs section can be box plots by site, and All graphs to Word takes whichever kind is showing.',
-      'Purging a bore, in field mode on the phone: from the bore’s depth, the depth to water and the casing’s diameter it works out the water standing in the casing and how much to take out (one, three or five casing volumes). Log the meter’s readings as it’s purged and it says when the last three have settled – by the usual low-flow criteria, or your sampling plan’s. Use the last puts the last reading in as the sample’s readings.',
+      'Purging a bore, in field mode on the phone: from the bore’s depth, the depth to water and the casing’s diameter it works out the water standing in the casing and how much to take out (one, three or five casing volumes). Log the meter’s readings as it’s purged and it says when the last three have settled – by criteria to set to your sampling plan’s (it starts with values in common use, not a standard’s). Use the last puts the last reading in as the sample’s readings.',
       'The purge comes back with the results: the sample’s details show what was taken out, the readings and whether they’d settled; the bore learns its casing’s diameter.',
     ],
   },

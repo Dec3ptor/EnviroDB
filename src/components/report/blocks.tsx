@@ -2,7 +2,7 @@ import { ActionIcon, Anchor, Badge, Paper, Button, Checkbox, Group, MultiSelect,
 import { useLiveQuery } from 'dexie-react-hooks';
 import { IconLink, IconPlus, IconTrash } from '@tabler/icons-react';
 import { db } from '../../db/db';
-import type { CalcStat, Parameter, ReportBlock, ReportBlockType, RoundTableBlock, Sample, Site, TableCalc, TableStat } from '../../db/types';
+import { ECO_KINDS, type CalcStat, type Parameter, type ReportBlock, type ReportBlockType, type RoundTableBlock, type Sample, type Site, type TableCalc, type TableStat } from '../../db/types';
 import { CALC_STATS, TABLE_STATS, calcHead } from '../../reports/calc';
 import { InsertCalc, paramOptions } from './InsertCalc';
 import { ReportProjectContext, useCalcChoices } from './projectChoices';
@@ -48,13 +48,14 @@ export const BLOCK_LABELS: Record<ReportBlockType, { label: string; help: string
   trendTable: { label: 'Trends', help: 'Each site’s trend for each analyte – improving, degrading or indeterminate – with Sen’s slope, over the years up to the report’s end' },
   upDownTable: { label: 'Upstream vs downstream', help: 'Downstream results against upstream ones taken the same day: medians, the difference, and whether it is significant' },
   qaSummary: { label: 'QA/QC', help: 'Field duplicates (RPDs), blanks, the checks run on the results, and the results left out or samples swapped – with why' },
+  ecologyTable: { label: 'Ecology surveys', help: 'The period’s ecology surveys – each with its taxa, diversity and, for stream invertebrates, EPT and the MCI – or the taxa found, a column a survey' },
   labReports: { label: 'Laboratory reports', help: 'The lab’s own reports for the period’s samples – from the project’s Files – a page each at the back of the report; chains of custody and field sheets too, if wanted' },
 };
 
 /** The sections offered to add, grouped as in the palette. */
 export const BLOCK_GROUPS: Array<{ label: string; types: ReportBlockType[] }> = [
   { label: 'Text and layout', types: ['heading', 'text', 'spacer', 'pageBreak', 'title', 'toc', 'letter', 'signatures'] },
-  { label: 'From the results', types: ['summary', 'calc', 'resultsTable', 'roundTable', 'roundReview', 'statsTable', 'chart', 'trendTable', 'upDownTable', 'figures', 'qaSummary', 'labReports'] },
+  { label: 'From the results', types: ['summary', 'calc', 'resultsTable', 'roundTable', 'roundReview', 'statsTable', 'chart', 'trendTable', 'upDownTable', 'figures', 'qaSummary', 'ecologyTable', 'labReports'] },
   { label: 'Compliance', types: ['complianceRegister', 'complianceTable', 'exceedances', 'triggerTable', 'npsfmTable'] },
   { label: 'Programme and plans', types: ['programmeTable', 'tarpTable', 'reportingTable', 'siteTable', 'samplingTable'] },
 ];
@@ -79,6 +80,7 @@ const REF_KIND: Partial<Record<ReportBlockType, 'table' | 'fig'>> = {
   upDownTable: 'table',
   npsfmTable: 'table',
   complianceRegister: 'table',
+  ecologyTable: 'table',
   chart: 'fig',
   figures: 'fig',
 };
@@ -131,6 +133,8 @@ export function newBlock(type: ReportBlockType): ReportBlock {
       return { id, type, duplicates: 'all', decisions: true };
     case 'labReports':
       return { id, type, kinds: ['results'], titles: true };
+    case 'ecologyTable':
+      return { id, type, show: 'indices', kinds: [] };
     case 'trendTable':
       return { id, type, siteIds: [], parameterIds: [], years: 10, seasons: 'auto' };
     case 'npsfmTable':
@@ -188,6 +192,8 @@ export function blockSummary(b: ReportBlock): string {
       return `${b.parameterIds.length ? `${b.parameterIds.length} analytes` : 'Consent analytes'} · ${b.years ? `last ${b.years} years` : 'the report period'} · paired ${b.days ? `within ${b.days} day${b.days === 1 ? '' : 's'}` : 'on the same day'}`;
     case 'labReports':
       return `${[b.kinds.includes('results') || !b.kinds.length ? 'the lab’s reports' : '', b.kinds.includes('coc') ? 'chains of custody' : '', b.kinds.includes('field') ? 'field sheets' : ''].filter(Boolean).join(', ')} for the period’s samples, a page each`.replace(/^t/, 'T');
+    case 'ecologyTable':
+      return `${b.show === 'taxa' ? 'The taxa found, a column a survey' : 'A line a survey: taxa, diversity, EPT and MCI'} · ${b.kinds.length ? b.kinds.join(', ').toLowerCase() : 'every kind of survey'}`;
     case 'qaSummary':
       return ['A summary of the checks', b.duplicates === 'none' ? '' : b.duplicates === 'outside' ? 'duplicates outside the limits' : 'every duplicate RPD', b.decisions === false ? '' : 'the decisions made'].filter(Boolean).join(' · ');
     default:
@@ -1038,6 +1044,39 @@ function BlockSettings({ block, onChange }: { block: ReportBlock; onChange: (b: 
           <Switch label="A second table with the statistics behind each band" checked={!!block.detail} onChange={(e) => set({ detail: e.currentTarget.checked })} />
           <Text size="xs" c="dimmed">
             Up to the report’s end. How each site is graded (river or lake, sediment class …) is set under the project’s Compliance → NPS-FM.
+          </Text>
+        </Stack>
+      );
+    case 'ecologyTable':
+      return (
+        <Stack gap="xs">
+          <div>
+            <Text size="sm" fw={500} mb={4}>
+              Show
+            </Text>
+            <SegmentedControl
+              size="xs"
+              value={block.show}
+              onChange={(v) => set({ show: v as typeof block.show })}
+              data={[
+                { value: 'indices', label: 'Each survey’s indices' },
+                { value: 'taxa', label: 'The taxa found' },
+              ]}
+            />
+          </div>
+          <MultiSelect
+            label="Surveys of"
+            placeholder={block.kinds.length ? undefined : 'Every kind'}
+            data={[...ECO_KINDS]}
+            value={block.kinds}
+            onChange={(v) => set({ kinds: v as typeof block.kinds })}
+            clearable
+            comboboxProps={{ withinPortal: true }}
+            maw={520}
+          />
+          <Text size="xs" c="dimmed">
+            The surveys on the project’s Ecology tab made in the report’s period, the earliest first: a line a survey with its taxa, individuals and diversity – or the taxa found, a column a survey. For stream invertebrates there’s EPT, the MCI and the QMCI too, from the
+            tolerance scores in the team’s taxa list (the table says which published list they’re from, where the surveys say). A table of taxa with many surveys runs on to a second; a landscape page takes more.
           </Text>
         </Stack>
       );

@@ -243,6 +243,13 @@ function ViewsCard() {
         checked={!!project.qa}
         onChange={(e) => void db.projects.update(project.id, { qa: e.currentTarget.checked, updatedAt: new Date().toISOString() })}
       />
+      <Switch
+        mt="sm"
+        label="Ecology surveys for this project"
+        description="An Ecology tab for what was found where – stream invertebrates, fish, birds, plants, eDNA – with how many taxa, their diversity and, for stream invertebrates, EPT and the MCI."
+        checked={!!project.ecology}
+        onChange={(e) => void db.projects.update(project.id, { ecology: e.currentTarget.checked, updatedAt: new Date().toISOString() })}
+      />
       <MoreOptions label="Other views and features" summary={rows.map((r) => `${r.label} ${r.on ? 'on' : 'off'}`).join(' · ')}>
         <Stack gap={6}>
           {rows.map((r) => (

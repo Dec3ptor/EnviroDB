@@ -32,4 +32,5 @@ export const AUDIT_KIND_TEXT: Record<AuditEntry['kind'], string> = {
   project: 'Project',
   setup: 'Setup',
   file: 'File',
+  survey: 'Survey',
 };

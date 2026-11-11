@@ -282,10 +282,33 @@ there as they work and show up for the others within seconds.
   the litres out so far, pH, EC, temperature and DO (and redox or turbidity where the sheet asks for them), and the
   water level for the drawdown – with a bar for how far the purge has got. Once there are three it says whether
   they've **settled**: each of the last three within the criteria of each other (pH 0.1, EC 3%, temperature 0.2 °C,
-  DO 0.3 mg/L, DO % and turbidity 10%, redox 10 mV – the usual low-flow criteria; *Change the criteria* sets them
-  to your sampling plan's, kept on the phone). *Use the last* puts the last reading in as the sample's readings,
+  DO 0.3 mg/L, DO % and turbidity 10%, redox 10 mV – values to start from, not a standard's; *Change the criteria*
+  sets them to your sampling plan's, kept on the phone). *Use the last* puts the last reading in as the sample's readings,
   with the litres purged. The log comes back with the results: the sample's details show the purge – what was
   taken out, in casing volumes, the readings and whether they'd settled – and its notes have it in a line.
+- **Ecology surveys.** A project with ecology in it – switched on in its *Setup → What this project shows* – has
+  an **Ecology** tab: surveys of what was found where. Stream invertebrates, fish, periphyton and plants, birds,
+  vegetation, lizards and frogs, land invertebrates, marine, wetland, eDNA. Each survey has its site (or a place
+  named there), its day, how it was done, and what was found: a taxon a line with how many – a number, a coded
+  abundance (R, C, A, VA, VVA) or just that it was there. Type them, *Paste a list…* from a spreadsheet, or
+  *Paste a results table…* for a whole table at once – the taxa down the side and a column of counts for each site
+  or sample, as a taxonomist's spreadsheet has it, or an eDNA lab's (a row a sequence, a column a sample): each
+  column becomes a survey, at the site its heading names, with the day you give; replicates at one site can be
+  added up into one; totals and indices at the foot of the table are left out.
+  Each survey works out **how many taxa and individuals**, **Shannon's diversity** (H′, natural log), evenness,
+  Simpson's index and the commonest taxon – and for stream invertebrates the **EPT** taxa (mayflies, stoneflies,
+  caddisflies), the **MCI** (20 × the mean tolerance score of the taxa found) and the **QMCI** (the scores
+  weighted by how many of each; the SQMCI where abundances are coded, the codes taken as 1, 5, 20, 100 and 500).
+  **EnviroDB has no tolerance scores of its own**: *Taxa and scores…* is the team's taxa list, for every project,
+  where each taxon has its group (its order – which decides EPT, unless you say otherwise for a taxon), its score
+  for hard-bottomed streams and for soft-bottomed ones, a common name and a status. Paste the published list you
+  work to, and say on a survey which list that is (*Scores from*). A taxon with no score is left out of the MCI
+  and QMCI and named, so nothing is scored by guesswork. A new survey starts with the method, stream bed and score
+  list of the last one of its kind. *Export* gives the surveys with their indices, or every record a line, as CSV.
+  In a report, the **Ecology surveys** section puts in the period's surveys – a line each with its indices, or the
+  taxa found with a column a survey and the indices at the foot – and says underneath what the abbreviations mean,
+  where the scores are from and which taxa had none. Surveys are saved to the shared folder with the project, go
+  in its project file and backups, and an issued report keeps the surveys it showed.
 - **Teach EnviroDB a file.** When you put a sheet's layout right on import, tick *Teach EnviroDB this layout* and
   the next file of the same shape – the words in its first rows, not the numbers – uses it by itself, for the whole
   team. The Layout step says when a taught layout is in use, with *Forget it*.
@@ -750,7 +773,8 @@ has a **ⓘ** that says what it's for and links to the section of this README.
   against guidelines with no project at all.
 - **A project** has eight tabs: *Overview* (latest results at a glance; *Sampling & reporting* for the sampling
   schedules, reporting dates and rounds), *Data* (with *QA/QC* when it's on), *Graphs* (with *Trends*), *Map*,
-  *Compliance* (with *NPS-FM*), *Reports* (with the *Client data pack*), *Files* (its documents) and *Setup*. A tab with more than one view
+  *Compliance* (with *NPS-FM*), *Reports* (with the *Client data pack*), *Files* (its documents) and *Setup* – and
+  *Ecology*, before Setup, in a project that has ecology surveys switched on. A tab with more than one view
   has a switch under the tabs. Its main action, *Import results*, is top right; less common ones (*Field work…*,
   *Copy for AI input* on a phone, *Download project file*) are under ⋯. Links to the old tabs still work.
 - **Library** – reference data shared by every project: *Guidelines*, *Report templates* and

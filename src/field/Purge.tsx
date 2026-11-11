@@ -285,7 +285,7 @@ function ReadingModal({ measures, short, last, onClose, onAdd }: { measures: Fie
   );
 }
 
-/** How close the last three readings are to be: the usual criteria, changed to a sampling plan's on this phone. */
+/** How close the last three readings are to be: the criteria it starts with, changed to a sampling plan's on this phone. */
 function CriteriaModal({ rules, onClose, onSave }: { rules: StableRule[]; onClose: () => void; onSave: (own: Record<string, number>) => void }) {
   const [tol, setTol] = useState<Record<string, number | ''>>(Object.fromEntries(rules.map((r) => [r.id, r.tol])));
   const own = () => Object.fromEntries(STABLE_RULES.flatMap((r) => (typeof tol[r.id] === 'number' && tol[r.id] !== r.tol && (tol[r.id] as number) > 0 ? [[r.id, tol[r.id] as number]] : [])));
@@ -293,7 +293,7 @@ function CriteriaModal({ rules, onClose, onSave }: { rules: StableRule[]; onClos
     <Modal opened onClose={onClose} title="When the readings have settled" size="md">
       <Stack gap="sm">
         <Text size="sm" c="dimmed">
-          Each of the last three readings within this much of each other. These are the usual low-flow criteria – set them to your sampling plan’s; they’re kept on this phone.
+          Each of the last three readings within this much of each other. These are values to start from, not a standard’s – set them to your sampling plan’s; they’re kept on this phone.
         </Text>
         {STABLE_RULES.map((r) => (
           <NumberInput key={r.id} size="md" label={`${r.label} – within`} rightSection={<Text size="xs" c="dimmed" pr={8}>{r.kind === 'pct' ? '%' : (r.unit ?? '')}</Text>} rightSectionWidth={54} value={tol[r.id] ?? ''} min={0} inputMode="decimal" hideControls onChange={(x) => setTol({ ...tol, [r.id]: x === '' ? '' : Number(x) })} />

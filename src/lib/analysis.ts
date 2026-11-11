@@ -1,4 +1,4 @@
-import type { ConditionAssessment, ConsentCondition, ContinuousSeries, ExceedanceNote, GuidelineSet, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, SeriesYear, Site } from '../db/types';
+import type { ConditionAssessment, ConsentCondition, ContinuousSeries, EcoSurvey, ExceedanceNote, GuidelineSet, MonitoringSchedule, Parameter, Project, QaRecord, ReportObligation, Result, Rule, Sample, SeriesYear, Site, Taxon } from '../db/types';
 import type { DataIndex } from './dataIndex';
 import { buildIndex, resultsFor } from './dataIndex';
 import { evaluateRules, ruleParamIds, type EvalContext, type RuleEvaluation } from './compliance';
@@ -31,6 +31,8 @@ export interface ProjectBundle {
   register?: { conditions: ConsentCondition[]; assessments: ConditionAssessment[] };
   /** Continuous data – rainfall, flow, level – as daily values. */
   continuous?: { series: ContinuousSeries[]; days: SeriesYear[] };
+  /** The ecology surveys, and the team's taxa (their groups and tolerance scores). */
+  ecology?: { surveys: EcoSurvey[]; taxa: Taxon[] };
 }
 
 /**
@@ -53,6 +55,8 @@ export function limitToSites<B extends ProjectBundle>(b: B, siteIds: string[]): 
     samples: b.samples.filter((s) => keep.has(s.siteId)),
     rules,
     schedules: b.schedules.map((sch) => ({ ...sch, siteIds: sch.siteIds.filter((id) => keep.has(id)) })).filter((sch) => sch.siteIds.length),
+    // (a survey somewhere that isn't one of the project's sites isn't at these)
+    ...(b.ecology ? { ecology: { ...b.ecology, surveys: b.ecology.surveys.filter((x) => x.siteId && keep.has(x.siteId)) } } : {}),
     index: buildIndex(indexed, indexed.flatMap((s) => b.index.bySample.get(s.id) ?? []), [...sites, ...b.sites.filter((s) => refs.has(s.id))], b.params),
   };
 }

@@ -9,6 +9,7 @@ import type {
   ConditionAssessment,
   ConsentCondition,
   ContinuousSeries,
+  EcoSurvey,
   ExceedanceNote,
   FigureImage,
   GuidelineSet,
@@ -25,9 +26,11 @@ import type {
   SeriesYear,
   Settings,
   Site,
+  Taxon,
 } from '../db/types';
 import type { AttachedRef } from './attachments';
 import { overlayFor } from './continuous';
+import { taxonKey } from './ecology';
 import type { ProjectBundle } from './analysis';
 import { buildIndex } from './dataIndex';
 import { compareParams } from '../data/parameters';
@@ -118,6 +121,8 @@ export interface SnapshotContent {
   resultRefs: Record<string, [string, string, number]>;
   /** The rainfall or flow records the report's graphs show. */
   continuous?: { series: ContinuousSeries[]; days: SeriesYear[] };
+  /** The ecology surveys its Ecology surveys sections show (the period's), and the taxa they name with their scores. */
+  ecology?: { surveys: EcoSurvey[]; taxa: Taxon[] };
   /** The samples and results the project had, by site and year. */
   data: DataPart[];
 }
@@ -210,6 +215,7 @@ export function snapshotContent(input: SnapshotInput): SnapshotContent {
     settings: kept,
     resultRefs,
     continuous: usedContinuous(b, template),
+    ...(usedEcology(b, template, period) ? { ecology: usedEcology(b, template, period) } : {}),
     data: [...parts.values()].sort((x, y) => (x.site < y.site ? -1 : x.site > y.site ? 1 : x.year < y.year ? -1 : 1)),
   };
 }
@@ -224,6 +230,15 @@ function usedContinuous(b: ProjectBundle, template: ReportTemplate): SnapshotCon
   }
   if (!used.size) return undefined;
   return { series: [...used.values()].map((o) => o.series), days: [...used.values()].flatMap((o) => o.years) };
+}
+
+/** The ecology surveys a layout's sections show – the period's – and the taxa they name. */
+function usedEcology(b: ProjectBundle, template: ReportTemplate, period: { start: string; end: string }): SnapshotContent['ecology'] {
+  if (!b.ecology || !template.blocks.some((blk) => blk.type === 'ecologyTable')) return undefined;
+  const surveys = b.ecology.surveys.filter((x) => x.date >= period.start && x.date <= period.end).sort((x, y) => (x.id < y.id ? -1 : 1));
+  if (!surveys.length) return undefined;
+  const named = new Set(surveys.flatMap((x) => x.records.map((r) => taxonKey(r.taxon))));
+  return { surveys, taxa: b.ecology.taxa.filter((x) => named.has(x.id)).sort((x, y) => (x.id < y.id ? -1 : 1)) };
 }
 
 // ------------------------------------------------------------ packing it small
@@ -380,6 +395,7 @@ export function snapshotBundle(content: SnapshotContent): ProjectBundle {
     qc: { sites: sites.filter((s) => qcSites.has(s.id)), samples: byDate.filter(isQc), records },
     register: { conditions: content.conditions, assessments: content.assessments },
     continuous: content.continuous ?? { series: [], days: [] },
+    ecology: content.ecology ?? { surveys: [], taxa: [] },
   };
 }
 
@@ -607,6 +623,15 @@ export function diffSnapshots(old: SnapshotContent, cur: SnapshotContent): Issue
   for (const sr of old.continuous?.series ?? []) {
     const days = (c: SnapshotContent) => json((c.continuous?.days ?? []).filter((d) => d.seriesId === sr.id).sort((a, b) => (a.year < b.year ? -1 : 1)).map((d) => d.v));
     if (days(old) !== days(cur)) add('other', `${sr.name}: records changed`);
+  }
+  // the ecology surveys shown, and the scores their indices come from
+  if (old.ecology || cur.ecology) {
+    const eco = (c: SnapshotContent) => new Map((c.ecology?.surveys ?? []).map((x) => [x.id, json(without(x, ['updatedAt']))]));
+    const [oe, ne] = [eco(old), eco(cur)];
+    const n = [...new Set([...oe.keys(), ...ne.keys()])].filter((id) => oe.get(id) !== ne.get(id)).length;
+    if (n) add('other', `${plural(n, 'ecology survey')} added, changed or removed`);
+    const scores = (c: SnapshotContent) => json((c.ecology?.taxa ?? []).map((x) => [x.id, x.group ?? '', x.mci ?? null, x.mciSb ?? null, x.ept ?? null]));
+    if (!n && scores(old) !== scores(cur)) add('other', 'The taxa list changed (groups or tolerance scores)');
   }
   if (json(old.settings.letterhead) !== json(cur.settings.letterhead) && old.template.letterhead) add('other', 'The letterhead changed');
   if ((old.settings.company ?? '') !== (cur.settings.company ?? '')) add('other', 'The company name changed');

@@ -14,7 +14,7 @@ type Row = Record<string, unknown> & { id: string };
 const rowsOf = (b: WorkspaceBackup, t: DataTable): Row[] => (Array.isArray(b.data[t]) ? (b.data[t] as Row[]) : []);
 
 /** The tables that hold a project's own records, each with the project's id. */
-const PROJECT_TABLES: DataTable[] = ['sites', 'samples', 'results', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'calendarRows', 'qa', 'conditions', 'assessments', 'issues', 'archive', 'series', 'seriesDays', 'audit', 'files'];
+const PROJECT_TABLES: DataTable[] = ['sites', 'samples', 'results', 'rules', 'notes', 'schedules', 'obligations', 'imports', 'calendarRows', 'qa', 'conditions', 'assessments', 'issues', 'archive', 'series', 'seriesDays', 'audit', 'files', 'surveys'];
 
 /** What each kind of record is called, one and many. */
 const NAMES: Partial<Record<DataTable, [string, string]>> = {
@@ -34,6 +34,8 @@ const NAMES: Partial<Record<DataTable, [string, string]>> = {
   issues: ['issued report', 'issued reports'],
   series: ['rainfall or flow record', 'rainfall or flow records'],
   files: ['file', 'files'],
+  surveys: ['ecology survey', 'ecology surveys'],
+  taxa: ['taxon', 'taxa'],
   parameters: ['parameter', 'parameters'],
   guidelineSets: ['guideline set', 'guideline sets'],
   templates: ['report template', 'report templates'],
@@ -115,6 +117,8 @@ export function projectFromBackup(backup: WorkspaceBackup, projectId: string): W
   data.guidelineSets = rowsOf(backup, 'guidelineSets').filter((g) => setIds.has(g.id) && !g.builtIn);
   const tplIds = new Set((data.obligations as Row[]).map((o) => o.templateId).filter(Boolean) as string[]);
   data.templates = (rowsOf(backup, 'templates') as unknown as ReportTemplate[]).filter((t) => tplIds.has(t.id) && !t.builtIn) as unknown as Row[];
+  const named = new Set((data.surveys as Row[]).flatMap((s) => ((s.records as Array<{ taxon: string }> | undefined) ?? []).map((r) => r.taxon.trim().toLowerCase().replace(/\s+/g, ' '))));
+  data.taxa = rowsOf(backup, 'taxa').filter((t) => named.has(t.id));
   return { app: BACKUP_APP, kind: 'project', version: backup.version, exportedAt: backup.exportedAt, appVersion: backup.appVersion, data };
 }
 

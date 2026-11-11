@@ -2,7 +2,7 @@ import { InboxPanel } from '../../components/InboxPanel';
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
 import { Box, Badge, Button, Center, Group, Loader, Menu, Modal, SegmentedControl, Stack, Tabs, Text, ThemeIcon, UnstyledButton, ActionIcon } from '@mantine/core';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { IconCamera, IconFiles, IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconSparkles, IconMap, IconDeviceMobile, IconDeviceMobileDown, IconQrcode } from '@tabler/icons-react';
+import { IconCamera, IconFiles, IconLeaf, IconChartLine, IconDots, IconDownload, IconFileReport, IconLayoutDashboard, IconSettings, IconShieldCheck, IconTable, IconUpload, IconSparkles, IconMap, IconDeviceMobile, IconDeviceMobileDown, IconQrcode } from '@tabler/icons-react';
 import { ProjectDataProvider, useProject } from '../../hooks/useProjectData';
 import { OverviewTab } from './Overview';
 import { DataTab } from './Data';
@@ -26,7 +26,8 @@ import { FieldCodesModal } from '../../components/FieldCodes';
 import type { FieldResults } from '../../field/model';
 import { useSettings, useSettingsReady } from '../../hooks/useSettings';
 import { useFeatures } from '../../hooks/useFeatures';
-import { featureOn, PROJECT_TABS, tabOf, viewOff, visibleViews, type ProjectView } from '../../lib/features';
+import { featureOn, PROJECT_TABS, tabOf, viewOff, visibleTabs, visibleViews, type ProjectView } from '../../lib/features';
+import { EcologyTab } from './Ecology';
 import { EmptyState } from '../../components/common';
 import { db } from '../../db/db';
 import { HELP, HelpTip } from '../../components/Onboarding';
@@ -43,6 +44,7 @@ const TAB_ICONS: Record<string, typeof IconTable> = {
   compliance: IconShieldCheck,
   reports: IconFileReport,
   files: IconFiles,
+  ecology: IconLeaf,
   setup: IconSettings,
 };
 
@@ -175,7 +177,7 @@ function Header() {
       </Group>
       <Tabs value={tab} onChange={(v) => v && go(v)} variant="outline">
         <Tabs.List style={{ flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none' }} data-tour="project-tabs">
-          {PROJECT_TABS.map((t) => {
+          {visibleTabs(facts, settings).map((t) => {
             const Icon = TAB_ICONS[t.value];
             return (
               <Tabs.Tab key={t.value} value={t.value} leftSection={<Icon size={16} />} rightSection={t.value === 'data' && project.qa ? <QaCount /> : undefined} ref={t.value === tab ? scrollIntoTabs : undefined}>
@@ -316,6 +318,7 @@ export function ProjectLayout() {
           }
         />
         <Route path="files" element={<FilesTab />} />
+        <Route path="ecology" element={<Shown view="ecology"><EcologyTab /></Shown>} />
         <Route path="setup" element={<SetupTab />} />
         <Route
           path="import"

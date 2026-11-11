@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../src/db/db';
-import { FEATURES, featureOn, featurePreset, presetOf, PROJECT_TABS, tabOf, trendsReady, viewOff, visibleViews, type ProjectFacts } from '../src/lib/features';
+import { FEATURES, featureOn, featurePreset, presetOf, PROJECT_TABS, tabOf, trendsReady, viewOff, visibleTabs, visibleViews, type ProjectFacts } from '../src/lib/features';
 
 const facts = (patch: Partial<ProjectFacts> = {}): ProjectFacts => ({ project: {}, sites: [{ type: 'Groundwater' }], sampleDates: ['2026-03-01'], ...patch });
 const monthly = (from: string, n: number) => Array.from({ length: n }, (_, i) => new Date(Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1 + i, 15)).toISOString().slice(0, 10));
@@ -41,8 +41,12 @@ describe('features', () => {
   });
 
   it('a new project shows eight tabs, each with only its own view', () => {
-    expect(PROJECT_TABS.map((t) => t.label)).toEqual(['Overview', 'Data', 'Graphs', 'Map', 'Compliance', 'Reports', 'Files', 'Setup']);
-    const shown = PROJECT_TABS.map((t) => [t.value, visibleViews(t.value, facts(), DEFAULT_SETTINGS).map((v) => v.value)]);
+    expect(visibleTabs(facts(), DEFAULT_SETTINGS).map((t) => t.label)).toEqual(['Overview', 'Data', 'Graphs', 'Map', 'Compliance', 'Reports', 'Files', 'Setup']);
+    // Ecology is a ninth, before Setup, for a project that has it on
+    expect(visibleTabs(facts({ project: { ecology: true } }), DEFAULT_SETTINGS).map((t) => t.label)).toEqual(['Overview', 'Data', 'Graphs', 'Map', 'Compliance', 'Reports', 'Files', 'Ecology', 'Setup']);
+    expect(viewOff('ecology', facts(), DEFAULT_SETTINGS)).toBe('Ecology surveys are off for this project.');
+    expect(viewOff('ecology', facts({ project: { ecology: true } }), DEFAULT_SETTINGS)).toBeNull();
+    const shown = visibleTabs(facts(), DEFAULT_SETTINGS).map((t) => [t.value, visibleViews(t.value, facts(), DEFAULT_SETTINGS).map((v) => v.value)]);
     expect(shown).toEqual([
       ['overview', ['overview', 'schedule']],
       ['data', ['data']],

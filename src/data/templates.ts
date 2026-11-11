@@ -325,6 +325,8 @@ const ecology: ReportBlock[] = [
   { id: id('s'), type: 'samplingTable' },
   h('Results'),
   { id: id('s'), type: 'summary' },
+  text('The surveys are summarised in {{table:surveys}}; the taxa found in each are listed in Appendix A.'),
+  { id: id('s'), type: 'ecologyTable', show: 'indices', kinds: [], ref: 'surveys' },
   results('Survey results'),
   { id: id('s'), type: 'chart', parameterIds: [], siteIds: [], range: 'all', showGuidelines: true, guidelineSetIds: null, showRules: true, logScale: false, size: 'half', aspect: 0.67, widthCm: 8, heightCm: 6, caption: '' },
   { id: id('s'), type: 'figures', images: [], perRow: 2, heightMm: 0, numbering: 'each', label: 'Figure', caption: '', border: false },
@@ -333,6 +335,9 @@ const ecology: ReportBlock[] = [
   h('Conclusions and recommendations'),
   text('- …'),
   signs(),
+  { id: id('s'), type: 'pageBreak' },
+  h('Appendix A: Taxa found'),
+  { id: id('s'), type: 'ecologyTable', show: 'taxa', kinds: [] },
 ];
 
 const blank: ReportBlock[] = [titleBlock('{{period.label}}', false), h('Introduction'), text('Type your text here.', false)];
@@ -342,5 +347,5 @@ export const STARTER_TEMPLATES: ReportTemplate[] = [
   { ...base, builtIn: false, kind: 'other', id: 'start-blank', name: 'Blank template', description: 'A title, a heading and some text – add the sections you need.', blocks: blank },
   { ...base, builtIn: false, kind: 'management-plan', id: 'start-plan', name: 'Management plan', description: 'Purpose, site, consent requirements, the monitoring programme, trigger levels and responses, reporting, roles and review – the tables come from the project.', blocks: managementPlan },
   { ...base, builtIn: false, kind: 'investigation', id: 'start-investigation', name: 'Site investigation report', description: 'Contaminated land: scope, site history, sampling, assessment criteria, results against the criteria, discussion, conclusions and limitations.', blocks: investigation },
-  { ...base, builtIn: false, kind: 'ecology', id: 'start-ecology', name: 'Ecology survey report', description: 'Methods, sites, survey results with graphs and photos, discussion and conclusions.', blocks: ecology },
+  { ...base, builtIn: false, kind: 'ecology', id: 'start-ecology', name: 'Ecology survey report', description: 'Methods, sites, the surveys with their indices (taxa, diversity, EPT and MCI), results with graphs and photos, discussion and conclusions – and the taxa found as an appendix.', blocks: ecology },
 ];

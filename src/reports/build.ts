@@ -22,6 +22,7 @@ import { fitPage } from '../lib/pdfPages';
 import { buildChartSpec, chartOption, chartOverlay } from '../charts/timeSeries';
 import { boxOption, boxSpec } from '../charts/moreGraphs';
 import { overlayFor } from '../lib/continuous';
+import { indicesTable, surveysIn, taxaTable, type EcoTable } from '../lib/ecology';
 import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
 import { FILLS, TEXT_FLAGS, fillPlaceholders, inline, parseMarkup, type Cell, type CommentaryField, type DocNode, type PageGeometry, type RefTarget, type ReportDoc, type ReportLook, type Run, type TocEntry, SUMMARY_GAP_PT } from './model';
 import { CELL_PAD_MM, fontWidthFactor, longestWordMm as longestWord, textWidthMm as textWidth } from './measure';
@@ -224,7 +225,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   const sitesSampled = b.sites.filter((s) => samplesInPeriod.some((x) => x.siteId === s.id));
   const exceedCount = evals.reduce((n, e) => n + e.exceedances.length, 0);
   // "All data" runs from 1900 to 2199: say the dates the data actually covers
-  const dates = b.samples.map((x) => x.date.slice(0, 10)).sort();
+  const dates = [...b.samples.map((x) => x.date.slice(0, 10)), ...(b.ecology?.surveys ?? []).map((x) => x.date.slice(0, 10))].sort();
   const shownStart = start <= '1900-01-01' && dates.length ? dates[0] : start;
   const shownEnd = end >= '2199-12-31' && dates.length ? dates[dates.length - 1] : end;
   const ctx: Record<string, string> = {
@@ -346,7 +347,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
   };
   // A section's caption: its wording, with this table's fill-ins ([site name], [date] …) and the report's own
   const capBase: Record<string, string> = {
-    period: `${formatDate(start)} – ${formatDate(end)}`,
+    period: `${formatDate(shownStart)} – ${formatDate(shownEnd)}`,
     periodname: ctx['period.label'],
     project: project.name,
     projectcode: project.code ?? '',
@@ -1554,6 +1555,52 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           const size = fitPage(pg, width, (usableHeightMm(t, o, geo) - (titled ? 14 : 4)) * 0.97);
           nodes.push({ t: 'image', dataUrl: pg.dataUrl, widthCm: size.width / 10, heightCm: size.height / 10 });
         });
+      }
+    },
+    ecologyTable: (blk) => {
+      const eco = b.ecology;
+      const code = (id: string | undefined) => (id ? (b.siteMap.get(id)?.code ?? '') : '');
+      const found = surveysIn(eco?.surveys ?? [], start, end, blk.kinds, code);
+      if (!found.length) {
+        nodes.push({ t: 'p', runs: [{ text: `No ${blk.kinds.length === 1 ? `${blk.kinds[0].toLowerCase()} ` : 'ecology '}surveys were made in this period.`, italic: true }] });
+        return;
+      }
+      const list = new Map((eco?.taxa ?? []).map((x) => [x.id, x]));
+      const pt = t.fontSize - 1;
+      const cells = (row: string[], numeric: boolean[], extra: Partial<Cell> = {}): Cell[] => row.map((text, i) => ({ text, ...(numeric[i] ? { align: 'right' as const } : {}), ...extra }));
+      const put = (tb: EcoTable, widths: Array<number | '*' | 'auto'>, caption: string) =>
+        nodes.push({
+          t: 'table',
+          caption: tableCaption(caption),
+          head: [cells(tb.head, tb.numeric)],
+          body: [...tb.rows.map((r) => cells(r, tb.numeric).map((c, i) => (i === 0 && blk.show === 'taxa' ? { ...c, italic: true } : c))), ...tb.foot.map((r) => cells(r, tb.numeric, { bold: true }))],
+          widths,
+          fontSize: pt,
+          notes: tb.notes,
+          keepRows: 1,
+        });
+      if (blk.show !== 'taxa') {
+        const tb = indicesTable(found, code, list);
+        const lead = tb.head.length - tb.numeric.filter(Boolean).length; // Date, Site and – when there's more than one kind – Survey
+        put(tb, tb.head.map((_, i) => (i === 0 ? width * 0.13 : i === 1 ? '*' : i < lead ? width * 0.2 : width * (tb.head.length > 8 ? 0.085 : 0.1))), capText(blk));
+        return;
+      }
+      // the taxa down and a column a survey: as many surveys to a table as the page takes
+      const first = taxaTable(found, code, list);
+      const lead = first.head.length - found.length;
+      const colMm = Math.max(15, ...first.head.slice(lead).map((h) => linesWidthMm(h, pt) + 2 * CELL_PAD_MM));
+      const groupMm = lead > 1 ? Math.min(width * 0.2, Math.max(18, ...first.rows.map((r) => textWidthMm(r[1], pt) + 2 * CELL_PAD_MM))) : 0;
+      const per = Math.max(1, Math.floor((width - groupMm - Math.max(38, width * 0.24)) / colMm));
+      const from = nodes.length;
+      for (let at = 0; at < found.length; at += per) {
+        const tb = taxaTable(found.slice(at, at + per), code, list);
+        put(tb, tb.head.map((_, i) => (i === 0 ? '*' : i < lead ? groupMm : colMm)), `${capText(blk)}${at ? ' (continued)' : ''}`);
+      }
+      // what's said under them, once: under the last
+      const made = nodes.slice(from).filter((n): n is Extract<DocNode, { t: 'table' }> => n.t === 'table');
+      if (made.length > 1) {
+        made.forEach((n) => (n.notes = undefined));
+        made[made.length - 1].notes = first.notes;
       }
     },
     pageBreak: () => {}, // see below

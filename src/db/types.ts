@@ -63,6 +63,8 @@ export interface Project {
   pack?: PackSettings;
   /** QA/QC checks (duplicates, outliers, swapped bottles) for this project: off unless turned on. */
   qa?: boolean;
+  /** Ecology surveys (an Ecology tab: what was found where, with diversity and stream health indices): off unless turned on. */
+  ecology?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -686,6 +688,70 @@ export interface ProjectFile {
   addedBy?: string;
 }
 
+// ---------------------------------------------------------------- ecology
+
+/** What an ecological survey was of. */
+export const ECO_KINDS = ['Stream invertebrates', 'Fish', 'Periphyton and plants', 'Birds', 'Vegetation', 'Lizards and frogs', 'Land invertebrates', 'Marine', 'Wetland', 'eDNA', 'Other'] as const;
+export type EcoKind = (typeof ECO_KINDS)[number];
+
+/** Coded abundances, as stream invertebrate samples are often counted: rare, common, abundant, very abundant, very very abundant. */
+export const ECO_CODES = ['R', 'C', 'A', 'VA', 'VVA'] as const;
+export type EcoCode = (typeof ECO_CODES)[number];
+
+/** A taxon found in a survey: how many (or a coded abundance; neither: present). */
+export interface EcoRecord {
+  taxon: string;
+  n?: number;
+  code?: EcoCode;
+  note?: string;
+}
+
+/** A survey at a place on a day: what was looked for and how, and what was found. */
+export interface EcoSurvey {
+  id: ID;
+  projectId: ID;
+  /** One of the project's sites – or a place named here. */
+  siteId?: ID;
+  place?: string;
+  /** 'YYYY-MM-DD' */
+  date: string;
+  kind: EcoKind;
+  /** How: "Kick net, 0.5 mm mesh", "Electric fishing, 50 m reach", "Five-minute bird count". */
+  method?: string;
+  /** How much: the area, the reach, the time, the reads. */
+  effort?: string;
+  /** Who did it, and who identified what was found. */
+  by?: string;
+  /** Stream invertebrates: a hard-bottomed or a soft-bottomed stream (which of a taxon's tolerance scores counts). */
+  bed?: 'hard' | 'soft';
+  /** Stream invertebrates: which published list the tolerance scores are from, for the record ("Stark & Maxted 2007"). */
+  scores?: string;
+  notes?: string;
+  records: EcoRecord[];
+  updatedAt: string;
+}
+
+/**
+ * A taxon the team has surveys of: what it's grouped under, and – for stream invertebrates – its tolerance scores for
+ * the Macroinvertebrate Community Index, entered by the team from the published list they work to.
+ */
+export interface Taxon {
+  /** The name, lower case, as it's matched. */
+  id: ID;
+  name: string;
+  /** What it's grouped under in tables: an order or class ("Ephemeroptera"), or anything else. */
+  group?: string;
+  common?: string;
+  /** Tolerance score (1–10), hard-bottomed and soft-bottomed streams. */
+  mci?: number;
+  mciSb?: number;
+  /** Counts as a mayfly, stonefly or caddisfly for EPT (by its group unless said here). */
+  ept?: boolean;
+  /** Native, introduced … and its conservation status, as the team records them. */
+  status?: string;
+  updatedAt?: string;
+}
+
 /** Something that happened to a project: who did what, when – the project's history. */
 export interface AuditEntry {
   id: ID;
@@ -693,7 +759,7 @@ export interface AuditEntry {
   /** ISO time. */
   at: string;
   by: string;
-  kind: 'import' | 'undo' | 'review' | 'site' | 'rule' | 'obligation' | 'result' | 'sample' | 'note' | 'project' | 'setup' | 'file';
+  kind: 'import' | 'undo' | 'review' | 'site' | 'rule' | 'obligation' | 'result' | 'sample' | 'note' | 'project' | 'setup' | 'file' | 'survey';
   text: string;
 }
 
@@ -828,7 +894,8 @@ export type ReportBlockType =
   | 'upDownTable'
   | 'npsfmTable'
   | 'complianceRegister'
-  | 'labReports';
+  | 'labReports'
+  | 'ecologyTable';
 
 export interface ReportBlockBase {
   id: string;
@@ -1191,7 +1258,20 @@ export interface LabReportsBlock extends ReportBlockBase {
   titles?: boolean;
 }
 
+/**
+ * The period's ecology surveys in a report: each with what it works out to (taxa, individuals, diversity and – for
+ * stream invertebrates – EPT and the MCI), or the taxa found, a column a survey.
+ */
+export interface EcologyTableBlock extends ReportBlockBase {
+  type: 'ecologyTable';
+  /** A line a survey with its indices, or a line a taxon with a column for each survey. */
+  show: 'indices' | 'taxa';
+  /** Only these kinds of survey (every kind when none are named). */
+  kinds: EcoKind[];
+}
+
 export type ReportBlock =
+  | EcologyTableBlock
   | LabReportsBlock
   | ComplianceRegisterBlock
   | NpsfmTableBlock

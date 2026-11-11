@@ -156,6 +156,10 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     db.audit.where('projectId').equals(projectId).toArray(),
     db.files.where('projectId').equals(projectId).toArray(),
   ]);
+  // its ecology surveys, with the team's entries for the taxa they name (groups, tolerance scores)
+  const surveys = await db.surveys.where('projectId').equals(projectId).toArray();
+  const named = new Set(surveys.flatMap((s) => s.records.map((r) => r.taxon.trim().toLowerCase().replace(/\s+/g, ' '))));
+  const taxa = named.size ? (await db.taxa.toArray()).filter((t) => named.has(t.id)) : [];
   const calendarMarks = calendarRows.length ? await db.calendarMarks.where('item').anyOf(calendarRows.map((r) => r.id)).toArray() : [];
   const usedParams = new Set(results.map((r) => r.parameterId));
   rules.forEach((r) => r.parameterId && usedParams.add(r.parameterId));
@@ -170,7 +174,7 @@ export async function exportProjectPackage(projectId: string): Promise<Workspace
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     appVersion: APP_VERSION,
-    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks, qa, conditions, assessments, issues, archive, series, seriesDays, audit, files },
+    data: { projects: [project], sites, samples, results, rules, notes, schedules, obligations, imports, parameters, guidelineSets, templates, calendarRows, calendarMarks, qa, conditions, assessments, issues, archive, series, seriesDays, audit, files, surveys, taxa },
   };
 }
 
@@ -235,6 +239,9 @@ export async function importProjectPackage(obj: unknown): Promise<string> {
               : l;
       return { ...r, id: remap(r.id)!, projectId: newProjectId, linked, fromImport: remap(r.fromImport as string) };
     });
+    // its ecology surveys (at the copy's sites); the taxa they name join the team's list where it hasn't got them
+    await put('surveys', (r) => ({ ...r, id: remap(r.id)!, projectId: newProjectId, siteId: remap(r.siteId as string) }));
+    for (const t of rows('taxa')) if (!(await db.taxa.get(t.id))) await db.taxa.put(t as never);
     await put('notes', (r) => {
       const ruleId = remap(r.ruleId as string)!;
       return { ...r, id: `${ruleId}|${r.key}`, projectId: newProjectId, ruleId };

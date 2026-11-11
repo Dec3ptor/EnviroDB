@@ -47,10 +47,10 @@ export function presetOf(s: Pick<Settings, 'features'>): 'essentials' | 'everyth
 // ------------------------------------------------------------ a project's views
 
 /** A project's views: the tabs, and the views within them. */
-export type ProjectView = 'overview' | 'schedule' | 'data' | 'qa' | 'charts' | 'trends' | 'map' | 'compliance' | 'npsfm' | 'reports' | 'pack' | 'files' | 'setup';
+export type ProjectView = 'overview' | 'schedule' | 'data' | 'qa' | 'charts' | 'trends' | 'map' | 'compliance' | 'npsfm' | 'reports' | 'pack' | 'files' | 'ecology' | 'setup';
 
 export interface ProjectFacts {
-  project: Pick<Project, 'qa'>;
+  project: Pick<Project, 'qa' | 'ecology'>;
   sites: Array<Pick<Site, 'type' | 'npsfm'>>;
   /** The days sampled ('YYYY-MM-DD…'), any order. */
   sampleDates: string[];
@@ -72,6 +72,8 @@ export function viewOff(view: ProjectView, f: ProjectFacts, s: Pick<Settings, 'f
   switch (view) {
     case 'qa':
       return f.project.qa ? null : 'QA/QC checks are off for this project.';
+    case 'ecology':
+      return f.project.ecology ? null : 'Ecology surveys are off for this project.';
     case 'npsfm':
       if (!featureOn(s, 'npsfm')) return 'NPS-FM attribute bands are switched off for the team.';
       return f.sites.some((x) => siteClass(x).water !== 'none') ? null : 'The project has no surface water sites to grade.';
@@ -95,11 +97,15 @@ export const PROJECT_TABS: Array<{ value: ProjectView; label: string; views: Arr
   { value: 'compliance', label: 'Compliance', views: [{ value: 'compliance', label: 'Consent' }, { value: 'npsfm', label: 'NPS-FM' }] },
   { value: 'reports', label: 'Reports', views: [{ value: 'reports', label: 'Reports' }, { value: 'pack', label: 'Client data pack' }] },
   { value: 'files', label: 'Files', views: [{ value: 'files', label: 'Files' }] },
+  { value: 'ecology', label: 'Ecology', views: [{ value: 'ecology', label: 'Ecology' }] },
   { value: 'setup', label: 'Setup', views: [{ value: 'setup', label: 'Setup' }] },
 ];
 
 /** The tab a view is in. */
 export const tabOf = (view: string): ProjectView => PROJECT_TABS.find((t) => t.views.some((v) => v.value === view))?.value ?? 'overview';
+
+/** The tabs a project shows: every tab with a view to show (Ecology only where the project has it on). */
+export const visibleTabs = (f: ProjectFacts, s: Pick<Settings, 'features'>) => PROJECT_TABS.filter((t) => t.views.some((v) => !viewOff(v.value, f, s)));
 
 /** A tab's views that show for this project. */
 export const visibleViews = (tab: ProjectView, f: ProjectFacts, s: Pick<Settings, 'features'>) => (PROJECT_TABS.find((t) => t.value === tab)?.views ?? []).filter((v) => !viewOff(v.value, f, s));
