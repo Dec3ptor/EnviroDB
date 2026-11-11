@@ -10,7 +10,7 @@ import { projectNpsfm } from './npsfm';
 import { NPSFM_SOURCE } from '../data/npsfm';
 import { exceededWhen, ruleParamIds, siteLabel, type Exceedance, type RuleStatus } from './compliance';
 import { formatDate, MONTH_LONG, todayStr } from './dates';
-import { guidelineFor } from './guidelines';
+import { adjustsPh, guidelineFor } from './guidelines';
 import { frequencyLabel, nextObligation, OBLIGATION_STATUS } from './schedule';
 import { convert, unitLabel } from './units';
 import { fmtNum } from './values';
@@ -305,6 +305,7 @@ export function buildAiInput(b: ProjectBundle, o: AiInputOptions): AiInput {
     const inData = new Set(columns.map((c) => c.id));
     const blocks: string[] = [];
     let hardnessUsed = false;
+    let phUsed = false;
     for (const id of setIds) {
       const set = b.setMap.get(id);
       if (!set) continue;
@@ -318,7 +319,8 @@ export function buildAiInput(b: ProjectBundle, o: AiInputOptions): AiInput {
         hardnessUsed ||= hard;
         const value =
           lim.min !== undefined && lim.max !== undefined ? `${fmtNum(lim.min)}–${fmtNum(lim.max)}` : lim.max !== undefined ? `${fmtNum(lim.max)}${gv.op === '>=' ? ' (must be below)' : ''}` : `at least ${fmtNum(lim.min)}`;
-        rowsOut.push([param.name, `${value}${hard ? '*' : ''}`, unitLabel(param.unit), hard ? String(param.hardnessExponent) : '', gv.note ?? '']);
+        phUsed ||= !!gv.ph;
+        rowsOut.push([param.name, `${value}${hard ? '*' : ''}${gv.ph ? '†' : ''}`, unitLabel(param.unit), hard ? String(param.hardnessExponent) : '', gv.note ?? '']);
       }
       if (!rowsOut.length) continue;
       blocks.push('', `### ${set.builtIn ? set.name : redact(set.name)}`);
@@ -337,6 +339,12 @@ export function buildAiInput(b: ProjectBundle, o: AiInputOptions): AiInput {
             : "* Hardness-dependent: the value applies at a hardness of 30 mg/L as CaCO3. This project doesn't adjust it for hardness.",
         );
       }
+      if (phUsed)
+        L.push(
+          adjustsPh(project)
+            ? '† Total ammonia: the value applies at pH 8. EnviroDB compares each result with the value at its sample’s own pH where one was measured (ANZECC 2000 table 8.3.7: about 2.4 times higher at pH 7, 5 times lower at pH 9).'
+            : '† Total ammonia: the value applies at pH 8. This project doesn’t adjust it for pH.',
+        );
       L.push(...blocks);
     }
   }

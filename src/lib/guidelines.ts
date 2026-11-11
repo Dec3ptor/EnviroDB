@@ -64,6 +64,28 @@ export interface Limit {
   unit: string;
   adjusted: boolean; // hardness-modified
   hardness?: number;
+  /** The sample's pH, when a total ammonia value given at pH 8 was taken at it. */
+  ph?: number;
+}
+
+/** The pH dependence of ammonia's chronic toxicity (USEPA) – the shape of ANZECC (2000) table 8.3.7 and of the NPS-FM's conversion. */
+const phTerm = (ph: number) => 0.0278 / (1 + 10 ** (7.688 - ph)) + 1.1994 / (1 + 10 ** (ph - 7.688));
+
+/**
+ * How a total ammonia value given at pH 8 scales to another pH: 1 at pH 8, about 2.4 at pH 7, 0.2 at pH 9. The
+ * relationship is tabulated for pH 6 to 9; beyond those, the nearest end is used.
+ */
+export const ammoniaPhFactor = (ph: number): number => phTerm(Math.min(9, Math.max(6, ph))) / phTerm(8);
+
+/** Whether a project compares ammonia at each sample's pH (on unless it's been switched off). */
+export const adjustsPh = (project: { phAdjust?: boolean }): boolean => project.phAdjust !== false;
+
+/** What a limit was adjusted for, to say after it: "hardness-modified at 85 mg/L", "at the sample’s pH 7.2". */
+export function adjustmentText(l: Pick<Limit, 'adjusted' | 'hardness' | 'ph'>, style: 'long' | 'short' = 'long'): string {
+  const out: string[] = [];
+  if (l.adjusted) out.push(style === 'long' ? `hardness-modified at ${fmtNum(l.hardness)} mg/L` : `HMTV at ${fmtNum(l.hardness)} mg/L hardness`);
+  if (l.ph !== undefined) out.push(`at the sample’s pH ${fmtNum(l.ph, 1)}`);
+  return out.join(', ');
 }
 
 /** ANZECC (2000) hardness modification, applied only where hardness exceeds 30 mg/L (capped at 400). */
@@ -73,14 +95,20 @@ export function hardnessModify(tv: number, exponent: number, hardness: number): 
   return tv * Math.pow(h / 30, exponent);
 }
 
-export function limitFor(gv: GuidelineValue, param: Parameter | undefined, opts: { hardness?: number; adjust: boolean }): Limit {
+export function limitFor(gv: GuidelineValue, param: Parameter | undefined, opts: { hardness?: number; adjust: boolean; ph?: number; adjustPh?: boolean }): Limit {
   let max = gv.max;
   let adjusted = false;
   if (opts.adjust && gv.hardness && max !== undefined && param?.hardnessExponent && opts.hardness !== undefined && opts.hardness > 30) {
     max = hardnessModify(max, param.hardnessExponent, opts.hardness);
     adjusted = true;
   }
-  return { min: gv.min, max, op: gv.op ?? '>', unit: gv.unit, adjusted, hardness: adjusted ? opts.hardness : undefined };
+  // a total ammonia value given at pH 8, at the sample's pH
+  let ph: number | undefined;
+  if (opts.adjustPh !== false && gv.ph && max !== undefined && opts.ph !== undefined && Number.isFinite(opts.ph)) {
+    max *= ammoniaPhFactor(opts.ph);
+    ph = opts.ph;
+  }
+  return { min: gv.min, max, op: gv.op ?? '>', unit: gv.unit, adjusted, hardness: adjusted ? opts.hardness : undefined, ...(ph !== undefined ? { ph } : {}) };
 }
 
 export interface GuidelineHit {
@@ -92,11 +120,14 @@ export interface GuidelineHit {
   limitInResultUnit?: { min?: number; max?: number };
 }
 
-/** Compare one result with one guideline value. Returns null when units are incompatible. */
-export function compareResult(r: Result, gv: GuidelineValue, set: GuidelineSet, param: Parameter | undefined, index: DataIndex | null, adjust: boolean): GuidelineHit | null {
+/**
+ * Compare one result with one guideline value. Returns null when units are incompatible. `adjust`: hardness-modify
+ * hardness-dependent metals; `adjustPh`: take a total ammonia value given at pH 8 at the sample's pH.
+ */
+export function compareResult(r: Result, gv: GuidelineValue, set: GuidelineSet, param: Parameter | undefined, index: DataIndex | null, adjust: boolean, adjustPh = true): GuidelineHit | null {
   if (r.value === null) return null;
   const hardness = index?.hardness.get(r.sampleId);
-  const limit = limitFor(gv, param, { hardness, adjust });
+  const limit = limitFor(gv, param, { hardness, adjust, ph: index?.ph.get(r.sampleId), adjustPh });
   const v = convert(r.value, r.unit, gv.unit);
   if (v === null) return null;
   const iv = toInterval(v, r.qualifier);
@@ -115,12 +146,12 @@ export function compareResult(r: Result, gv: GuidelineValue, set: GuidelineSet, 
 }
 
 /** All guideline comparisons for a result across several sets. */
-export function compareAll(r: Result, sets: GuidelineSet[], param: Parameter | undefined, index: DataIndex | null, adjust: boolean): GuidelineHit[] {
+export function compareAll(r: Result, sets: GuidelineSet[], param: Parameter | undefined, index: DataIndex | null, adjust: boolean, adjustPh = true): GuidelineHit[] {
   const out: GuidelineHit[] = [];
   for (const set of sets) {
     for (const gv of set.values) {
       if (gv.parameterId !== r.parameterId) continue;
-      const hit = compareResult(r, gv, set, param, index, adjust);
+      const hit = compareResult(r, gv, set, param, index, adjust, adjustPh);
       if (hit) out.push(hit);
     }
   }
@@ -135,14 +166,14 @@ export function describeLimit(l: { min?: number; max?: number }, unit: string): 
   return '';
 }
 
-/** Guideline value for a parameter from a set, converted to `unit` (no hardness adjustment). */
-export function guidelineFor(set: GuidelineSet, parameterId: string, unit: string): { min?: number; max?: number; hardness?: boolean } | null {
+/** Guideline value for a parameter from a set, converted to `unit` (as published: no hardness or pH adjustment). */
+export function guidelineFor(set: GuidelineSet, parameterId: string, unit: string): { min?: number; max?: number; hardness?: boolean; ph?: boolean } | null {
   const gv = set.values.find((v) => v.parameterId === parameterId);
   if (!gv) return null;
   const min = gv.min !== undefined ? convert(gv.min, gv.unit, unit) ?? undefined : undefined;
   const max = gv.max !== undefined ? convert(gv.max, gv.unit, unit) ?? undefined : undefined;
   if (min === undefined && max === undefined) return null;
-  return { min, max, hardness: gv.hardness };
+  return { min, max, hardness: gv.hardness, ph: gv.ph };
 }
 
 // ------------------------------------------------------------ display in a chosen unit

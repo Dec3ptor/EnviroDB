@@ -19,7 +19,7 @@ import { fmtNum } from '../lib/values';
 import { NewProjectButton } from './Projects';
 import { db } from '../db/db';
 import { useCalendarSheet } from '../hooks/useCalendarSheet';
-import { actionsToTake, inboxActions, qaActions, reviewActions } from '../lib/actions';
+import { actionsToTake, gapActions, inboxActions, qaActions, reviewActions } from '../lib/actions';
 import { projectQa } from '../hooks/useQa';
 import { useInbox } from '../sync/inbox';
 import { useSettings } from '../hooks/useSettings';
@@ -174,7 +174,7 @@ export function DashboardPage() {
     const projects = new Map(bundles.map((b) => [b.project.id, b.project]));
     // QA/QC findings in the last three months' results, for projects with the checks on
     const qa = qaActions(bundles.filter((b) => b.project.status === 'active' && b.project.qa).map((b) => ({ project: b.project, findings: projectQa(b, '12m', settings, today).findings.filter((f) => f.date >= addDays(today, -92)) })));
-    const all = [...inboxActions(inbox.files, projects), ...reviewActions(imports, projects, today), ...qa, ...actionsToTake(bundles, calendarOn ? sheet : null, today, { labDays: settings.labTurnaroundDays, sendDays: settings.sendResultsDays })];
+    const all = [...inboxActions(inbox.files, projects), ...reviewActions(imports, projects, today), ...qa, ...gapActions(bundles, imports, today), ...actionsToTake(bundles, calendarOn ? sheet : null, today, { labDays: settings.labTurnaroundDays, sendDays: settings.sendResultsDays })];
     return all.sort((a, b) => a.urgency - b.urgency || a.date.localeCompare(b.date));
   }, [bundles, sheet, today, settings, inbox.files, calendarOn, imports]);
   const saved = useLiveQuery(() => db.meta.get(DASHBOARD_KEY), [], null);

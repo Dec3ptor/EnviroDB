@@ -19,9 +19,9 @@ import { useWorkspace, currentWorkspaceFolder } from '../../sync/workspace';
 import { downloadBlob } from '../../db/backup';
 import { same } from '../../sync/model';
 import { copyText } from '../../lib/clipboard';
-import { formatDate } from '../../lib/dates';
+import { addMonths, formatDate, todayStr } from '../../lib/dates';
 import {
-  addProjectFiles, addProjectLink, FILE_KINDS, fileSize, kindLabel, linkedSampleIds, linkProjectFile, linkTarget, nameOfTarget, projectFilesDir, projectJobs, removeProjectFile, sampleSummary, saveProjectFile, samplesByImport, sharedCopy, suggestedJob, webAddress, type LabJob,
+  addProjectFiles, addProjectLink, FILE_KINDS, fileSize, jobsWithoutSheet, kindLabel, linkedSampleIds, linkProjectFile, linkTarget, nameOfTarget, projectFilesDir, projectJobs, removeProjectFile, sampleSummary, saveProjectFile, samplesByImport, sharedCopy, suggestedJob, webAddress, type LabJob,
 } from '../../lib/projectFiles';
 import { FileIcon, FileViewer } from '../../components/FileViewer';
 import { DateField, defaultPeriod } from '../../components/common';
@@ -78,6 +78,8 @@ export function FilesTab() {
   }, [rows]);
   // a kind remembered that has no files now: all of them
   const showing = kind !== 'all' && counts.get(kind) ? kind : 'all';
+  // lab jobs of the last year with no result sheet on file – said once the project keeps any (till then it isn't used that way)
+  const unfiled = useMemo(() => (files.some((f) => f.kind === 'results') ? jobsWithoutSheet(jobs, files, allSamples, byImport, addMonths(todayStr(), -12)) : []), [files, jobs, allSamples, byImport]);
   const q = search.trim().toLowerCase();
   const shown = rows.filter(({ f }) => (showing === 'all' || f.kind === showing) && (!q || [f.name, f.lab, f.ref, f.notes, kindLabel(f.kind), f.linked?.kind === 'job' ? f.linked.job : ''].filter(Boolean).join(' ').toLowerCase().includes(q)));
 
@@ -203,6 +205,16 @@ export function FilesTab() {
         </Group>
       )}
 
+      {unfiled.length > 0 && (
+        <Text size="xs" c="dimmed">
+          No result sheet on file for {unfiled.length} lab job{unfiled.length === 1 ? '' : 's'} of the last 12 months:{' '}
+          {unfiled
+            .slice(0, 6)
+            .map((j) => `${j.job} (${formatDate(j.dates[j.dates.length - 1])})`)
+            .join(', ')}
+          {unfiled.length > 6 ? ` and ${unfiled.length - 6} more` : ''}. Upload a lab’s report and link it to its job – or importing it keeps it.
+        </Text>
+      )}
       {rows.length === 0 ? (
         <Text size="sm" c="dimmed" ta="center" py="lg">
           No files yet. A lab’s result sheet linked to its samples shows in their details on the Data tab; a file kept by an import is linked to its results already.

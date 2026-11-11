@@ -13,12 +13,12 @@ import type { GuidelineSet, GuidelineValue } from '../db/types';
 //    published (2024–2026). See waterquality.gov.au for the current DGVs.
 //  - Water Services (Drinking Water Standards for New Zealand) Regulations 2022, Schedule (MAVs).
 
-const UPDATED = '2026-10-01';
+const UPDATED = '2026-11-11';
 const LEVELS = ['99', '95', '90', '80'] as const;
 type Level = (typeof LEVELS)[number];
 
-// [parameterId, [99, 95, 90, 80] in µg/L, hardness-dependent?, note]
-type Row = [string, [number | null, number | null, number | null, number | null], boolean, string?];
+// [parameterId, [99, 95, 90, 80] in µg/L, hardness-dependent? (or 'ph': a total ammonia value given at pH 8), note]
+type Row = [string, [number | null, number | null, number | null, number | null], boolean | 'ph', string?];
 
 const FRESH_2000: Row[] = [
   ['al-d', [27, 55, 80, 150], false, 'pH > 6.5'],
@@ -35,7 +35,7 @@ const FRESH_2000: Row[] = [
   ['se-d', [5, 11, 18, 34], false, 'Total selenium'],
   ['ag-d', [0.02, 0.05, 0.1, 0.2], false],
   ['zn-d', [2.4, 8.0, 15, 31], true, 'Hardness-dependent (at 30 mg/L CaCO3). ANZG (2024) published revised bioavailability-based zinc DGVs'],
-  ['nh4-n', [320, 900, 1430, 2300], false, 'Total ammonia-N at pH 8 – adjust for pH'],
+  ['nh4-n', [320, 900, 1430, 2300], 'ph', 'Total ammonia-N at pH 8; compared at each sample’s pH (ANZECC 2000 table 8.3.7) where it has one'],
   ['cn-t', [4, 7, 11, 18], false, 'As un-ionised HCN'],
   ['sulphide', [0.5, 1.0, 1.5, 2.6], false, 'As un-ionised H2S'],
   ['chlorine', [0.4, 3, 6, 13], false, 'As total residual chlorine'],
@@ -72,7 +72,7 @@ function buildSet(id: string, name: string, shortName: string, family: string, m
   for (const [parameterId, vals, hardness, note] of rows) {
     const v = vals[idx];
     if (v === null) continue;
-    values.push({ parameterId, max: v, unit: 'µg/L', hardness: hardness || undefined, note });
+    values.push({ parameterId, max: v, unit: 'µg/L', hardness: hardness === true || undefined, ...(hardness === 'ph' ? { ph: true } : {}), note });
   }
   return { id, name, shortName, family, matrix, source, notes, builtIn: true, values, updatedAt: UPDATED };
 }
@@ -85,7 +85,8 @@ function merge(base: Row[], overrides: Row[]): Row[] {
 
 const ANZECC_SRC = 'ANZECC & ARMCANZ (2000) Australian and New Zealand Guidelines for Fresh and Marine Water Quality, Table 3.4.1';
 const ANZG_SRC = 'ANZG (2018) Australian and New Zealand Guidelines for Fresh and Marine Water Quality – default guideline values (DGVs), incl. ANZG (2021) boron in freshwater';
-const VERIFY = 'Check values against the current published guideline before relying on them for compliance. Hardness-dependent metals can be hardness-modified per sample (project setting).';
+const VERIFY =
+  'Check values against the current published guideline before relying on them for compliance. Hardness-dependent metals can be hardness-modified per sample, and total ammonia (given at pH 8) is compared at each sample’s pH (project settings).';
 
 const sets: GuidelineSet[] = [];
 for (const level of LEVELS) {

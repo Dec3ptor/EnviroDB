@@ -195,6 +195,16 @@ export function filesBySample(files: ProjectFile[], samples: Array<Pick<Sample, 
   return out;
 }
 
+/**
+ * The lab jobs with no result sheet on file: none of the job's samples has a file of lab results linked to it. Only
+ * jobs sampled on or after `since` ('YYYY-MM-DD'), the latest first.
+ */
+export function jobsWithoutSheet(jobs: LabJob[], files: ProjectFile[], samples: Array<Pick<Sample, 'id' | 'labJob'>>, byImport: Map<string, Set<string>>, since = ''): LabJob[] {
+  const withSheet = new Set<string>();
+  for (const f of files) if (f.kind === 'results') for (const id of linkedSampleIds(f, samples, byImport)) withSheet.add(id);
+  return jobs.filter((j) => j.dates[j.dates.length - 1] >= since && !j.sampleIds.some((id) => withSheet.has(id)));
+}
+
 /** Samples in words: "3 samples, 12 Oct 2026 – US1, DP1, DS1", or with the first and last days. */
 export function sampleSummary(ids: string[], sampleOf: (id: string) => Pick<Sample, 'date' | 'siteId'> | undefined, siteCode: (siteId: string) => string | undefined): string {
   const list = ids.map(sampleOf).filter((s): s is Pick<Sample, 'date' | 'siteId'> => !!s);

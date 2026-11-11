@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { RegisterView } from './Register';
-import { Accordion, ActionIcon, Badge, Button, Card, Group, Menu, SegmentedControl, Select, Stack, Table, Text, Textarea, Popover } from '@mantine/core';
+import { Accordion, ActionIcon, Badge, Button, Card, Group, Menu, SegmentedControl, Select, Stack, Table, Text, Textarea, Popover, Tooltip } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { Link } from 'react-router-dom';
-import { IconAlertTriangle, IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay, IconFileTypeDocx, IconSparkles, IconListDetails, IconTable, IconChecklist } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCopy, IconDots, IconEdit, IconPlus, IconTrash, IconNotes, IconPlayerPause, IconPlayerPlay, IconFileTypeDocx, IconSparkles, IconListDetails, IconTable, IconChecklist, IconMail } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { adhocTemplate, exportReport } from '../../reports/export';
 import { useSettings } from '../../hooks/useSettings';
@@ -17,6 +17,8 @@ import { fmtNum } from '../../lib/values';
 import { deleteRule, newRule, saveNote, saveRule } from '../../db/repo';
 import { db } from '../../db/db';
 import type { ExceedanceNote, ReportBlock, Rule } from '../../db/types';
+import { ExceedanceNoticeModal, type NoticeRow } from '../../components/ExceedanceNotice';
+import { sameDayOpen } from '../../lib/notice';
 import type { Exceedance, RuleEvaluation } from '../../lib/compliance';
 import { RuleEditor } from './RuleEditor';
 import { LimitsView } from './LimitsView';
@@ -171,11 +173,15 @@ function ExceedanceTable({ ev }: { ev: RuleEvaluation }) {
 function FollowUpView({ evals }: { evals: RuleEvaluation[] }) {
   const { siteMap, paramMap, notes } = useProject();
   const [show, setShow] = useState<'open' | 'all'>('open');
+  // the exceedances a notice is being written for (a sampling day's still open)
+  const [notifying, setNotifying] = useState<NoticeRow[] | null>(null);
   const noteMap = new Map(notes.map((n) => [n.id, n]));
-  const rows = evals
-    .flatMap((ev) => ev.exceedances.map((ex) => ({ ev, ex, note: noteMap.get(`${ev.rule.id}|${ex.key}`) })))
-    .filter((r) => show === 'all' || !r.note || r.note.status === 'open')
-    .sort((a, b) => b.ex.date.localeCompare(a.ex.date));
+  const everything = evals.flatMap((ev) => ev.exceedances.map((ex) => ({ ev, ex, note: noteMap.get(`${ev.rule.id}|${ex.key}`) })));
+  const rows = everything.filter((r) => show === 'all' || !r.note || r.note.status === 'open').sort((a, b) => b.ex.date.localeCompare(a.ex.date));
+  const notify = (of: (typeof everything)[number]) => {
+    const all: NoticeRow[] = everything.map((r) => ({ rule: r.ev.rule, ex: r.ex, note: r.note }));
+    setNotifying(sameDayOpen(all, all[everything.indexOf(of)]));
+  };
   const counts = { open: 0, notified: 0, closed: 0 };
   for (const ev of evals) for (const ex of ev.exceedances) counts[noteMap.get(`${ev.rule.id}|${ex.key}`)?.status ?? 'open']++;
   return (
@@ -199,7 +205,7 @@ function FollowUpView({ evals }: { evals: RuleEvaluation[] }) {
           {show === 'open' ? 'Every exceedance in the period has been notified or closed.' : 'Limits, triggers and guideline rules were all met.'}
         </EmptyState>
       ) : (
-        <Table.ScrollContainer minWidth={760}>
+        <Table.ScrollContainer minWidth={900}>
           <Table striped>
             <Table.Thead>
               <Table.Tr>
@@ -228,9 +234,18 @@ function FollowUpView({ evals }: { evals: RuleEvaluation[] }) {
                   </Table.Td>
                   <Table.Td>{ex.limitText}</Table.Td>
                   <Table.Td className="tabular">{note?.notifiedOn ? formatDate(note.notifiedOn) : ''}</Table.Td>
-                  <Table.Td>
+                  <Table.Td style={{ whiteSpace: 'nowrap' }}>
                     <Group gap="xs" wrap="nowrap">
-                      <NoteEditor key={ex.key} ruleId={ev.rule.id} ex={ex} note={note} />
+                      <div style={{ flexShrink: 0 }}>
+                        <NoteEditor key={ex.key} ruleId={ev.rule.id} ex={ex} note={note} />
+                      </div>
+                      {(!note || note.status === 'open') && (
+                        <Tooltip label="Write the notice to the council – for an email, or as a letter">
+                          <Button size="compact-xs" variant="light" style={{ flexShrink: 0 }} leftSection={<IconMail size={12} />} onClick={() => notify(everything.find((r) => r.ev === ev && r.ex === ex)!)}>
+                            Notify…
+                          </Button>
+                        </Tooltip>
+                      )}
                       {note?.text && (
                         <Text size="xs" c="dimmed" lineClamp={1} style={{ maxWidth: 240 }}>
                           {note.text}
@@ -245,8 +260,9 @@ function FollowUpView({ evals }: { evals: RuleEvaluation[] }) {
         </Table.ScrollContainer>
       )}
       <Text size="xs" c="dimmed">
-        Open exceedances from the last 90 days also show under Actions to take on the dashboard. Each rule’s own list is under Rules.
+        Open exceedances from the last 90 days also show under Actions to take on the dashboard. Each rule’s own list is under Rules. Notify… writes the notice for a sampling day’s exceedances, ready for an email.
       </Text>
+      {notifying && <ExceedanceNoticeModal rows={notifying} onClose={() => setNotifying(null)} />}
     </Stack>
   );
 }

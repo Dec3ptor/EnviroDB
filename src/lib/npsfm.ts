@@ -6,6 +6,7 @@ import { CLARITY_BY_CLASS, LAKE_TN, NPSFM_ATTRIBUTES, type Band, type NpsfmAttri
 import type { Site } from '../db/types';
 import type { ProjectBundle } from './analysis';
 import { resultsFor } from './dataIndex';
+import { ammoniaPhFactor } from './guidelines';
 import { percentile } from './stats';
 import { convert } from './units';
 
@@ -58,10 +59,11 @@ export function statBand(stat: NpsfmStat, value: number): Band {
   return stat.else;
 }
 
-/** The pH dependence of ammonia's chronic toxicity (USEPA 2013). */
-const phTerm = (ph: number) => 0.0278 / (1 + 10 ** (7.688 - ph)) + 1.1994 / (1 + 10 ** (ph - 7.688));
-/** Ammoniacal-N at a sample's pH, as the equally toxic concentration at pH 8 (the NPS-FM's bands are for pH 8). */
-export const ammoniaAtPh8 = (value: number, ph: number) => value * (phTerm(8) / phTerm(Math.min(9, Math.max(6, ph))));
+/**
+ * Ammoniacal-N at a sample's pH, as the equally toxic concentration at pH 8 (the NPS-FM's bands are for pH 8) – by
+ * the pH dependence of ammonia's chronic toxicity (USEPA 2013), the same that scales a pH 8 guideline value.
+ */
+export const ammoniaAtPh8 = (value: number, ph: number) => value / ammoniaPhFactor(ph);
 
 /** How a site is graded: as set, or a river for a surface water site. */
 export function siteClass(site: Pick<Site, 'type' | 'npsfm'>): SiteClass {
@@ -168,9 +170,7 @@ export function projectNpsfm(b: ProjectBundle, start?: string, end?: string): Si
       return resultsFor(b.index, pid, [site.id], start, end).flatMap((r) => {
         const v = unit ? convert(r.value, r.unit, unit) : r.value;
         if (v === null) return [];
-        const same = b.index.bySample.get(r.sampleId) ?? [];
-        const phR = same.find((x) => x.parameterId === 'ph' && x.value !== null) ?? same.find((x) => x.parameterId === 'ph-field' && x.value !== null);
-        return [{ date: r.date, value: v, nd: r.qualifier === '<', ph: phR?.value ?? undefined }];
+        return [{ date: r.date, value: v, nd: r.qualifier === '<', ph: b.index.ph.get(r.sampleId) }];
       });
     };
     return { site, cls, grades: attributesFor(cls).map((a) => gradeAttribute(a, pointsFor, cls)) };

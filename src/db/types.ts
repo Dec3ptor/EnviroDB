@@ -25,6 +25,8 @@ export interface Project {
   guidelineSetIds: ID[];
   /** Apply ANZECC hardness modification to hardness-dependent metals when hardness is measured. */
   hardnessAdjust: boolean;
+  /** Compare total ammonia with its guideline value at each sample's pH (values given at pH 8): on unless set false. */
+  phAdjust?: boolean;
   /** How non-detects are treated when calculating statistics. */
   ndHandling: NdHandling;
   /**
@@ -255,6 +257,11 @@ export interface GuidelineValue {
   unit: string;
   /** Hardness-dependent value (reported at 30 mg/L CaCO3); adjusted using the parameter's exponent. */
   hardness?: boolean;
+  /**
+   * A total ammonia value given at pH 8: compared at each sample's own pH (higher in more acid water, lower in more
+   * alkaline – ANZECC 2000 table 8.3.7), where the sample has a pH.
+   */
+  ph?: boolean;
   /** Exceedance test for the upper limit: '>' (default) or '>=' (e.g. E. coli "less than 1"). */
   op?: '>' | '>=';
   note?: string;
@@ -355,6 +362,8 @@ export interface MonitoringSchedule {
   symbol?: string;
   /** Months the sampling can be done in, from the start of each round (default 1). */
   window?: number;
+  /** Rounds (by the day they start) accepted as they are, though something scheduled wasn't reported – not asked about again. */
+  accepted?: string[];
 }
 
 /** Where a job stands in a month of the monitoring calendar: done (results sent or reported), doing, cancelled. */

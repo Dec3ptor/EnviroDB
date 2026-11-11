@@ -7,13 +7,13 @@ import { evaluateAll } from './analysis';
 import { cellValue, type CalendarSheet } from './calendar';
 import { openRounds, roundText, type RoundOptions } from './rounds';
 import { addDays, addMonths, daysBetween, formatDate, todayStr } from './dates';
-import { nextObligation, scheduleStatus } from './schedule';
+import { fromLab, gapLines, nextObligation, recentGaps, scheduleStatus } from './schedule';
 import { dueItemPath } from '../components/DueItem';
 import type { ImportBatch, Project } from '../db/types';
 
 export interface Action {
   id: string;
-  kind: 'report' | 'results' | 'lab' | 'inbox' | 'qa' | 'sampling' | 'exceedance' | 'review';
+  kind: 'report' | 'results' | 'lab' | 'inbox' | 'qa' | 'sampling' | 'exceedance' | 'review' | 'gaps';
   /** 0 overdue or needing a response, 1 due soon, 2 to keep in mind. */
   urgency: 0 | 1 | 2;
   title: string;
@@ -52,6 +52,37 @@ export function reviewActions(imports: ImportBatch[], projects: Map<string, Proj
       date: oldest,
     };
   });
+}
+
+/**
+ * Rounds whose lab results came without something the sampling schedule names – an analyte left off, say – in each
+ * active schedule's current round and the one before. A round accepted as it is, or still waiting for the lab, isn't
+ * listed.
+ */
+export function gapActions(bundles: ProjectBundle[], imports: Array<Pick<ImportBatch, 'id' | 'kind'>>, today = todayStr()): Action[] {
+  const isLab = fromLab(imports);
+  const out: Action[] = [];
+  for (const b of bundles) {
+    if (b.project.status !== 'active') continue;
+    for (const g of recentGaps(b.schedules, b.samples, (id) => b.index.allBySample.get(id) ?? [], isLab, today)) {
+      if (g.accepted) continue;
+      const left = { ...g, notSampled: [], incomplete: g.incomplete.filter((s) => s.labIn) };
+      if (!left.incomplete.length) continue;
+      const n = left.incomplete.reduce((a, s) => a + s.missing.length, 0);
+      out.push({
+        id: `gaps:${g.schedule.id}:${g.start}`,
+        kind: 'gaps',
+        urgency: 1,
+        title: `${n} result${n === 1 ? '' : 's'} missing from the lab: ${g.schedule.name}`,
+        detail: gapLines(left, (id) => b.siteMap.get(id)?.code ?? '?', (id) => b.paramMap.get(id)?.short ?? b.paramMap.get(id)?.name ?? id).join(' · '),
+        projectId: b.project.id,
+        projectName: b.project.name,
+        link: `/projects/${b.project.id}/schedule`,
+        date: left.incomplete.flatMap((s) => s.dates).sort().pop() ?? g.start,
+      });
+    }
+  }
+  return out;
 }
 
 export function actionsToTake(bundles: ProjectBundle[], sheet: CalendarSheet | null = null, today = todayStr(), rounds: Omit<RoundOptions, 'today'> = {}): Action[] {

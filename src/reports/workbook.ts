@@ -12,6 +12,7 @@ import { unitLabel } from '../lib/units';
 import { MADE_BY } from '../lib/version';
 import { downloadBlob, safeFileName } from '../db/backup';
 import { boreSummary } from '../lib/bore';
+import { provenanceNote } from './excel';
 
 export interface WorkbookSheet {
   site: Site;
@@ -84,7 +85,10 @@ export async function exportProjectWorkbook(b: ProjectBundle, siteIds?: string[]
           if (places) cell.numFmt = `0.${'0'.repeat(places)}`;
         }
         cell.alignment = { horizontal: 'right' };
-        if (r.comment) cell.note = r.comment;
+        // a calculated value in italics; its note says what from (and a value changed by hand, what it was)
+        if (r.calc) cell.font = { italic: true };
+        const note = [r.comment, provenanceNote(r, p)].filter(Boolean).join('\n');
+        if (note) cell.note = note;
       });
     }
     ws.views = [{ state: 'frozen', xSplit: 1, ySplit: 3 }];
@@ -114,6 +118,7 @@ export async function exportProjectWorkbook(b: ProjectBundle, siteIds?: string[]
     ['Consents', p.consents ?? ''],
     ['Made', `${formatDate(todayStr())} with ${MADE_BY}`],
     ['Layout', 'A sheet for each site: dates down, parameters across, units under the names. Results left out in QA/QC are not included; a result’s comment is a cell note.'],
+    ['Italic', 'A value in italics is calculated from the sample’s other values (a formula on the parameter), not measured; its cell note says what from. A value changed by hand says in its note what it was.'],
   ])
     about.addRow([k, v]).getCell(1).font = { bold: true };
   about.getColumn(1).width = 12;

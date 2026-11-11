@@ -167,8 +167,9 @@ export async function createDemoProject(): Promise<string> {
   ];
 
   const schedules: MonitoringSchedule[] = [
-    newSchedule(project.id, { name: 'Monthly surface water & discharge', siteIds: [US1.id, DP1.id, DS1.id], every: 1, unit: 'month', startDate: '2023-07-01' }),
-    newSchedule(project.id, { name: 'Quarterly groundwater', siteIds: [GW1.id], every: 3, unit: 'month', startDate: '2023-07-01' }),
+    // what each round is to have (so a result the lab leaves off shows as missing)
+    newSchedule(project.id, { name: 'Monthly surface water & discharge', siteIds: [US1.id, DP1.id, DS1.id], parameterIds: ['ph', 'turbidity', 'tss', 'ec', 'cu-d', 'zn-d', 'pb-d', 'nh4-n', 'no3-n'], every: 1, unit: 'month', startDate: '2023-07-01' }),
+    newSchedule(project.id, { name: 'Quarterly groundwater', siteIds: [GW1.id], parameterIds: ['ph-field', 'swl', 'ec', 'nh4-n', 'no3-n', 'fe-d', 'mn-d', 'as-d', 'b-d'], every: 3, unit: 'month', startDate: '2023-07-01' }),
   ];
 
   const obligations: ReportObligation[] = [

@@ -11,6 +11,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.33.0',
+    date: '2026-11-11',
+    title: 'What a round is missing; ammonia at each sample’s pH; exceedance notices',
+    items: [
+      'What a round is missing: after an import, Against the sampling schedule lists what the rounds just imported still lack – a site not sampled, or the analytes a lab left off – from the analytes each sampling schedule names. The schedule’s card (Overview → Sampling & reporting) and the dashboard show the same; That’s all for this round accepts a round as it is.',
+      'Ammonia at each sample’s pH: total ammonia guideline values (ANZG / ANZECC freshwater) are given at pH 8. Each result is now compared with the value at its own sample’s pH (ANZECC 2000 table 8.3.7) – about 2.4 times higher at pH 7, five times lower at pH 9 – so an exceedance in alkaline water is no longer missed, nor one flagged in acid water that isn’t. Where a sample has no pH, the pH 8 value as before. Check ammonia results flagged before this version: some will change. Setup → Assessment settings switches it off for a project.',
+      'Notify… beside an open exceedance (Compliance → Follow-up) writes the notice to the council for that day’s exceedances: the consent conditions, each result with its limit, the lab’s job, what the consent requires and what’s been done. Copy it, open it in your email program, or make it as a letter; Record as notified today marks them notified. EnviroDB sends nothing itself.',
+      'Calculated values are marked wherever the data goes: italic in report tables, with a note under the table; italic in Excel, where the cell’s note says what it was worked out from and the Key sheet names the formula; and a last column in the CSV. A value changed by hand says in its Excel note what it was.',
+      'The Files tab says which of the last year’s lab jobs have no result sheet on file.',
+      'The demo project’s sampling schedules now name their analytes.',
+    ],
+  },
+  {
     version: '1.32.0',
     date: '2026-11-02',
     title: 'A project’s files',

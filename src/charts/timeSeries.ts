@@ -192,7 +192,7 @@ export function buildChartSpec(input: ChartInput): ChartSpec {
   };
   input.guidelineSets.forEach((set, i) => {
     const g = guidelineFor(set, param.id, unit);
-    if (g) addLine(g.min, g.max, set.shortName, 'guideline', g.hardness ? 'at 30 mg/L hardness' : '', i);
+    if (g) addLine(g.min, g.max, set.shortName, 'guideline', g.hardness ? 'at 30 mg/L hardness' : g.ph ? 'at pH 8' : '', i);
   });
   if (input.showRules) {
     const multiSite = series.length > 1;

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActionIcon, Alert, Badge, Button, Card, FileButton, Grid, Group, NavLink, NumberInput, ScrollArea, SegmentedControl, Select, Stack, Switch, Table, Text, TextInput, Textarea, Title, Autocomplete } from '@mantine/core';
+import { ActionIcon, Alert, Badge, Button, Card, FileButton, Grid, Group, NavLink, NumberInput, ScrollArea, SegmentedControl, Select, Stack, Switch, Table, Text, TextInput, Textarea, Title, Autocomplete, Tooltip } from '@mantine/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams } from 'react-router-dom';
 import { modals } from '@mantine/modals';
@@ -24,10 +24,10 @@ import { LIBRARY, SectionNav } from '../components/Shell';
 import { HELP } from '../components/Onboarding';
 
 function exportCsv(set: GuidelineSet, names: Map<string, string>, unit: string) {
-  const rows = [['Parameter', 'Minimum', 'Maximum', 'Unit', 'Hardness-dependent', 'Note']];
+  const rows = [['Parameter', 'Minimum', 'Maximum', 'Unit', 'Hardness-dependent', 'At pH 8', 'Note']];
   for (const v of set.values) {
     const d = guidelineInUnit(v, unit);
-    rows.push([names.get(v.parameterId) ?? v.parameterId, plainNumber(d.min), plainNumber(d.max), unitLabel(d.unit), v.hardness ? 'yes' : '', v.note ?? '']);
+    rows.push([names.get(v.parameterId) ?? v.parameterId, plainNumber(d.min), plainNumber(d.max), unitLabel(d.unit), v.hardness ? 'yes' : '', v.ph ? 'yes' : '', v.note ?? '']);
   }
   const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
   downloadBlob(new Blob([rows.map((r) => r.map(esc).join(',')).join('\r\n')], { type: 'text/csv' }), `${safeFileName(set.name)}.csv`);
@@ -68,7 +68,7 @@ export function GuidelinesPage() {
       for (let r = 0; r < Math.min(g.nRows, 15); r++) if ((g.rows[r] ?? []).some((c) => /parameter|analyte|determinand/i.test(cellText(c)))) { header = r; break; }
       const hdr = (g.rows[header] ?? []).map((c) => cellText(c).toLowerCase());
       const col = (re: RegExp) => hdr.findIndex((h) => re.test(h));
-      const cP = Math.max(0, col(/parameter|analyte|determinand/)), cMin = col(/^min/), cMax = col(/^max|value|limit|guideline/), cU = col(/unit/), cN = col(/note|comment/), cH = col(/hardness/);
+      const cP = Math.max(0, col(/parameter|analyte|determinand/)), cMin = col(/^min/), cMax = col(/^max|value|limit|guideline/), cU = col(/unit/), cN = col(/note|comment/), cH = col(/hardness/), cPh = col(/\bph\b/);
       const index = buildParamIndex(params);
       const values: GuidelineValue[] = [];
       const unmatched: string[] = [];
@@ -83,7 +83,7 @@ export function GuidelinesPage() {
         const max = cMax >= 0 ? parseValue(cellAt(g, r, cMax).v).value ?? undefined : undefined;
         const min = cMin >= 0 ? parseValue(cellAt(g, r, cMin).v).value ?? undefined : undefined;
         if (max === undefined && min === undefined) continue;
-        values.push({ parameterId: m.parameterId, max, min, unit: (cU >= 0 && cellText(cellAt(g, r, cU))) || 'mg/L', note: cN >= 0 ? cellText(cellAt(g, r, cN)) || undefined : undefined, hardness: cH >= 0 ? /^(y|yes|true|1)$/i.test(cellText(cellAt(g, r, cH))) || undefined : undefined });
+        values.push({ parameterId: m.parameterId, max, min, unit: (cU >= 0 && cellText(cellAt(g, r, cU))) || 'mg/L', note: cN >= 0 ? cellText(cellAt(g, r, cN)) || undefined : undefined, hardness: cH >= 0 ? /^(y|yes|true|1)$/i.test(cellText(cellAt(g, r, cH))) || undefined : undefined, ...(cPh >= 0 && /^(y|yes|true|1)$/i.test(cellText(cellAt(g, r, cPh))) ? { ph: true } : {}) });
       }
       const set: GuidelineSet = { id: uid('gl'), name: file.name.replace(/\.[^.]+$/, ''), shortName: file.name.replace(/\.[^.]+$/, '').slice(0, 24), family: 'Custom', builtIn: false, values, updatedAt: new Date().toISOString(), source: `Imported from ${file.name}` };
       await saveGuidelineSet(set);
@@ -236,7 +236,11 @@ export function GuidelinesPage() {
                       <Table.Th ta="right">Minimum</Table.Th>
                       <Table.Th ta="right">Maximum</Table.Th>
                       <Table.Th>Unit</Table.Th>
-                      <Table.Th>Hardness</Table.Th>
+                      <Table.Th>
+                        <Tooltip multiline w={300} label="H: a hardness-dependent metal value, given at 30 mg/L hardness and modified for each sample’s hardness. pH: a total ammonia value given at pH 8, compared at each sample’s own pH. Both as the project’s assessment settings say.">
+                          <span style={{ textDecoration: 'underline dotted', cursor: 'help' }}>Adjusted</span>
+                        </Tooltip>
+                      </Table.Th>
                       <Table.Th>Note</Table.Th>
                       {editing && <Table.Th />}
                     </Table.Tr>
@@ -258,7 +262,11 @@ export function GuidelinesPage() {
                             <Autocomplete size="xs" data={COMMON_UNITS} value={v.unit} onChange={(x) => setVal(i, { unit: x })} w={110} />
                           </Table.Td>
                           <Table.Td>
-                            <Switch size="xs" checked={!!v.hardness} onChange={(e) => setVal(i, { hardness: e.currentTarget.checked || undefined })} />
+                            {v.parameterId === 'nh4-n' ? (
+                              <Switch size="xs" label="pH" checked={!!v.ph} onChange={(e) => setVal(i, { ph: e.currentTarget.checked || undefined })} title="A total ammonia value given at pH 8: compared at each sample’s pH" />
+                            ) : (
+                              <Switch size="xs" label="H" checked={!!v.hardness} onChange={(e) => setVal(i, { hardness: e.currentTarget.checked || undefined })} title="A hardness-dependent value given at 30 mg/L hardness" />
+                            )}
                           </Table.Td>
                           <Table.Td>
                             <TextInput size="xs" value={v.note ?? ''} onChange={(e) => setVal(i, { note: e.currentTarget.value || undefined })} />
@@ -280,7 +288,7 @@ export function GuidelinesPage() {
                             {plainNumber(guidelineInUnit(v, showUnit).max)}
                           </Table.Td>
                           <Table.Td>{unitLabel(guidelineInUnit(v, showUnit).unit)}</Table.Td>
-                          <Table.Td>{v.hardness ? <Badge size="xs">H</Badge> : ''}</Table.Td>
+                          <Table.Td>{v.hardness ? <Badge size="xs">H</Badge> : v.ph ? <Badge size="xs" color="grape">pH</Badge> : ''}</Table.Td>
                           <Table.Td>
                             <Text size="xs" c="dimmed">
                               {v.note}

@@ -31,6 +31,16 @@ there as they work and show up for the others within seconds.
   Non-detects are handled conservatively, and metals guideline values can be
   hardness-modified using the measured hardness (for each sample's own result).
 
+  **Ammonia at each sample's pH.** Total ammonia guideline values (ANZG / ANZECC freshwater) are given at
+  pH 8, and ammonia is more toxic in more alkaline water. Each result is compared with the value at its own
+  sample's pH – the lab's, else the field reading – following ANZECC (2000) table 8.3.7: about 2.4 times
+  higher at pH 7, five times lower at pH 9 (the table runs from pH 6 to 9; beyond, its ends). A sample with
+  no pH is compared with the pH 8 value. The message on a flagged result says which pH was used; graphs and
+  report tables show the pH 8 value (marked †). It applies to guideline highlighting, guideline rules and
+  limits taken from a guideline value – not to a statistic of many results, which stays at pH 8 – and can be
+  switched off for a project (*Setup → Assessment settings*). Your own guideline sets can mark an ammonia
+  value as *at pH 8* too. The NPS-FM ammonia grades already adjusted results to pH 8 the same way.
+
   To see every consent limit and trigger at once, switch the Compliance tab to *Limits & triggers*:
   a row per parameter and level, a column per site, each value coloured by how that site did in the
   period (red exceeded, with how many times; amber check the detection limit; green complied; grey no
@@ -159,7 +169,9 @@ there as they work and show up for the others within seconds.
   Calculated values are worked out as the data is shown and **never stored**: a measured value – from a lab, a
   phone or typed in – always wins (type one into a calculated cell to replace it), and clearing the formula takes
   them away. They show in italics (*ƒ* on the heading), and everywhere else as values: graphs, compliance, reports
-  and exports. QA/QC checks leave them out. A formula can use another calculated parameter; one that loops back
+  and exports – marked there too: italic in report tables (with a note under the table) and in Excel (the cell's
+  note says what it was worked out from, and the *Key* sheet names the formula); the CSV has a last column naming
+  each row's calculated values. A value changed by hand says in its Excel note what it was. QA/QC checks leave them out. A formula can use another calculated parameter; one that loops back
   on itself is left out. On the Library's Parameters page, *Add parameter* and each parameter's *ƒ* button open
   the same editor.
 - **g/m³ or mg/L.** A project says how it writes concentrations in its details (*Concentrations written as*):
@@ -167,6 +179,14 @@ there as they work and show up for the others within seconds.
   import with no unit takes it. The parameter library's own units stay, so other projects are unaffected.
 - **Photos.** A sample's details show the photos taken on the phone in field mode, from the shared folder's *Field
   photos*; add photos from your computer there too. The pictures stay in the shared folder, never in the database.
+- **What a round is missing.** A sampling schedule can name the analytes each round is to have
+  (*Overview → Sampling & reporting* → a schedule → *Edit*). After an import, *Against the sampling
+  schedule* lists what the rounds just imported still lack: a site not sampled, or at a site sampled the
+  analytes with no result – the ones a lab left off, to ask about while the sample can still be tested. The
+  schedule's card shows the same for the current round and the one before, and the dashboard lists results
+  missing once a lab's file has come (not while only the phone's field readings are in). *That's all for
+  this round* accepts a round as it is, so it isn't asked about again. The *Files* tab says which of the last
+  year's lab jobs have no result sheet on file (once the project keeps any).
 - **Files.** A project's *Files* tab keeps its documents: lab quotes and result sheets, chains of custody, field
   sheets, the consent. Drop files anywhere on the tab (or *Upload files*): each is copied as it is into the shared
   folder's *Project files/<project code>*, where everyone in the team – and File Explorer – finds it. Or *Add a
@@ -203,7 +223,13 @@ there as they work and show up for the others within seconds.
   in a sample's details), marked in the corner of its cell. An import can be **undone** straight after importing,
   within an hour from the dashboard, or any time from the import history.
 - **Follow-up and history.** *Compliance → Follow-up* lists every exceedance in the period with where its
-  follow-up is up to (open, regulator notified with the date, closed). *Setup → History* is the project's record
+  follow-up is up to (open, regulator notified with the date, closed). **Notify…** beside an open one writes
+  the notice to the council for that sampling day's open exceedances (untick any that don't belong): who is
+  notifying under which consent conditions, each exceedance with its limit, the lab's job number, what the
+  consent requires (each rule's *required action*) and what's been done (your follow-up notes). Change the
+  wording, then *Copy* it, *Open in email* (a long notice is copied for you to paste – email programs take
+  only so much), or make it *As a letter…* on your letterhead; *Record as notified today* marks them
+  notified. EnviroDB sends nothing itself. *Setup → History* is the project's record
   of who did what, when: imports and undoing, sign-offs, sites, rules, obligations, archiving – shared with the
   team. Archived projects stay out of the working set (not loaded for the dashboard) so it stays quick.
 - **Pick up where you left off.** Each tab keeps how you set it up – the graphs chosen and their

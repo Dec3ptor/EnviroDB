@@ -2,7 +2,7 @@ import type { ConditionAssessment, ConsentCondition, ContinuousSeries, Exceedanc
 import type { DataIndex } from './dataIndex';
 import { buildIndex, resultsFor } from './dataIndex';
 import { evaluateRules, ruleParamIds, type EvalContext, type RuleEvaluation } from './compliance';
-import { compareAll, describeLimit, type GuidelineHit } from './guidelines';
+import { adjustmentText, adjustsPh, compareAll, describeLimit, type GuidelineHit } from './guidelines';
 import { computeStat, percentile } from './stats';
 import { convert, unitLabel } from './units';
 import { fmtNum, statValue } from './values';
@@ -99,7 +99,7 @@ export function flagResults(b: ProjectBundle, evals: RuleEvaluation[], guideline
       if (!sets.some((s) => s.values.some((v) => v.parameterId === pid))) continue;
       const param = b.paramMap.get(pid);
       for (const r of resultsFor(b.index, pid, undefined, start, end)) {
-        for (const hit of compareAll(r, sets, param, b.index, b.project.hardnessAdjust)) {
+        for (const hit of compareAll(r, sets, param, b.index, b.project.hardnessAdjust, adjustsPh(b.project))) {
           if (hit.verdict === 'exceed') add(r.id, 'guideline', guidelineMessage(hit, r), { set: Math.max(0, sets.findIndex((s) => s.id === hit.setId)) });
           else if (hit.verdict === 'inconclusive') add(r.id, 'check', `${hit.setShort}: detection limit above guideline`);
         }
@@ -111,7 +111,8 @@ export function flagResults(b: ProjectBundle, evals: RuleEvaluation[], guideline
 
 export function guidelineMessage(hit: GuidelineHit, r: Result): string {
   const lim = describeLimit(hit.limitInResultUnit ?? {}, r.unit);
-  return `Exceeds ${hit.setShort} (${lim}${hit.limit.adjusted ? `, hardness-modified at ${fmtNum(hit.limit.hardness)} mg/L` : ''})`;
+  const how = adjustmentText(hit.limit);
+  return `Exceeds ${hit.setShort} (${lim}${how ? `, ${how}` : ''})`;
 }
 
 // ------------------------------------------------------------ pivot (samples × parameters)

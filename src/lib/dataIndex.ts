@@ -18,6 +18,8 @@ export interface DataIndex {
   paramById: Map<string, Parameter>;
   /** Hardness (mg/L as CaCO3) per sample: measured, or calculated from Ca and Mg. */
   hardness: Map<string, number>;
+  /** pH per sample: the lab's, else the field reading (for ammonia, whose toxicity goes with pH). */
+  ph: Map<string, number>;
   dates: { min?: string; max?: string };
   paramIdsWithData: string[];
 }
@@ -84,6 +86,12 @@ export function buildIndex(samples: Sample[], results: Result[], sites: Site[], 
     }
   });
 
+  const ph = new Map<string, number>();
+  bySample.forEach((list, sampleId) => {
+    const v = samplePh(list);
+    if (v !== undefined) ph.set(sampleId, v);
+  });
+
   return {
     byParam: ordered,
     bySample,
@@ -93,9 +101,16 @@ export function buildIndex(samples: Sample[], results: Result[], sites: Site[], 
     siteById: new Map(sites.map((s) => [s.id, s])),
     paramById: new Map(params.map((p) => [p.id, p])),
     hardness,
+    ph,
     dates: { min, max },
     paramIdsWithData: Array.from(ordered.keys()),
   };
+}
+
+/** A sample's pH from its results: the lab's, else the field reading (a plain number between 0 and 14). */
+export function samplePh(results: Result[]): number | undefined {
+  const of = (id: string) => results.find((r) => r.parameterId === id && r.value !== null && !r.qualifier && r.value >= 0 && r.value <= 14)?.value;
+  return of('ph') ?? of('ph-field') ?? undefined;
 }
 
 /** Results for a parameter, optionally limited to some sites and a date range. */

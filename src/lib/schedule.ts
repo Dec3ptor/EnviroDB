@@ -1,4 +1,4 @@
-import type { MonitoringSchedule, ReportObligation, ReportSubmission, Result, Sample } from '../db/types';
+import type { ImportBatch, MonitoringSchedule, ReportObligation, ReportSubmission, Result, Sample } from '../db/types';
 import { addDays, addMonths, addMonthsEom, daysBetween, formatDate, todayStr, type PeriodChoice } from './dates';
 
 // ------------------------------------------------------------ monitoring schedules
@@ -79,6 +79,112 @@ export function scheduleStatus(sch: MonitoringSchedule, samples: Sample[], resul
     completedPeriods: past.filter((p) => !p.missing.length).length,
     totalPeriods: past.length,
   };
+}
+
+// ------------------------------------------------------------ what a round is missing
+
+/** The schedule's round a day falls in – none before it starts or after it ends. */
+export function roundOf(sch: Pick<MonitoringSchedule, 'startDate' | 'endDate' | 'every' | 'unit'>, day: string): { start: string; end: string } | null {
+  const d = day.slice(0, 10);
+  if (d < sch.startDate || (sch.endDate && d > sch.endDate)) return null;
+  for (let k = 0; k < 5000; k++) {
+    const start = scheduleStep(sch.startDate, k, sch.every, sch.unit);
+    if (start > d) return null;
+    const end = addDays(scheduleStep(sch.startDate, k + 1, sch.every, sch.unit), -1);
+    if (d <= end) return { start, end };
+  }
+  return null;
+}
+
+/** A site sampled in a round, without some of what the schedule names. */
+export interface SiteGap {
+  siteId: string;
+  /** The days it was sampled in the round. */
+  dates: string[];
+  /** The scheduled parameters with no result. */
+  missing: string[];
+  /** A lab's results have come for its samples: what's missing was left off (else the lab may still be to report). */
+  labIn: boolean;
+}
+
+export interface RoundGaps {
+  schedule: MonitoringSchedule;
+  start: string;
+  end: string;
+  /** Scheduled sites with no sample in the round. */
+  notSampled: string[];
+  /** Sites sampled, missing some of what's scheduled. */
+  incomplete: SiteGap[];
+  /** Sites with everything scheduled. */
+  complete: string[];
+  /** Accepted as it is (the schedule's `accepted`). */
+  accepted: boolean;
+}
+
+/**
+ * What a round of a schedule is missing: the sites not sampled and, at the sites that were, the scheduled parameters
+ * with no result – a value typed in, a field reading or a calculated value counts; a result left out after a QA check
+ * was still reported. `isLab` says whether a result came in a lab's file.
+ */
+export function roundGaps(sch: MonitoringSchedule, round: { start: string; end: string }, samples: Sample[], resultsOf: (sampleId: string) => Result[], isLab: (r: Result) => boolean): RoundGaps {
+  const out: RoundGaps = { schedule: sch, start: round.start, end: round.end, notSampled: [], incomplete: [], complete: [], accepted: !!sch.accepted?.includes(round.start) };
+  for (const siteId of sch.siteIds) {
+    const mine = samples.filter((s) => s.siteId === siteId && s.date.slice(0, 10) >= round.start && s.date.slice(0, 10) <= round.end);
+    if (!mine.length) {
+      out.notSampled.push(siteId);
+      continue;
+    }
+    const results = mine.flatMap((s) => resultsOf(s.id));
+    const reported = new Set(results.map((r) => r.parameterId));
+    const missing = sch.parameterIds.filter((id) => !reported.has(id));
+    if (missing.length) out.incomplete.push({ siteId, dates: [...new Set(mine.map((s) => s.date.slice(0, 10)))].sort(), missing, labIn: results.some(isLab) });
+    else out.complete.push(siteId);
+  }
+  return out;
+}
+
+/** Whether a result came in a lab's file (not from a phone in the field, typed in, or calculated). */
+export function fromLab(imports: Array<Pick<ImportBatch, 'id' | 'kind'>>): (r: Result) => boolean {
+  const kinds = new Map(imports.map((b) => [b.id, b.kind]));
+  return (r) => !!r.importId && kinds.get(r.importId) !== 'field';
+}
+
+/**
+ * What a round is missing, in words: "Not sampled: GW1", "DS1 (9 Oct 2026): no result for Dissolved Zinc, TSS". For a
+ * site sampled but with nothing from the lab yet, the line says so.
+ */
+export function gapLines(g: RoundGaps, siteCode: (id: string) => string, paramName: (id: string) => string): string[] {
+  const out: string[] = [];
+  if (g.notSampled.length) out.push(`Not sampled: ${g.notSampled.map(siteCode).join(', ')}`);
+  for (const s of g.incomplete) {
+    const names = s.missing.map(paramName);
+    const what = names.length > 6 ? `${names.slice(0, 5).join(', ')} and ${names.length - 5} more` : names.join(', ');
+    out.push(`${siteCode(s.siteId)} (${s.dates.map((d) => formatDate(d)).join(', ')}): no result for ${what}${s.labIn ? '' : ' – nothing from the lab yet'}`);
+  }
+  return out;
+}
+
+/** Whether a round has anything to say: a site not sampled, or something scheduled not reported. */
+export const hasGaps = (g: RoundGaps): boolean => g.notSampled.length > 0 || g.incomplete.length > 0;
+
+/**
+ * The rounds to look at for gaps now: each active schedule's current round and the one before, where sampling has
+ * begun (a round nobody has sampled yet is the calendar's business, not a gap).
+ */
+export function recentGaps(schedules: MonitoringSchedule[], samples: Sample[], resultsOf: (sampleId: string) => Result[], isLab: (r: Result) => boolean, today = todayStr()): RoundGaps[] {
+  const out: RoundGaps[] = [];
+  for (const sch of schedules) {
+    if (!sch.active || !sch.siteIds.length) continue;
+    const now = roundOf(sch, today) ?? (sch.endDate && today > sch.endDate ? roundOf(sch, sch.endDate) : null);
+    if (!now) continue;
+    const before = roundOf(sch, addDays(now.start, -1));
+    for (const round of [now, before]) {
+      if (!round) continue;
+      const g = roundGaps(sch, round, samples, resultsOf, isLab);
+      if (g.complete.length + g.incomplete.length > 0 && hasGaps(g)) out.push(g);
+    }
+  }
+  return out;
 }
 
 // ------------------------------------------------------------ reporting obligations

@@ -12,7 +12,7 @@ import type { RuleEvaluation } from '../lib/compliance';
 import { describeRule, expandRules, ruleParamIds, STATUS_META } from '../lib/compliance';
 import { addDays, addMonths, daysBetween, endOfMonth, formatDate, formatDateLong, MONTH_SHORT, todayStr, toUtcMs } from '../lib/dates';
 import { monthLabel, reportPeriodLabel, reviewCell, type ReviewCell } from '../lib/latest';
-import { guidelineFor } from '../lib/guidelines';
+import { adjustsPh, guidelineFor } from '../lib/guidelines';
 import { scheduleStep, frequencyLabel, nextObligation } from '../lib/schedule';
 import { unitLabel } from '../lib/units';
 import { fmtNum } from '../lib/values';
@@ -375,7 +375,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     const g = guidelineFor(set, p.id, p.unit);
     if (!g) return '';
     const v = g.min !== undefined && g.max !== undefined ? `${fmtNum(g.min)}–${fmtNum(g.max)}` : g.max !== undefined ? fmtNum(g.max) : `≥${fmtNum(g.min)}`;
-    return g.hardness && project.hardnessAdjust ? `${v}*` : v;
+    return g.hardness && project.hardnessAdjust ? `${v}*` : g.ph && adjustsPh(project) ? `${v}†` : v;
   };
   // Consent limits / triggers as comparison columns in results tables: one per level (Limit, Trigger 1 …)
   const RULE_COLUMN_KINDS = new Set(['threshold', 'consecutive', 'statistic']);
@@ -401,13 +401,20 @@ export function buildReport(opts: BuildOptions): ReportDoc {
     return [...new Set(out)].join('\n');
   };
   const linesWidthMm = (text: string, pt: number) => Math.max(0, ...text.split('\n').map((line) => textWidthMm(line, pt)));
-  const resultNotes = (sets: GuidelineSet[], highlight: boolean, consentBrackets = false) => {
+  /** Said under a table with calculated values in it (shown in italics). */
+  const CALC_NOTE = 'Values in italics are calculated from the sample’s other results (a formula), not measured.';
+  const anyItalic = (body: Cell[][]) => body.some((row) => row.some((c) => c.italic));
+  /** The notes under a results table – `params`: the table's parameters, so only what applies to them is said. */
+  const resultNotes = (sets: GuidelineSet[], highlight: boolean, consentBrackets = false, params?: Parameter[]) => {
+    const shown = params ? new Set(params.map((p) => p.id)) : null;
+    const has = (flag: 'hardness' | 'ph') => sets.some((s) => s.values.some((v) => v[flag] && (!shown || shown.has(v.parameterId))));
     const n = ['“<” indicates a result below the laboratory detection limit.'];
     if (consentBrackets) n.push('Consent values in brackets are assessed on a statistic or consecutive results, or apply only at the sites named. HMTV: hardness-modified for each sample (the value shown is at 30 mg/L hardness).');
     if (highlight && look.highlight === 'text')
       n.push(`Red = consent limit (bold) or trigger level${sets.length ? ` or ${sets.map((s) => s.shortName).join(' / ')} guideline` : ''} exceeded; purple = detection limit above the limit.`);
     else if (highlight) n.push(shadingNote(sets));
-    if (project.hardnessAdjust && sets.some((s) => s.values.some((v) => v.hardness))) n.push('* Hardness-dependent guideline value shown at 30 mg/L CaCO3; results were compared with hardness-modified values (ANZECC 2000) where hardness was measured.');
+    if (project.hardnessAdjust && has('hardness')) n.push('* Hardness-dependent guideline value shown at 30 mg/L CaCO3; results were compared with hardness-modified values (ANZECC 2000) where hardness was measured.');
+    if (adjustsPh(project) && has('ph')) n.push('† Total ammonia guideline value shown at pH 8; results were compared with the value at each sample’s pH (ANZECC 2000 table 8.3.7) where pH was measured.');
     return n;
   };
 
@@ -624,7 +631,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
       const valueCell = (s: Sample, p: Parameter): Cell => {
         const r = resultOf(s, p.id);
         if (!r) return { text: '–', align: 'center', color: '#999999' };
-        return { text: displayValue(r, p).text, align: 'right', ...flagged(flags.get(r.id)) };
+        return { text: displayValue(r, p).text, align: 'right', ...(r.calc ? { italic: true } : {}), ...flagged(flags.get(r.id)) };
       };
       const dateHead = (s: Sample) => formatDate(s.date, { format: 'D MMM YYYY' });
       for (const g of groups) {
@@ -644,7 +651,8 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const calcs = blk.calcColumns ?? [];
         const calcText = new Map(params.map((p) => [p.id, calcs.map((c) => tableCalcValue(b, p, calcFrom(c, p.id, tableSites, g.samples), c))]));
         const calcCell = (p: Parameter, k: number): Cell => ({ text: calcText.get(p.id)![k], align: 'right', fill: FILLS.guidelineRow });
-        const notesHere = () => [...resultNotes(sets, blk.highlight, bracketed), ...calcNotes(b, calcs, 'the results in the table', formatDate(end))];
+        const calcShown = g.samples.some((s) => params.some((p) => resultOf(s, p.id)?.calc));
+        const notesHere = () => [...resultNotes(sets, blk.highlight, bracketed, params), ...(calcShown ? [CALC_NOTE] : []), ...calcNotes(b, calcs, 'the results in the table', formatDate(end))];
         if (blk.layout === 'parametersAsRows') {
           // Fixed columns sized to their content, then as many sample columns as fit.
           let paramW = clamp(Math.max(...params.map((p) => textWidthMm(p.name, pt))) + PAD, 26, 44);
@@ -882,7 +890,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
             { text: unitLabel(p.unit) },
             ...levels.map((l) => ({ text: ruleText(rules, l, p, [site.id]), align: 'center' as const, fill: FILLS.guidelineRow })),
             ...sets.map((s) => ({ text: guidelineText(s, p), align: 'center' as const, fill: FILLS.guidelineRow })),
-            r ? { text: displayValue(r, p).text, align: 'right', ...flagged(f) } : { text: '–', align: 'center', color: '#999999' },
+            r ? { text: displayValue(r, p).text, align: 'right', ...(r.calc ? { italic: true } : {}), ...flagged(f) } : { text: '–', align: 'center', color: '#999999' },
           ];
           if (show.has('previous')) row.push({ text: c?.previous ? `${c.previous.text}\n${formatDate(c.previous.date, { format: 'D MMM YYYY' })}` : '–', align: 'right' });
           if (show.has('change')) {
@@ -920,6 +928,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         return;
       }
       const notes = resultNotes(sets, blk.highlight, made.some((x) => x.body.some((row) => row.some((c) => c.fill === FILLS.guidelineRow && c.text.includes('(')))));
+      if (made.some((x) => anyItalic(x.body))) notes.push(CALC_NOTE);
       const history = since ? `since ${formatDate(since, { format: 'D MMM YYYY' })}` : 'on record';
       if (show.has('previous') || show.has('change')) notes.push('Previous: the last result at the site before this one. Change: from the previous result (not given when either is below the detection limit).');
       if (show.has('median') || show.has('range') || show.has('note'))
@@ -1324,7 +1333,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
           for (const r of [cur, ...prev]) {
             const f = r ? ruleFlags.get(r.id) : undefined;
             if (f) anyFlag = true;
-            row.push(r ? { text: displayValue(r, p).text, align: 'right', ...flagged(f) } : { text: '–', align: 'center', color: '#999999' });
+            row.push(r ? { text: displayValue(r, p).text, align: 'right', ...(r.calc ? { italic: true } : {}), ...flagged(f) } : { text: '–', align: 'center', color: '#999999' });
           }
           for (const c of calcs) row.push({ text: tableCalcValue(b, p, calcFrom(c, p.id, [site.id], shownSamples), c), align: 'right', fill: FILLS.guidelineRow });
           for (const l of levels) row.push({ text: ruleText(rules, l, p, [site.id]), align: 'center', fill: FILLS.guidelineRow });
@@ -1374,6 +1383,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         const notes = ['“<” indicates a result below the laboratory detection limit.'];
         if (anyFlag) notes.push(look.highlight === 'text' ? 'Red = a consent limit (bold) or trigger level exceeded.' : 'Shading: red = consent limit exceeded; amber = trigger level exceeded; purple = detection limit above the limit.');
         if (blk.comment) notes.push("Comment: the change since the previous result shown, and whether the result complies with the site's consent limits and trigger levels.");
+        if (anyItalic(lastTable.body)) notes.push(CALC_NOTE);
         notes.push(...calcNotes(b, blk.calcColumns ?? [], "the site's rounds shown", formatDate(end)));
         lastTable.notes = notes;
       }

@@ -9,6 +9,18 @@ import { downloadBlob, safeFileName } from '../db/backup';
 
 const FILL = { limit: 'FFF9D0D0', guideline: 'FFFDE7C2', check: 'FFE9E6F7' } as const;
 
+/** What to say about a value that isn't a lab's or a reading as it came: calculated, or changed by hand. Empty for the rest. */
+export function provenanceNote(r: Pick<Result, 'calc' | 'edited'>, p: Pick<Parameter, 'name'>): string {
+  if (r.calc) return `Calculated, not measured: ${p.name} = ${r.calc.formula}\nFrom ${r.calc.from}`;
+  if (r.edited) return `Changed by hand${r.edited.by ? ` by ${r.edited.by}` : ''} on ${formatDate(r.edited.at.slice(0, 10))}${r.edited.was ? ` – was ${r.edited.was}` : ' (added by hand)'}`;
+  return '';
+}
+
+/** The calculated parameters among these results, to name in a key. */
+export function calculatedIn(columns: Parameter[], rows: Array<{ cells: Map<string, Result> }>): Parameter[] {
+  return columns.filter((p) => rows.some((row) => row.cells.get(p.id)?.calc));
+}
+
 export interface PivotExport {
   title: string;
   columns: Parameter[];
@@ -37,11 +49,15 @@ export async function exportPivotXlsx(x: PivotExport): Promise<void> {
     }
     cell.alignment = { horizontal: 'right' };
     const f = x.flags.get(r.id);
+    // a calculated value in italics, as in the app; where it came from (or what a value changed by hand was) in the note
+    const why = provenanceNote(r, p);
+    if (r.calc) cell.font = { italic: true };
     if (f) {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${flagFillColour(f)!.slice(1)}` } };
-      cell.font = { bold: f.kind !== 'check' };
-      cell.note = f.messages.join('\n');
+      cell.font = { bold: f.kind !== 'check', italic: !!r.calc };
     }
+    const note = [f?.messages.join('\n'), why].filter(Boolean).join('\n');
+    if (note) cell.note = note;
   };
 
   if (x.layout === 'samplesAsRows') {
@@ -85,6 +101,12 @@ export async function exportPivotXlsx(x: PivotExport): Promise<void> {
   const l3 = legend.addRow(['', 'Detection limit above the limit / guideline – cannot assess']);
   l3.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL.check } };
   legend.addRow(['', '"<" = below the laboratory detection limit. Hover over shaded cells for details.']);
+  const calculated = calculatedIn(x.columns, x.rows);
+  if (calculated.length) {
+    const row = legend.addRow(['1.23', `Italic = calculated from the sample’s other values, not measured (${calculated.map((p) => `${p.name} = ${p.formula ?? 'a formula'}`).join('; ')}). A cell’s note says what from.`]);
+    row.getCell(1).font = { italic: true };
+    row.getCell(2).alignment = { wrapText: true };
+  }
   legend.addRow(['', `Exported from EnviroDB on ${formatDate(new Date().toISOString().slice(0, 10))}`]);
   legend.getColumn(1).width = 6;
   legend.getColumn(2).width = 90;
@@ -93,17 +115,24 @@ export async function exportPivotXlsx(x: PivotExport): Promise<void> {
   downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${safeFileName(x.fileName)}.xlsx`);
 }
 
-export function exportPivotCsv(x: PivotExport): void {
+/** The results table as CSV text. With calculated values in it, a last column names each row's ("Calculated (not measured)"). */
+export function pivotCsv(x: Pick<PivotExport, 'columns' | 'rows'>): string {
   const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
   const lines: string[] = [];
-  lines.push(['Date', 'Site', 'Lab number', ...x.columns.map((p) => `${p.name} (${unitLabel(p.unit)})`)].map(esc).join(','));
+  const anyCalc = calculatedIn(x.columns, x.rows).length > 0;
+  lines.push(['Date', 'Site', 'Lab number', ...x.columns.map((p) => `${p.name} (${unitLabel(p.unit)})`), ...(anyCalc ? ['Calculated (not measured)'] : [])].map(esc).join(','));
   for (const row of x.rows) {
     lines.push(
       [row.sample.date.replace('T', ' '), row.site.code, row.sample.labNumber ?? '', ...x.columns.map((p) => {
         const r = row.cells.get(p.id);
         return r ? displayValue(r, p).text : '';
-      })].map(esc).join(','),
+      }), ...(anyCalc ? [x.columns.filter((p) => row.cells.get(p.id)?.calc).map((p) => p.name).join('; ')] : [])].map(esc).join(','),
     );
   }
-  downloadBlob(new Blob([lines.join('\r\n')], { type: 'text/csv' }), `${safeFileName(x.fileName)}.csv`);
+  return lines.join('\r\n');
+}
+
+export function exportPivotCsv(x: PivotExport): void {
+  const text = pivotCsv(x);
+  downloadBlob(new Blob([text], { type: 'text/csv' }), `${safeFileName(x.fileName)}.csv`);
 }

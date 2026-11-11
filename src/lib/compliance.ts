@@ -2,7 +2,7 @@ import type { GuidelineSet, GuidelineValue, NdHandling, Operator, Parameter, Pro
 import type { DataIndex } from './dataIndex';
 import { resultsFor } from './dataIndex';
 import { addDays, dayOf, daysBetween, formatDate, reportingYear } from './dates';
-import { compareResult, describeLimit, limitFor, toInterval, verdict, verdictOutside, type Verdict } from './guidelines';
+import { adjustmentText, adjustsPh, compareResult, describeLimit, limitFor, toInterval, verdict, verdictOutside, type Verdict } from './guidelines';
 import { computeStat, statLabel, type PercentileMethod } from './stats';
 import { unitFactor, convert, unitLabel } from './units';
 import { fmtNum, fmtResult, statValue } from './values';
@@ -93,10 +93,13 @@ export function withGuidelineLimit(rule: Rule, sets?: Map<string, GuidelineSet>)
 }
 
 /** " (ANZG FW 95%)" after a limit taken from a guideline set; "" otherwise. */
-export function limitSource(rule: Rule, sets?: Map<string, GuidelineSet>): string {
-  const set = guidelineLimitValue(rule, sets) ? sets?.get(rule.limitSetId!) : undefined;
+export function limitSource(rule: Rule, sets?: Map<string, GuidelineSet>, phAdjust = true): string {
+  const gv = guidelineLimitValue(rule, sets);
+  const set = gv ? sets?.get(rule.limitSetId!) : undefined;
   if (!set) return '';
-  return ` (${set.shortName}${rule.hardnessAdjust ? ', hardness-modified' : ''})`;
+  // total ammonia, given at pH 8: each result against the value at its sample's pH (a statistic, at pH 8)
+  const ph = gv?.ph ? (phAdjust && rule.kind !== 'statistic' ? ', at each sample’s pH' : ', at pH 8') : '';
+  return ` (${set.shortName}${rule.hardnessAdjust ? ', hardness-modified' : ''}${ph})`;
 }
 
 /** The parameters a rule covers: its parameter, or for a guideline rule the analytes chosen (or every analyte in its set). */
@@ -205,17 +208,20 @@ export function evaluateRule(rule: Rule, ctx: EvalContext): RuleEvaluation {
   const nd: NdHandling = ctx.project.ndHandling ?? 'dl';
   const pm: PercentileMethod = ctx.project.percentileMethod ?? 'excel';
   const siteIds = sitesFor(rule, ctx);
-  const from = limitSource(rule, ctx.guidelineSets);
+  const from = limitSource(rule, ctx.guidelineSets, adjustsPh(ctx.project));
   const limitText = rule.kind === 'guideline' ? '' : `${thresholdText(rule, unit)}${from}`;
-  // a hardness-dependent guideline limit, modified for each sample's hardness
-  const hardGv = rule.hardnessAdjust ? guidelineLimitValue(rule, ctx.guidelineSets) : undefined;
+  // a guideline limit that goes with the sample: hardness-dependent (modified for its hardness), or total ammonia
+  // given at pH 8 (taken at its pH) – for each result's own test, not a statistic of many
+  const limitGv = rule.kind !== 'statistic' ? guidelineLimitValue(rule, ctx.guidelineSets) : undefined;
+  const phAdjust = adjustsPh(ctx.project);
+  const perSample = !!limitGv && ((!!rule.hardnessAdjust && !!limitGv.hardness) || (phAdjust && !!limitGv.ph));
   const ruleAt = (r: Result): { rule: Rule; limitText: string } => {
-    if (!hardGv?.hardness) return { rule, limitText };
-    const lim = limitFor(hardGv, p, { hardness: ctx.index.hardness.get(r.sampleId), adjust: true });
-    const v = lim.adjusted && lim.max !== undefined ? convert(lim.max, hardGv.unit, unit) : null;
+    if (!limitGv || !perSample) return { rule, limitText };
+    const lim = limitFor(limitGv, p, { hardness: ctx.index.hardness.get(r.sampleId), adjust: !!rule.hardnessAdjust, ph: ctx.index.ph.get(r.sampleId), adjustPh: phAdjust });
+    const v = (lim.adjusted || lim.ph !== undefined) && lim.max !== undefined ? convert(lim.max, limitGv.unit, unit) : null;
     if (v === null) return { rule, limitText };
     const at: Rule = rule.operator === 'outside' ? { ...rule, max: v } : { ...rule, value: v };
-    return { rule: at, limitText: `${thresholdText(at, unit)} (${ctx.guidelineSets.get(rule.limitSetId!)?.shortName ?? 'guideline'} HMTV at ${fmtNum(lim.hardness)} mg/L hardness)` };
+    return { rule: at, limitText: `${thresholdText(at, unit)} (${ctx.guidelineSets.get(rule.limitSetId!)?.shortName ?? 'guideline'} ${adjustmentText(lim, 'short')})` };
   };
 
   const push = (vd: Verdict, ex: Exceedance) => {
@@ -357,15 +363,16 @@ export function evaluateRule(rule: Rule, ctx: EvalContext): RuleEvaluation {
         if (only && !only.has(gv.parameterId)) continue;
         const param = ctx.params.get(gv.parameterId);
         for (const r of resultsFor(ctx.index, gv.parameterId, siteIds, start, end)) {
-          const hit = compareResult(r, gv, set, param, ctx.index, !!rule.hardnessAdjust);
+          const hit = compareResult(r, gv, set, param, ctx.index, !!rule.hardnessAdjust, phAdjust);
           if (!hit) continue;
           assessed++;
           const lim = describeLimit(hit.limitInResultUnit ?? {}, r.unit);
+          const how = adjustmentText(hit.limit, 'short');
           push(hit.verdict, {
             key: exKey(r.siteId, r.date, r.parameterId, set.id),
             ruleId: rule.id, siteId: r.siteId, parameterId: r.parameterId, date: r.date, value: r.value, qualifier: r.qualifier, unit: r.unit,
-            limitText: `${set.shortName}: ${lim}${hit.limit.adjusted ? ` (HMTV at ${fmtNum(hit.limit.hardness)} mg/L hardness)` : ''}`,
-            detail: `${param?.name ?? r.parameterId} ${fmtResult(r.value, r.qualifier)} ${unitLabel(r.unit)} vs ${lim}${hit.limit.adjusted ? ' (hardness-modified)' : ''}`,
+            limitText: `${set.shortName}: ${lim}${how ? ` (${how})` : ''}`,
+            detail: `${param?.name ?? r.parameterId} ${fmtResult(r.value, r.qualifier)} ${unitLabel(r.unit)} vs ${lim}${hit.limit.adjusted ? ' (hardness-modified)' : ''}${hit.limit.ph !== undefined ? ` (the value at pH ${fmtNum(hit.limit.ph, 1)})` : ''}`,
             resultId: r.id,
           });
         }

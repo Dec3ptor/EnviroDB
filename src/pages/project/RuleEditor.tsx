@@ -33,7 +33,7 @@ function setValueText(set: GuidelineSet, parameterId: string, unit: string): str
   if (!gv) return '';
   const lim = guidelineFor(set, parameterId, unit) ?? guidelineFor(set, parameterId, gv.unit);
   const u = guidelineFor(set, parameterId, unit) ? unit : gv.unit;
-  return lim ? `${describeLimit(lim, u)}${gv.hardness ? ' at 30 mg/L hardness' : ''}`.trim() : '';
+  return lim ? `${describeLimit(lim, u)}${gv.hardness ? ' at 30 mg/L hardness' : ''}${gv.ph ? ' at pH 8' : ''}`.trim() : '';
 }
 
 /** Sets that have a value for the parameter, grouped like the guideline picker, and each one's value. */
@@ -248,7 +248,8 @@ export function RuleEditor({ rule, onClose, period }: { rule: Rule | null; onClo
                 {limitGv ? (
                   <Text size="sm">
                     Exceeded when the {r.kind === 'statistic' ? 'statistic' : 'result'} is <b>{thresholdText(eff, eff.unit ?? '')}</b>
-                    {limitGv.hardness && r.kind !== 'statistic' && eff.hardnessAdjust ? ', modified for each sample’s hardness' : ''}.
+                    {limitGv.hardness && r.kind !== 'statistic' && eff.hardnessAdjust ? ', modified for each sample’s hardness' : ''}
+                    {limitGv.ph ? (r.kind !== 'statistic' ? ' – the value at pH 8, taken at each sample’s own pH where it has one (the project’s assessment settings)' : ' – the value at pH 8') : ''}.
                   </Text>
                 ) : (
                   <Text size="sm" c="red">

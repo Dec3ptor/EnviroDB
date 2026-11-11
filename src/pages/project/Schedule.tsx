@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActionIcon, Badge, Button, Card, Group, Menu, Modal, NumberInput, Progress, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
+import { ActionIcon, Badge, Box, Button, Card, Group, Menu, Modal, NumberInput, Progress, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -7,7 +7,8 @@ import { IconCalendarPlus, IconCheck, IconDots, IconEdit, IconFileReport, IconPl
 import { useProject } from '../../hooks/useProjectData';
 import { DateField, EmptyState, ParamPicker, SitePicker, consentPresets } from '../../components/common';
 import { addMonths, formatDate, relativeDays, todayStr } from '../../lib/dates';
-import { buildIcs, frequencyLabel, nextObligation, OBLIGATION_STATUS, obligationPeriod, obligationPeriods, scheduleStatus } from '../../lib/schedule';
+import { buildIcs, frequencyLabel, fromLab, nextObligation, OBLIGATION_STATUS, obligationPeriod, obligationPeriods, recentGaps, scheduleStatus } from '../../lib/schedule';
+import { RoundGapsList } from '../../components/RoundGaps';
 import { deleteObligation, deleteSchedule, newObligation, newSchedule, saveObligation, saveSchedule, setSubmitted } from '../../db/repo';
 import type { MonitoringSchedule, ReportObligation } from '../../db/types';
 import { db } from '../../db/db';
@@ -180,6 +181,8 @@ export function ScheduleTab() {
   const [editO, setEditO] = useState<ReportObligation | null>(null);
   const today = todayStr();
   const statuses = useMemo(() => schedules.map((s) => scheduleStatus(s, samples, index.bySample, today, 730)), [schedules, samples, index, today]);
+  // the latest rounds' results against what each schedule names: an analyte the lab left off
+  const gaps = useMemo(() => recentGaps(schedules, samples, (id) => index.allBySample.get(id) ?? [], fromLab(data.imports), today).filter((g) => g.incomplete.length), [schedules, samples, index, data.imports, today]);
 
   const exportIcs = () => {
     const events: Array<{ uid: string; date: string; title: string; description?: string }> = [];
@@ -290,6 +293,14 @@ export function ScheduleTab() {
                       Missed: {st.missed.slice(-6).map((m) => `${siteMap.get(m.siteId)?.code} (${formatDate(m.start)})`).join(', ')}
                       {st.missed.length > 6 ? ` and ${st.missed.length - 6} more` : ''}
                     </Text>
+                  )}
+                  {gaps.some((g) => g.schedule.id === st.schedule.id) && (
+                    <Box mt={8} pt={8} style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
+                      <Text size="xs" c="orange.8" fw={600} mb={2}>
+                        Scheduled, but no result
+                      </Text>
+                      <RoundGapsList gaps={gaps.filter((g) => g.schedule.id === st.schedule.id)} siteCode={(id) => siteMap.get(id)?.code ?? '?'} paramName={(id) => data.paramMap.get(id)?.short ?? data.paramMap.get(id)?.name ?? id} showNotSampled={false} showName={false} size="xs" />
+                    </Box>
                   )}
                 </Card>
               );

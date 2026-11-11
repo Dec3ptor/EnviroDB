@@ -41,7 +41,7 @@ describe('deleting parameters', () => {
     expect(impact.projects).toHaveLength(1);
     expect(impact.results).toBe(await resultsFor('turbidity'));
     expect(impact.rules.map((r) => r.name)).toEqual(['Turbidity increase downstream']);
-    expect(impact.schedules.map((s) => s.name)).toEqual(['Field']);
+    expect(impact.schedules.map((s) => s.name).sort()).toEqual(['Field', 'Monthly surface water & discharge']); // the demo's monthly round names turbidity too
     expect(impact.guidelineSets.map((g) => g.name)).toEqual(['Site triggers']);
 
     await deleteParameter('turbidity');

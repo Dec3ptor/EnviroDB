@@ -48,6 +48,8 @@ import { FieldResultsModal } from '../components/FieldSheet';
 import { IMPORTING, SectionNav } from '../components/Shell';
 import { deleteImport, setReviewed } from '../db/repo';
 import { keepImportFiles, projectFilesDir } from '../lib/projectFiles';
+import { fromLab, hasGaps, roundGaps, roundOf, type RoundGaps } from '../lib/schedule';
+import { RoundGapsList } from '../components/RoundGaps';
 import { currentWorkspaceFolder, useWorkspace } from '../sync/workspace';
 import { useViewState } from '../hooks/useViewState';
 import { modals } from '@mantine/modals';
@@ -651,6 +653,24 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
     const evals = evaluateAll(data, start, end);
     const hits = evals.flatMap((ev) => ev.exceedances.map((ex) => ({ ev, ex })));
     return { start, end, hits, inconclusive: evals.flatMap((ev) => ev.inconclusive.map((ex) => ({ ev, ex }))) };
+  }, [summary, data]);
+  // what the sampling schedules name for these rounds that still has no result (a site, or an analyte the lab left off)
+  const importGaps = useMemo(() => {
+    if (!summary || !parsed) return null;
+    const days = [...new Set(included.map((s) => sampleDate(s)?.slice(0, 10)).filter(Boolean))] as string[];
+    const sitesIn = new Set(included.map((s) => sampleSite(s)).filter(Boolean));
+    const isLab = fromLab(data.imports);
+    const out: RoundGaps[] = [];
+    for (const sch of data.schedules) {
+      if (!sch.active || !sch.siteIds.some((id) => sitesIn.has(id))) continue;
+      const rounds = new Map<string, { start: string; end: string }>();
+      for (const d of days) {
+        const r = roundOf(sch, d);
+        if (r) rounds.set(r.start, r);
+      }
+      for (const r of rounds.values()) out.push(roundGaps(sch, r, data.samples, (id) => data.index.allBySample.get(id) ?? [], isLab));
+    }
+    return out;
   }, [summary, data]);
   // QA/QC findings in the samples just imported
   const settings = useSettings();
@@ -1360,6 +1380,25 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
                 ) : (
                   <Alert color="green" variant="light" icon={<IconCircleCheck size={18} />}>
                     Nothing unusual: duplicates, blanks, ion balance, parts and wholes, and the sites’ earlier results all check out.
+                  </Alert>
+                )}
+              </>
+            )}
+            {importGaps && importGaps.length > 0 && (
+              <>
+                <Title order={5} mt="md" mb={4}>
+                  Against the sampling schedule
+                </Title>
+                {importGaps.some((g) => hasGaps(g) && !g.accepted) ? (
+                  <Alert color="orange" variant="light" icon={<IconAlertTriangle size={18} />} title="Something scheduled has no result yet">
+                    <RoundGapsList gaps={importGaps.filter((g) => hasGaps(g) && !g.accepted)} siteCode={(id) => data.siteMap.get(id)?.code ?? '?'} paramName={(id) => data.paramMap.get(id)?.name ?? id} />
+                    <Text size="xs" c="dimmed" mt={6}>
+                      From the project’s sampling schedules (Overview → Sampling & reporting). If the lab left an analyte off, ask while the sample can still be tested.
+                    </Text>
+                  </Alert>
+                ) : (
+                  <Alert color="green" variant="light" icon={<IconCircleCheck size={18} />}>
+                    Every site and analyte the sampling schedule names for {importGaps.length === 1 ? 'this round' : 'these rounds'} has a result{importGaps.some(hasGaps) ? ' – or the round was accepted as it is' : ''}.
                   </Alert>
                 )}
               </>

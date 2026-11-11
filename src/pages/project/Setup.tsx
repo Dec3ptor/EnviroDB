@@ -366,14 +366,20 @@ export function SetupTab() {
         <Box mt="lg">
           <MoreOptions
             label="Assessment settings"
-            summary={[p.hardnessAdjust ? 'metals hardness-modified' : 'metals not hardness-modified', `non-detects at ${p.ndHandling === 'half' ? 'half the DL' : p.ndHandling === 'zero' ? 'zero' : 'the DL'}`, p.percentileMethod === 'hazen' ? 'Hazen percentiles' : 'Excel percentiles'].join(' · ')}
+            summary={[p.hardnessAdjust ? 'metals hardness-modified' : 'metals not hardness-modified', p.phAdjust !== false ? 'ammonia at each sample’s pH' : 'ammonia at pH 8', `non-detects at ${p.ndHandling === 'half' ? 'half the DL' : p.ndHandling === 'zero' ? 'zero' : 'the DL'}`, p.percentileMethod === 'hazen' ? 'Hazen percentiles' : 'Excel percentiles'].join(' · ')}
           >
-            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
               <Switch
                 label="Hardness-modify metals guidelines"
                 description="Adjust Cd, Cr(III), Cu, Pb, Ni, Zn guideline values using hardness measured in the same sample (ANZECC 2000, H > 30 mg/L)"
                 checked={p.hardnessAdjust}
                 onChange={(e) => setP({ ...p, hardnessAdjust: e.currentTarget.checked })}
+              />
+              <Switch
+                label="Ammonia guideline at each sample’s pH"
+                description="Total ammonia guideline values are given at pH 8. On: each result is compared with the value at its sample’s own pH – higher in more acid water, lower in more alkaline (ANZECC 2000 table 8.3.7). Off, or where a sample has no pH: the pH 8 value"
+                checked={p.phAdjust !== false}
+                onChange={(e) => setP({ ...p, phAdjust: e.currentTarget.checked })}
               />
               <Select
                 label="Non-detects in statistics"

@@ -538,7 +538,7 @@ export function diffSnapshots(old: SnapshotContent, cur: SnapshotContent): Issue
   cmp('sites', old.sites, cur.sites, (s) => s.code, ['updatedAt'], (s) => scope.has(s.id));
   const PROJECT_FIELDS: Array<[keyof Project, string]> = [
     ['name', 'name'], ['code', 'project number'], ['client', 'client'], ['consents', 'consents'], ['regulator', 'regulator'], ['location', 'location'], ['description', 'description'],
-    ['recipient', 'who letters go to'], ['salutation', 'letter greeting'], ['guidelineSetIds', 'guideline sets compared'], ['hardnessAdjust', 'hardness adjustment'], ['ndHandling', 'non-detect statistics'], ['percentileMethod', 'percentile method'], ['yearStartMonth', 'reporting year'],
+    ['recipient', 'who letters go to'], ['salutation', 'letter greeting'], ['guidelineSetIds', 'guideline sets compared'], ['hardnessAdjust', 'hardness adjustment'], ['phAdjust', 'ammonia pH adjustment'], ['ndHandling', 'non-detect statistics'], ['percentileMethod', 'percentile method'], ['yearStartMonth', 'reporting year'],
   ];
   const projectChanged = PROJECT_FIELDS.filter(([k]) => json(old.project[k]) !== json(cur.project[k])).map(([, t]) => t);
   if (projectChanged.length) add('project', `Changed: ${projectChanged.join(', ')}`);

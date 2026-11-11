@@ -41,7 +41,7 @@ import { SaveButton } from '../../components/Unsaved';
 import { same } from '../../sync/model';
 import { useFeature } from '../../hooks/useFeatures';
 
-function Legend({ guidelineNames, hardness }: { guidelineNames: string[]; hardness?: boolean }) {
+function Legend({ guidelineNames, hardness, ph }: { guidelineNames: string[]; hardness?: boolean; ph?: boolean }) {
   return (
     <Group gap="lg" wrap="wrap">
       <Text size="xs">
@@ -67,6 +67,11 @@ function Legend({ guidelineNames, hardness }: { guidelineNames: string[]; hardne
         {hardness && (
           <Tooltip multiline w={300} label="Hardness-dependent metals are compared with hardness-modified guideline values where hardness was measured in the same sample (ANZECC 2000). Change this in Setup.">
             <span style={{ textDecoration: 'underline dotted', cursor: 'help' }}> · metals hardness-modified</span>
+          </Tooltip>
+        )}
+        {ph && (
+          <Tooltip multiline w={300} label="Total ammonia guideline values are given at pH 8: each result is compared with the value at its sample’s own pH (the lab’s, else the field reading), where it has one – ANZECC 2000 table 8.3.7. Change this in Setup.">
+            <span style={{ textDecoration: 'underline dotted', cursor: 'help' }}> · ammonia at each sample’s pH</span>
           </Tooltip>
         )}
       </Text>
@@ -1134,7 +1139,7 @@ export function DataTab() {
         )}
       </Card>
       <Group justify="space-between" gap="xs">
-        <Legend guidelineNames={guidelineNames} hardness={project.hardnessAdjust && setIds.some((id) => setMap.get(id)?.values.some((v) => v.hardness))} />
+        <Legend guidelineNames={guidelineNames} hardness={project.hardnessAdjust && setIds.some((id) => setMap.get(id)?.values.some((v) => v.hardness))} ph={project.phAdjust !== false && setIds.some((id) => setMap.get(id)?.values.some((v) => v.ph && withData.has(v.parameterId)))} />
         <Text size="sm" c={narrowed ? undefined : 'dimmed'} fw={narrowed ? 600 : undefined}>
           {narrowed ? `Showing ${view.length} of ${rows.length} samples` : `${rows.length} samples`} · {columns.length} parameters
         </Text>
