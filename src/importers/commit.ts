@@ -5,6 +5,7 @@ import { stableId, uid } from '../lib/ids';
 import { isQcSite } from '../lib/qc';
 import { fractionOf, normName } from '../lib/matching';
 import { analyteMapKey, PROVISIONAL_NOTE, type ParsedImport } from './model';
+import { qcNameOf } from './account';
 import { logAudit } from '../db/audit';
 
 export interface ImportMapping {
@@ -26,6 +27,8 @@ export interface CommitOptions {
   rememberAliases: boolean;
   fileName: string;
   labName?: string;
+  /** What the file had that didn't go in, in words – kept with the import, for its history. */
+  leftOut?: string[];
   /** Told how many of the results are saved so far (a big master sheet takes a while). */
   onProgress?: (saved: number, total: number) => void;
 }
@@ -35,6 +38,8 @@ const CHUNK = 5000;
 
 export interface CommitSummary extends ImportBatch {
   newSamples: number;
+  /** Results the project had already, kept as they were ("Keep existing"). */
+  keptExisting: number;
 }
 
 /**
@@ -86,7 +91,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
   const params = new Map<string, Parameter>((await db.parameters.toArray()).map((p) => [p.id, p]));
   // at a quality control site each sample is its own (DUP1 and DUP2 the same day are two samples), told apart by name
   const qcSites = new Set((await db.sites.where('projectId').equals(projectId).toArray()).filter((s) => isQcSite(s)).map((s) => s.id));
-  const qcName = (siteId: string, name?: string) => (qcSites.has(siteId) ? (name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() : '');
+  const qcName = (siteId: string, name?: string) => qcNameOf(siteId, name, qcSites);
   const batch: ImportBatch = {
     id: uid('imp'),
     projectId,
@@ -99,6 +104,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
     replaced: 0,
   };
   let newSamples = 0;
+  let keptExisting = 0;
 
   await db.transaction('rw', [db.samples, db.results, db.imports, db.projects], async () => {
     const existingSamples = await db.samples.where('projectId').equals(projectId).toArray();
@@ -221,6 +227,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
       if (ex?.length) {
         if (opts.duplicates === 'skip') {
           batch.skipped++;
+          keptExisting++;
           return;
         }
         // the result itself is put again; others for the same analyte go
@@ -241,6 +248,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
     if (stale.length) await db.results.bulkPut(stale.map((r) => ({ ...r, date: sampleDate.get(r.sampleId)! })));
 
     batch.results = finalResults.length;
+    if (opts.leftOut?.length) batch.notes = [batch.notes, `Not imported from the file – ${opts.leftOut.join('; ')}.`].filter(Boolean).join(' ');
     if (toDelete.length) await db.results.bulkDelete(toDelete);
     if (samplesToPut.length) await db.samples.bulkPut(samplesToPut);
     opts.onProgress?.(0, finalResults.length);
@@ -254,5 +262,5 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
   if (opts.rememberAliases) await rememberNames(parsed, mapping);
   await touchProject(projectId);
   await logAudit(projectId, 'import', `Imported ${batch.fileName}: ${batch.results} results, ${batch.samples} samples${batch.replaced ? `, ${batch.replaced} replaced` : ''}`);
-  return { ...batch, newSamples };
+  return { ...batch, newSamples, keptExisting };
 }

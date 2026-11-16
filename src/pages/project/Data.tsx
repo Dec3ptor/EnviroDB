@@ -737,6 +737,11 @@ function ImportHistory() {
                     <Table.Td>{new Date(im.importedAt).toLocaleString('en-NZ')}</Table.Td>
                     <Table.Td>
                       {im.fileName}
+                      {im.notes && (
+                        <Text size="xs" c="dimmed" maw={520}>
+                          {im.notes}
+                        </Text>
+                      )}
                       {kept(im.id).map((f) => (
                         <Group key={f.id} gap={4} wrap="nowrap">
                           <FileIcon f={f} size={13} />

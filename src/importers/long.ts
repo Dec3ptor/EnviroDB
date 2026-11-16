@@ -2,7 +2,7 @@
 // Site | Date | Analyte | Result | Units | Detection limit.
 
 import { cellAt, cellText, cellValue, isEmpty, type SheetGrid } from './workbook';
-import type { ParsedImport, RawSample } from './model';
+import { noteUnread, type LeftOut, type ParsedImport, type RawSample } from './model';
 import { parseDateAny } from '../lib/dates';
 import { parseValue } from '../lib/values';
 
@@ -58,6 +58,7 @@ export function detectLong(g: SheetGrid): { config: LongConfig; score: number } 
 export function parseLong(g: SheetGrid, cfg: LongConfig): ParsedImport {
   const map = new Map<string, RawSample>();
   const warnings: string[] = [];
+  const left: LeftOut[] = [];
   let skipped = 0;
   if (cfg.analyte === null || cfg.value === null) return { kind: 'long', samples: [], warnings: ['Choose the analyte and result columns.'] };
   for (let r = cfg.headerRow + 1; r < g.nRows; r++) {
@@ -90,10 +91,13 @@ export function parseLong(g: SheetGrid, cfg: LongConfig): ParsedImport {
         parsed.dl = dl.value;
       }
     }
-    if (parsed.missing) continue;
+    if (parsed.missing) {
+      noteUnread(left, parsed, { sheet: g.name, sample: s.sampleName, analyte });
+      continue;
+    }
     const unit = cfg.unit !== null ? cellText(cellAt(g, r, cfg.unit)) || undefined : undefined;
-    s.results.push({ analyte, unit, raw, parsed });
+    s.results.push({ analyte, unit: unit ?? parsed.unit, raw, parsed });
   }
   if (skipped) warnings.push(`${skipped} rows without a site or valid date were skipped.`);
-  return { kind: 'long', samples: Array.from(map.values()), warnings };
+  return { kind: 'long', samples: Array.from(map.values()), warnings, left };
 }

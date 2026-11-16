@@ -21,7 +21,7 @@
 // so the name and unit columns are found from the analyte rows themselves.
 
 import { cellAt, cellText, cellValue, isEmpty, type SheetGrid } from './workbook';
-import type { ParsedImport, RawSample } from './model';
+import { noteUnread, type LeftOut, type ParsedImport, type RawSample } from './model';
 import { extractDate, parseDateAny } from '../lib/dates';
 import { normUnit } from '../lib/units';
 import { parseValue } from '../lib/values';
@@ -30,7 +30,8 @@ const SAMPLE_ROW = /^(client\s+)?sample\s*(name|id|description|ref(erence)?)\s*:
 const LABNO_ROW = /^lab(oratory)?\s*(sample\s*)?(number|no\.?|#|id|ref)\s*:?$/i;
 const DATE_ROW = /^(date|time)?\s*(sampled|collected|of\s+sampling|sampling\s+date)|^(sample|sampling|collection)\s+date|^date\s*\/?\s*time\s*sampled|^date\s*:?$/i;
 const TIME_ROW = /^time\s*(sampled|collected)?\s*:?$/i;
-const META_ROW = /^(sample\s*type|matrix|client\s*ref|order\s*no|quote\s*no|batch|received|date\s*received|date\s*reported|container|preservation|sample\s*condition|depth|units?\s*:?$)/i;
+// (a word that could start a test's name – "Depth to water" – is a sample detail only as the whole label)
+const META_ROW = /^(sample\s*type|client\s*ref|order\s*no|quote\s*no|date\s*received|date\s*reported|sample\s*condition)|^(matrix|batch(\s*(no\.?|number|id))?|received|containers?(\s*type)?|preservation|preservative|depth(\s*\(?m\)?)?|units?)\s*:?$/i;
 const STOP_ROW = /^(summary\s+of\s+methods|analyst'?s?\s+comments?|method\s+summary|notes?\s*:|these\s+samples|this\s+certificate|samples?\s+are\s+held|the\s+results|key\s*:|footnotes?)/i;
 const LAB_NAMES: Array<[RegExp, string]> = [
   [/hill\s*lab(oratorie)?s?|r\s*j\s*hill/i, 'Hill Laboratories'],
@@ -163,6 +164,7 @@ export function parseLabSheet(g: SheetGrid): ParsedImport | null {
   for (const m of (headerValue(g, /^analyst'?s?\s+comments?\s*:?/i) ?? '').matchAll(/#(\d+)\s+([^#]+)/g)) comments.set(m[1], m[2].trim());
   const warnings: string[] = [];
   const samples: RawSample[] = [];
+  const left: LeftOut[] = [];
 
   blocks.forEach((b, bi) => {
     const blockSamples: RawSample[] = b.sampleCols.map((c) => {
@@ -185,10 +187,23 @@ export function parseLabSheet(g: SheetGrid): ParsedImport | null {
     const start = Math.max(b.sampleRow, b.labRow ?? -1) + 1;
     const times: Record<number, string> = {};
     for (let r = start; r <= b.endRow; r++) {
-      const label = cellText(cellAt(g, r, b.labelCol));
-      if (!label) continue;
-      if (STOP_ROW.test(label)) break;
       const hasValues = b.sampleCols.some((c) => !isEmpty(cellAt(g, r, c)));
+      let label = cellText(cellAt(g, r, b.labelCol));
+      if (!label) {
+        // no test's name: a row labelled in another column (a date, the lab numbers) is read as that; results with
+        // nothing to say what of are said, not dropped
+        const other = labelOf(g, r, b.sampleCols[0])?.text ?? '';
+        if (other && (STOP_ROW.test(other) || TIME_ROW.test(other) || DATE_ROW.test(other) || META_ROW.test(other) || LABNO_ROW.test(other) || SAMPLE_ROW.test(other))) label = other;
+        else {
+          if (hasValues)
+            b.sampleCols.forEach((c, i) => {
+              const parsed = parseValue(cellValue(cellAt(g, r, c)));
+              if (!parsed.missing && left.length < 2000) left.push({ sheet: g.name, sample: blockSamples[i].sampleName, text: parsed.text, why: 'no-test' });
+            });
+          continue;
+        }
+      }
+      if (STOP_ROW.test(label)) break;
       if (TIME_ROW.test(label) && hasValues) {
         b.sampleCols.forEach((c, i) => {
           const t = cellAt(g, r, c);
@@ -223,8 +238,11 @@ export function parseLabSheet(g: SheetGrid): ParsedImport | null {
       b.sampleCols.forEach((c, i) => {
         const raw = cellValue(cellAt(g, r, c));
         const parsed = parseValue(raw);
-        if (parsed.missing) return;
-        blockSamples[i].results.push({ analyte: label, group, unit, raw, parsed });
+        if (parsed.missing) {
+          noteUnread(left, parsed, { sheet: g.name, sample: blockSamples[i].sampleName, analyte: label });
+          return;
+        }
+        blockSamples[i].results.push({ analyte: label, group, unit: unit ?? parsed.unit, raw, parsed });
       });
     }
     blockSamples.forEach((s, i) => {
@@ -250,7 +268,7 @@ export function parseLabSheet(g: SheetGrid): ParsedImport | null {
 
   if (samples.some((s) => s.dateSource === 'header')) warnings.push('Some samples had no sampling date in the file – the "Date Received" was used. Please check the dates.');
   if (samples.some((s) => !s.date)) warnings.push('Some samples have no sampling date – enter them before importing.');
-  return { kind: 'lab', labName, labJob, samples, warnings };
+  return { kind: 'lab', labName, labJob, samples, warnings, left };
 }
 
 /** How strongly a sheet looks like a certificate-style lab report (0 = not at all). */

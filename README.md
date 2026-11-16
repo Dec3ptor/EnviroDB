@@ -221,7 +221,9 @@ there as they work and show up for the others within seconds.
   analytes with no result – the ones a lab left off, to ask about while the sample can still be tested. The
   schedule's card shows the same for the current round and the one before, and the dashboard lists results
   missing once a lab's file has come (not while only the phone's field readings are in). *That's all for
-  this round* accepts a round as it is, so it isn't asked about again. The *Files* tab says which of the last
+  this round* accepts a round as it is, so it isn't asked about again. A measurement taken the other way counts:
+  pH read on site where the schedule names the lab's pH, or the lab's where it names the field's (and so for
+  conductivity and turbidity) – the round has its pH either way. The *Files* tab says which of the last
   year's lab jobs have no result sheet on file (once the project keeps any).
 - **Files.** A project's *Files* tab keeps its documents: lab quotes and result sheets, chains of custody, field
   sheets, the consent. Drop files anywhere on the tab (or *Upload files*): each is copied as it is into the shared
@@ -978,12 +980,26 @@ place. Field readings from a phone and results typed in stay. (Or undo the earli
 | Lab PDF reports | ALS certificates of analysis, Linnaeus analysis reports, Hill Laboratories certificates | Read from where the words sit on the page: a column per sample (its name and sampling date above or below the lab number), a row per test, the report's sections (e.g. *Elements in Water (Soluble)*). Footnote marks (`ø`, `*`) are dropped. A sample another lab names only by ALS's number (`NH2600001_003`) gets its site from ALS's files. |
 
 Drop **several files at once, or the zip** they came in. When a lab sends the same results as a PDF and
-as a spreadsheet, they're taken from the spreadsheet (the PDF still names the samples); the same
+as a spreadsheet, they're taken from the spreadsheet (the PDF still names the samples) – and any result the
+spreadsheet doesn't have for those samples is read from the PDF, with a note saying which; the same
 file sent twice (CSV and Excel) is read once. Parameters that are new to you – e.g. a leachate's
 organics suite – can be added in one go, grouped (hydrocarbons, pesticides, other organics, PFAS).
 
-Results such as `< 0.0010`, `>2420`, `ND`, `NS`, `1,200` and `0.5*` are understood. Units are converted
-automatically (g/m³ ↔ mg/L ↔ µg/L, mS/m ↔ µS/cm…). Dates are read day-first (NZ format).
+Results such as `< 0.0010`, `>2420`, `ND`, `NS`, `1,200` and `0.5*` are understood, and so is a result with
+its unit or the temperature it was read at written after it (`7.4 pH Units`, `412 µS/cm`, `7.4 @ 21°C`). Units
+are converted automatically (g/m³ ↔ mg/L ↔ µg/L, mS/m ↔ µS/cm…). Dates are read day-first (NZ format).
+
+**Nothing is left out without saying so.** The last step before importing accounts for every result in the
+file: how many go in and, for the rest, why not – analytes not matched to a parameter (named, with a link back
+to match them), samples with no site or no date, samples you unticked, and one sample and parameter in the
+file twice (two labs' pH for one sample, say: the later is kept, and *Show* lists which value was kept and
+which replaced). Under that is anything in the file that isn't blank and couldn't be read as a result – a count
+written `TNTC`, `7.3 approx`, results in a PDF with no test beside them – with the sample and the test each was
+for, so one that matters can be typed into the Data tab. The same account is shown once the file is in, and is
+kept in the import history. A file or a sheet that couldn't be read at all is said in orange where the files
+are listed and again on the last step. In a lab's PDF, a row whose results sit on a different line from the
+test's name (a tall row, a name wrapped onto two lines) is read whether or not the test has a unit – pH has
+none, and was dropped by earlier versions.
 Re-importing a file (or an amended lab report) replaces existing results by default, so nothing is duplicated.
 Every import can be undone from the Data tab.
 

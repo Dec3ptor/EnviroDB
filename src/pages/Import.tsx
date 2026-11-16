@@ -29,6 +29,9 @@ import { analyteMapKey } from '../importers/model';
 import { stableId } from '../lib/ids';
 import { buildParamIndex } from '../lib/matching';
 import { useAnalyteRows, useSiteTextRows, suggestCode } from '../importers/useImport';
+import { accountFor } from '../importers/account';
+import { accountNotes, ImportAccountPanel } from '../components/ImportAccount';
+import { isQcSite } from '../lib/qc';
 import { commitImport, type CommitSummary, type ImportMapping } from '../importers/commit';
 import { createParameter, newSite, saveSite } from '../db/repo';
 import { DateField, EmptyState, LevelBadge, PageHeader, paramOptions } from '../components/common';
@@ -309,6 +312,9 @@ function NewParamModal({ initial, pref, onClose, onCreated }: { initial: { name:
 }
 
 /** Straight after an import: sign the results off as reviewed, or undo the import while it's fresh. */
+/** A note about a file that wasn't read (as opposed to one saying how the files were read). */
+const fileProblem = (note: string) => /left out\.|couldn't be read|couldn’t be read|no spreadsheets or PDF/i.test(note);
+
 function ImportFollowUp({ importId, fileName, results, onUndone }: { importId: string; fileName: string; results: number; onUndone: () => void }) {
   const batch = useLiveQuery(() => db.imports.get(importId), [importId]);
   if (batch === undefined) return null;
@@ -380,6 +386,8 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
   const ws = useWorkspace();
   const canKeep = ws.phase === 'ready' && !!currentWorkspaceFolder()?.writeBlob;
   const [summary, setSummary] = useState<CommitSummary | null>(null);
+  // the file's account as it was when imported (the matching can't change it after)
+  const [imported, setImported] = useState<ReturnType<typeof accountFor> | null>(null);
   const [newParamFor, setNewParamFor] = useState<{ key: string; name: string; unit?: string; group?: string } | null>(null);
   const [bulkDate, setBulkDate] = useState<string | undefined>();
   const [creating, setCreating] = useState(false);
@@ -518,6 +526,7 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
       setDateOverrides({});
       setInclude({});
       setSummary(null);
+      setImported(null);
       setStep(1);
     } catch (e) {
       notifications.show({ title: 'Could not read file', message: (e as Error).message, color: 'red' });
@@ -540,6 +549,12 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
   const unmatchedSites = siteRows.filter((r) => !siteMap[r.siteText]);
   const missingDates = included.filter((s) => !sampleDate(s));
   const unmatchedAnalytes = analyteRows.filter((r) => !paramMapping[r.key]);
+  // every result of the file accounted for: what goes in and, for what doesn't, why
+  const qcSiteIds = useMemo(() => new Set(sites.filter((x) => isQcSite(x)).map((x) => x.id)), [sites]);
+  const account = useMemo(
+    () => (parsed ? accountFor(parsed, { sites: Object.fromEntries(parsed.samples.map((x) => [x.key, siteMap[x.siteText || x.sampleName] ?? null])), dates: dateOverrides, include, params: paramMapping, units: unitMap }, { sites, params: data.paramMap, qcSites: qcSiteIds, keepBoth: dupes === 'keep' && !clearEarlier }) : null),
+    [parsed, siteMap, dateOverrides, include, paramMapping, unitMap, sites, data.paramMap, qcSiteIds, dupes, clearEarlier],
+  );
   const readyQuick = !!parsed && samples.length > 0 && !unmatchedSites.length && !missingDates.length && !unmatchedAnalytes.length;
 
   // duplicate preview against existing data
@@ -619,7 +634,8 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
         params: paramMapping,
         units: unitMap,
       };
-      const res = await commitImport(project.id, parsed, mapping, { duplicates: clearEarlier ? 'replace' : dupes, clearEarlier, rememberAliases: remember, fileName: state!.fileName, labName: parsed.labName, onProgress: (saved, total) => setSaving({ saved, total }) });
+      const res = await commitImport(project.id, parsed, mapping, { duplicates: clearEarlier ? 'replace' : dupes, clearEarlier, rememberAliases: remember, fileName: state!.fileName, labName: parsed.labName, leftOut: account ? accountNotes(account) : undefined, onProgress: (saved, total) => setSaving({ saved, total }) });
+      setImported(account);
       if (fromInbox.current.length) {
         await markInboxImported(fromInbox.current, project.id, res.id);
         fromInbox.current = [];
@@ -790,11 +806,17 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
               )}
             </Group>
           </Paper>
-          {state.notes.map((w) => (
-            <Alert key={w} color="blue" variant="light" py={6}>
-              {w}
-            </Alert>
-          ))}
+          {state.notes.map((w) =>
+            fileProblem(w) ? (
+              <Alert key={w} color="orange" variant="light" icon={<IconAlertTriangle size={16} />} py={6}>
+                {w}
+              </Alert>
+            ) : (
+              <Alert key={w} color="blue" variant="light" py={6}>
+                {w}
+              </Alert>
+            ),
+          )}
           {state.remembered.map(({ sheet, layout }) => (
             <Alert key={sheet} color="teal" variant="light" py={6} icon={<IconBulb size={16} />}>
               <Group justify="space-between" wrap="wrap" gap="xs">
@@ -1225,9 +1247,9 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
             <SimpleGrid cols={{ base: 2, sm: 4 }} mb="md">
               {[
                 ['Samples', ready.length],
-                ['Results', readyResults],
+                ['Results to import', account?.going ?? readyResults],
                 ['Already in database', dupCount],
-                ['Skipped analytes', unmatchedAnalytes.length],
+                ['Not going in', account ? account.read - account.going + account.left.length : unmatchedAnalytes.length],
               ].map(([l, v]) => (
                 <Paper key={l} withBorder p="sm">
                   <Text size="xs" c="dimmed">
@@ -1239,6 +1261,16 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
                 </Paper>
               ))}
             </SimpleGrid>
+            {state?.notes.filter(fileProblem).map((w) => (
+              <Alert key={w} color="orange" variant="light" icon={<IconAlertTriangle size={16} />} py={6} mb="xs">
+                {w}
+              </Alert>
+            ))}
+            {account && (
+              <div style={{ marginBottom: 'var(--mantine-spacing-md)' }}>
+                <ImportAccountPanel account={account} onSites={() => setStep(2)} onAnalytes={() => setStep(3)} />
+              </div>
+            )}
             <Stack gap="sm">
               <div>
                 <Text size="sm" fw={500} mb={4}>
@@ -1308,10 +1340,16 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
               <div>
                 <Title order={4}>Imported {summary.results} results from {summary.samples} samples</Title>
                 <Text size="sm" c="dimmed">
-                  {summary.newSamples} new sample{summary.newSamples === 1 ? '' : 's'} · {summary.replaced} replaced · {summary.skipped} skipped{summary.cleared ? ` · ${summary.cleared} earlier result${summary.cleared === 1 ? '' : 's'} cleared` : ''}
+                  {summary.newSamples} new sample{summary.newSamples === 1 ? '' : 's'} · {summary.replaced} replaced{summary.keptExisting ? ` · ${summary.keptExisting} already there, kept as ${summary.keptExisting === 1 ? 'it was' : 'they were'}` : ''}
+                  {summary.cleared ? ` · ${summary.cleared} earlier result${summary.cleared === 1 ? '' : 's'} cleared` : ''}
                 </Text>
               </div>
             </Group>
+            {imported && (imported.read - imported.going > 0 || imported.left.length > 0) && (
+              <div style={{ marginBottom: 'var(--mantine-spacing-md)' }}>
+                <ImportAccountPanel account={imported} done />
+              </div>
+            )}
             <ImportFollowUp importId={summary.id} fileName={summary.fileName} results={summary.results} onUndone={() => setStep(0)} />
             {importCheck && (
               <>

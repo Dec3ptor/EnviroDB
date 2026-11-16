@@ -122,9 +122,18 @@ export interface RoundGaps {
 }
 
 /**
+ * The same measurement taken another way: pH read on site and pH from the lab ("ph-field" and "ph"), and so for
+ * conductivity, turbidity and any parameter with a field twin. A round that has one isn't missing the other.
+ */
+export function measuredAs(id: string): string[] {
+  return id.endsWith('-field') ? [id, id.slice(0, -'-field'.length)] : [id, `${id}-field`];
+}
+
+/**
  * What a round of a schedule is missing: the sites not sampled and, at the sites that were, the scheduled parameters
- * with no result – a value typed in, a field reading or a calculated value counts; a result left out after a QA check
- * was still reported. `isLab` says whether a result came in a lab's file.
+ * with no result – a value typed in, a field reading or a calculated value counts, and so does the same measurement
+ * taken the other way (the lab's pH where the schedule names the field pH, or the field's where it names the lab's);
+ * a result left out after a QA check was still reported. `isLab` says whether a result came in a lab's file.
  */
 export function roundGaps(sch: MonitoringSchedule, round: { start: string; end: string }, samples: Sample[], resultsOf: (sampleId: string) => Result[], isLab: (r: Result) => boolean): RoundGaps {
   const out: RoundGaps = { schedule: sch, start: round.start, end: round.end, notSampled: [], incomplete: [], complete: [], accepted: !!sch.accepted?.includes(round.start) };
@@ -136,7 +145,7 @@ export function roundGaps(sch: MonitoringSchedule, round: { start: string; end: 
     }
     const results = mine.flatMap((s) => resultsOf(s.id));
     const reported = new Set(results.map((r) => r.parameterId));
-    const missing = sch.parameterIds.filter((id) => !reported.has(id));
+    const missing = sch.parameterIds.filter((id) => !measuredAs(id).some((x) => reported.has(x)));
     if (missing.length) out.incomplete.push({ siteId, dates: [...new Set(mine.map((s) => s.date.slice(0, 10)))].sort(), missing, labIn: results.some(isLab) });
     else out.complete.push(siteId);
   }

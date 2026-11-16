@@ -5,6 +5,7 @@
 
 import type { Cell, SheetGrid } from './workbook';
 import { extractDate } from '../lib/dates';
+import { parseValue } from '../lib/values';
 import { labKey, type SampleInfo } from './labExports';
 
 /** A word on a page: its bottom-left corner (y grows up the page), width and height, in points. */
@@ -31,10 +32,19 @@ export interface PdfResult {
   unit?: string;
   value: string;
 }
+/** Something on a results page that wasn't read as a sample's result: said, so it isn't left out unnoticed. */
+export interface PdfLeft {
+  /** The lab number of the sample it was under, and the test beside it, where those are known. */
+  sample?: string;
+  analyte?: string;
+  text: string;
+  why: 'no-test' | 'two-values';
+}
 export interface PdfReport {
   lab: string;
   samples: PdfSample[];
   results: PdfResult[];
+  left: PdfLeft[];
 }
 
 interface Phrase {
@@ -126,6 +136,8 @@ interface Columns {
   labels: string[];
   centres: number[];
   bounds: number[];
+  /** Where the first sample's heading starts: what ends left of it, and isn't a number, isn't one of its results. */
+  firstLeft: number;
 }
 
 function columnsOf(anchors: Phrase[]): Columns {
@@ -134,7 +146,7 @@ function columnsOf(anchors: Phrase[]): Columns {
   const gaps = centres.slice(1).map((c, i) => c - centres[i]);
   const half = gaps.length ? Math.min(...gaps) / 2 : 45;
   const bounds = [centres[0] - half, ...centres.slice(1).map((c, i) => (c + centres[i]) / 2), centres[centres.length - 1] + half];
-  return { labels: sorted.map((a) => a.text), centres, bounds };
+  return { labels: sorted.map((a) => a.text), centres, bounds, firstLeft: sorted[0].x0 };
 }
 
 /** The column a phrase is in: -1 left of the samples (test names, units …), -2 right of them. */
@@ -145,13 +157,26 @@ function columnAt(cols: Columns, p: Phrase): number {
   return -2;
 }
 
+/** Text that is a result, or the start of one: "7.4", "< 0.010", "<", ">2420". */
+const RESULT_LIKE = /^(?:[<>≤≥~]|[<>≤≥]?\s*[-+]?(?:\d|\.\d))/;
+
+/**
+ * The column a phrase on a results row is in. A unit that runs on towards the first sample ("g/m³ as CaCO₃",
+ * "MPN / 100mL" – wide, in a narrow units column) can sit mostly under it: what ends left of the sample's own
+ * heading, and isn't a number, is a label still, not that sample's result.
+ */
+function resultColumn(cols: Columns, p: Phrase): number {
+  const c = columnAt(cols, p);
+  return c === 0 && p.x1 < cols.firstLeft - 1 && !RESULT_LIKE.test(p.text) ? -1 : c;
+}
+
 const FOOTNOTE = /^[øØ*#†‡^~¤§]+$/;
 const FOOTNOTE_START = /^[øØ*#†‡^~¤§]+\s*/;
 const FOOTNOTE_END = /\s*[*#†‡^]+$/;
 const UNIT_LIKE = /[/%³]|^(pH|NTU|FNU|FAU|NTRU|PCU|CFU|MPN|ppm|ppb|mS|µS|μS|uS|°C|mV|g\/m|units?)\b/i;
 const NOT_DONE = /^-{2,}$|^n\/?a$/i;
 
-function readTable(lines: Line[], at: number, anchors: Phrase[], layout: Layout, next: number): { samples: PdfSample[]; results: PdfResult[] } {
+function readTable(lines: Line[], at: number, anchors: Phrase[], layout: Layout, next: number): { samples: PdfSample[]; results: PdfResult[]; left: PdfLeft[] } {
   const cols = columnsOf(anchors);
   const anchorLine = lines[at];
   const top = Math.max(...anchors.map((a) => a.y));
@@ -193,26 +218,50 @@ function readTable(lines: Line[], at: number, anchors: Phrase[], layout: Layout,
   const others = heads.filter((p) => /^(CAS( Number)?|Units?|LOR|Method)$/i.test(p.text));
   const nameEdge = others.length ? Math.min(...others.map((p) => p.x0)) - 2 : cols.bounds[0];
   const rows = lines.slice(Math.max(resultsFrom, 0), Math.min(next, lines.length)).map((l) => {
-    const labels = l.phrases.filter((p) => columnAt(cols, p) === -1 && !FOOTNOTE.test(p.text));
+    const labels = l.phrases.filter((p) => resultColumn(cols, p) === -1 && !FOOTNOTE.test(p.text));
     const values = cols.labels.map(() => [] as string[]);
     for (const p of l.phrases) {
-      const c = columnAt(cols, p);
+      const c = resultColumn(cols, p);
       if (c >= 0) values[c].push(p.text);
     }
     const filled = values.map((v) => v.join(' ').trim());
-    return { l, labels, names: labels.filter((p) => mid(p) < nameEdge), filled, hasValues: filled.some((v) => v && !/^Results?$/i.test(v)) };
+    // two numbers under one sample: a column this hasn't told apart – not one number to be made of both
+    const doubled = values.map((v) => v.filter((x) => parseValue(x).value !== null).length > 1);
+    return { l, labels, names: labels.filter((p) => mid(p) < nameEdge), filled, doubled, hasValues: filled.some((v) => v && !/^Results?$/i.test(v)) };
   });
+  /** Whether a row's values are results (numbers, detection limits), not words that happen to sit under the samples. */
+  const resultsIn = (filled: string[]) => filled.some((v) => v && !NOT_DONE.test(v) && !parseValue(v).missing);
   const used = new Set<number>();
+  /** The lines near a row that could hold its test's name (a tall row): no results of their own, a name, within a line's reach – the nearest first. */
+  const namesNear = (i: number) =>
+    [i - 1, i + 1, i - 2, i + 2]
+      .filter((k) => rows[k] && !rows[k].hasValues && !used.has(k) && rows[k].names.length && Math.abs(rows[k].l.y - rows[i].l.y) <= 10)
+      .sort((a, b) => Math.abs(rows[a].l.y - rows[i].l.y) - Math.abs(rows[b].l.y - rows[i].l.y));
+  // where the table's results end: the last row of results with a test to its name. What's under the samples below
+  // that – a page number, a footer – is no part of it
+  let lastRow = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (layout.stop.test(lineText(rows[i].l))) break;
+    if (rows[i].hasValues && resultsIn(rows[i].filled) && (rows[i].names.length || namesNear(i).length)) lastRow = i;
+  }
   const results: PdfResult[] = [];
+  const left: PdfLeft[] = [];
   let group: string | undefined;
   let skip = false;
+  // the section each heading line took over from – put back if the line turns out to be a test's name, not a heading
+  const sectionBefore = new Map<number, string | undefined>();
   for (let i = 0; i < rows.length; i++) {
-    const { l, labels, names, filled, hasValues } = rows[i];
+    const { l, labels, names, filled, doubled, hasValues } = rows[i];
     if (layout.stop.test(lineText(l))) break;
-    if (!labels.length || used.has(i)) continue;
+    if (used.has(i)) continue;
+    // below the table's last results: not a row of it (a table with no numbers at all is read to its end, to say so)
+    if (hasValues && i > lastRow && lastRow >= 0) continue;
+    // nothing beside its values: a row whose test is on the line above or below (a tall row), if they're results at all
+    if (!labels.length && !(hasValues && resultsIn(filled))) continue;
     if (!hasValues) {
       // a section heading (method, or lab section)
       if (layout.section?.test(labels[0].text)) {
+        sectionBefore.set(i, group);
         const heading = labels.map((p) => p.text).join(' ');
         group = (layout.sectionCode ? heading.replace(layout.sectionCode, '') : heading).trim();
         skip = /surrogate/i.test(group);
@@ -220,37 +269,69 @@ function readTable(lines: Line[], at: number, anchors: Phrase[], layout: Layout,
       continue;
     }
     if (skip) continue;
-    // a row made taller by wrapped text has its name a line above or below its results
+    // a row made taller by wrapped text has its name a line above or below its results: the nearest such line – and
+    // the line on its other side too, when the name is wrapped around the results
     let nameP = names[0];
+    let nameText = nameP?.text ?? '';
     if (!nameP) {
-      const j = [i - 1, i + 1, i - 2, i + 2].find((k) => rows[k] && !rows[k].hasValues && !used.has(k) && rows[k].names.length && Math.abs(rows[k].l.y - l.y) <= 10);
-      if (j === undefined) continue;
+      const near = namesNear(i);
+      const j = near[0];
+      if (j === undefined) {
+        // results with no test to go with: said, not dropped
+        if (resultsIn(filled)) filled.forEach((value, c) => value && !NOT_DONE.test(value) && left.push({ sample: cols.labels[c], text: value, why: 'no-test' }));
+        continue;
+      }
       used.add(j);
       nameP = rows[j].names[0];
+      nameText = nameP.text;
+      // wrapped around the results: its other half is as near on the other side
+      const other = near.find((k) => (k - i) * (j - i) < 0 && Math.abs(Math.abs(rows[k].l.y - l.y) - Math.abs(rows[j].l.y - l.y)) <= 2);
+      if (other !== undefined) {
+        used.add(other);
+        const [upper, lower] = other < j ? [rows[other].names[0], nameP] : [nameP, rows[other].names[0]];
+        nameText = `${upper.text} ${lower.text}`;
+      }
+      // the line above was taken for a section heading as it went by: it's this test's name, and the section is as it was
+      for (const k of [j, other]) {
+        if (k === undefined || k > i || !sectionBefore.has(k)) continue;
+        group = sectionBefore.get(k);
+        skip = !!group && /surrogate/i.test(group);
+      }
+      if (skip) continue;
     }
     // footnote marks before a name ("ø" not accredited, "*"), and a long name running into the CAS number beside it
-    const name = nameP.text.replace(FOOTNOTE_START, '').replace(/\s+(\d{2,7}-\d{2}-\d|-{2,})$/, '').replace(FOOTNOTE_END, '');
+    const name = nameText.replace(FOOTNOTE_START, '').replace(/\s+(\d{2,7}-\d{2}-\d|-{2,})$/, '').replace(FOOTNOTE_END, '');
     const near = [l, ...[i - 1, i + 1].filter((k) => rows[k] && !rows[k].hasValues && Math.abs(rows[k].l.y - l.y) <= 10).map((k) => rows[k].l)];
-    const pool = near.flatMap((x) => x.phrases.filter((p) => columnAt(cols, p) === -1 && p !== nameP));
+    const pool = near.flatMap((x) => x.phrases.filter((p) => resultColumn(cols, p) === -1 && p !== nameP));
     const unitPhrase = unitHead ? pool.find((p) => Math.abs(mid(p) - mid(unitHead)) < 25) : labels.filter((p) => p !== nameP).reverse().find((p) => UNIT_LIKE.test(p.text));
     filled.forEach((value, c) => {
       if (!value || NOT_DONE.test(value) || /^[A-Z]{2}\d{7}_/.test(value)) return;
-      results.push({ labNumber: cols.labels[c], analyte: name, group, unit: unitPhrase?.text.replace(/\u03bc/g, '\u00b5'), value });
+      if (doubled[c]) {
+        left.push({ sample: cols.labels[c], analyte: name, text: value, why: 'two-values' });
+        return;
+      }
+      results.push({ labNumber: cols.labels[c], analyte: name, group, unit: unitPhrase?.text.replace(/μ/g, 'µ'), value });
     });
   }
-  return { samples, results };
+  return { samples, results, left };
 }
 
 /** The results tables of a lab's PDF report; null when it isn't one this can read. */
 export function readLabPdf(pages: PdfPage[]): PdfReport | null {
   const samples = new Map<string, PdfSample>();
   const results: PdfResult[] = [];
+  const left: PdfLeft[] = [];
   let lab = '';
+  let known: Layout | undefined;
   for (const words of pages) {
     const lines = pageLines(words);
     const all = lines.map(lineText).join('\n');
-    const layout = LAYOUTS.find((l) => l.is(all) && lines.some((ln) => ln.phrases.some((p) => l.anchor.test(p.text))));
+    const anchored = (l: Layout) => lines.some((ln) => ln.phrases.some((p) => l.anchor.test(p.text)));
+    // a page of this lab's results – or, once the report is known to be this lab's, a later page with its sample
+    // numbers heading columns (a page the results run on to needn't name the lab again)
+    const layout = LAYOUTS.find((l) => l.is(all) && anchored(l)) ?? (known && anchored(known) && lines.some((ln) => known!.edge.test(lineText(ln))) ? known : undefined);
     if (!layout) continue;
+    known ??= layout;
     lab ||= layout.lab;
     // the tables on the page: lab numbers within a few lines of each other head one table
     const heads: Array<{ at: number; anchors: Phrase[] }> = [];
@@ -275,9 +356,10 @@ export function readLabPdf(pages: PdfPage[]): PdfReport | null {
         if (!cur || (!cur.clientRef && s.clientRef) || (!cur.date && s.date)) samples.set(s.labNumber, { ...cur, ...s, clientRef: s.clientRef || cur?.clientRef || '', date: s.date ?? cur?.date });
       }
       results.push(...t.results);
+      left.push(...t.left);
     });
   }
-  return samples.size ? { lab, samples: [...samples.values()], results } : null;
+  return samples.size ? { lab, samples: [...samples.values()], results, left } : null;
 }
 
 /** The report's results as rows laid out like ALS's CSV export (with the report's sections and lab added). */
@@ -289,7 +371,9 @@ export function pdfReportGrid(rep: PdfReport, name: string): SheetGrid {
     return [r.labNumber, s?.clientRef ?? '', s?.date ?? '', '', r.analyte, r.value, r.unit ?? '', r.group ?? '', rep.lab];
   });
   const cells = [header, ...rows].map((row) => row.map((v): Cell => ({ v: v || null })));
-  return { name, rows: cells, nRows: cells.length, nCols: header.length, pdf: true };
+  // what the pages have that couldn't be placed, with the samples' names in place of their numbers
+  const left = rep.left.map((x) => ({ ...x, sample: (x.sample && byNumber.get(x.sample)?.clientRef) || x.sample }));
+  return { name, rows: cells, nRows: cells.length, nCols: header.length, pdf: true, ...(left.length ? { left } : {}) };
 }
 
 /** Site names and dates of the report's samples, by lab number. */

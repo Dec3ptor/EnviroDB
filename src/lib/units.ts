@@ -131,7 +131,8 @@ export function importUnit(unit: string | undefined, pref: ConcUnit | undefined)
 /** Normalise a unit string: "g/m³ as CaCO3" → { key: 'g/m3', basis: 'as CaCO3' }. */
 export function normUnit(raw: string | undefined | null): NormUnit {
   if (!raw) return { key: '', known: false };
-  let s = String(raw).trim();
+  // "CaCO₃", "O₂": subscript figures as plain ones
+  let s = String(raw).trim().replace(/[\u2080-\u2089]/g, (d) => String(d.charCodeAt(0) - 0x2080));
   let basis: string | undefined;
   // "g/m3 at 25°C" (Hill: bicarbonate, free ammonia)
   const atMatch = s.match(/\s+at\s+(\d+(?:\.\d+)?)\s*°?\s*C\s*$/i);

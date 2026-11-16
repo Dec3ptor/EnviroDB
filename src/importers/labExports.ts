@@ -6,7 +6,7 @@
 import { cellText, isEmpty, type SheetGrid } from './workbook';
 import { parseValue } from '../lib/values';
 import { parseDateAny } from '../lib/dates';
-import type { ParsedImport, RawResult, RawSample } from './model';
+import { noteUnread, type LeftOut, type ParsedImport, type RawResult, type RawSample } from './model';
 
 export type ExportFormat = 'linnaeus' | 'als' | 'esdat' | 'esdat-samples';
 
@@ -46,7 +46,7 @@ export function siteFromClientRef(ref: string): string {
 }
 
 /** ALS surrogates: recoveries (%) of compounds added by the lab to check the method, not results. */
-const SURROGATE = /-d\d+\b|surrogate|fluorobiphenyl|fluorophenol|tribromophenol|terphenyl/i;
+const SURROGATE = /-d\d+\b|\bd\d+\b|\b13c\d*|surrogate|fluorobiphenyl|fluorophenol|tribromophenol|terphenyl|bromofluorobenzene|dibromofluoromethane|decachlorobiphenyl|tetrachloro-m-xylene|dibutylchlorendate|triphenyl ?phosphate|trifluorotoluene|\brecovery\b/i;
 /** An ALS sample number, as written in another lab's report ("NH2600001_003"). */
 const ALS_NUMBER = /^[A-Z]{2}\d{7}[-_]\d{3}$/;
 /** A reference to another lab's report in place of a result ("NH2600001_2_AA"). */
@@ -103,10 +103,14 @@ const lines = (s: string) => s.split(/\r?\n/).map((l) => l.trim()).filter(Boolea
 /** A test's name without the lab's footnote marks ("Temperature on Site*": not accredited). */
 const bareName = (name: string) => name.replace(/^[øØ*#†‡^]+\s*|\s*[*#†‡^]+$/g, '').trim();
 
-function result(analyte: string, raw: string, unit?: string, group?: string): RawResult | null {
+/** A result read from a row – or null when the row has none; what it has that can't be read is noted in `left`. */
+function result(analyte: string, raw: string, unit: string | undefined, group: string | undefined, left: LeftOut[], where: { sheet: string; sample?: string }): RawResult | null {
   const parsed = parseValue(raw);
-  if (parsed.missing) return null;
-  return { analyte: bareName(analyte), group, unit: unit || undefined, raw, parsed };
+  if (parsed.missing) {
+    noteUnread(left, parsed, { ...where, analyte: bareName(analyte) });
+    return null;
+  }
+  return { analyte: bareName(analyte), group, unit: unit || parsed.unit || undefined, raw, parsed };
 }
 
 function sampleFor(map: Map<string, RawSample>, key: string, make: () => RawSample): RawSample {
@@ -125,6 +129,7 @@ function parseLinnaeus(g: SheetGrid, h: Header): ParsedImport {
   const cDate = cId + 1 < cName ? cId + 1 : -1;
   const cValue = cUnit >= 0 ? cUnit + 1 : cName + 1;
   const samples = new Map<string, RawSample>();
+  const left: LeftOut[] = [];
   for (let r = h.row + 1; r < g.nRows; r++) {
     const id = text(g, r, cId);
     if (/^NAME\d*$/.test(id)) break; // the test methods under the results
@@ -146,10 +151,10 @@ function parseLinnaeus(g: SheetGrid, h: Header): ParsedImport {
       labName: 'Linnaeus',
       results: [],
     }));
-    const res = result(analyte, value, text(g, r, cUnit));
+    const res = result(analyte, value, text(g, r, cUnit), undefined, left, { sheet: g.name, sample: s.sampleName });
     if (res) s.results.push(res);
   }
-  return { kind: 'lab', labName: 'Linnaeus', samples: [...samples.values()].filter((s) => s.results.length), warnings: [] };
+  return { kind: 'lab', labName: 'Linnaeus', samples: [...samples.values()].filter((s) => s.results.length), warnings: [], left };
 }
 
 function parseAls(g: SheetGrid, h: Header, ctx: ImportContext): ParsedImport {
@@ -166,6 +171,7 @@ function parseAls(g: SheetGrid, h: Header, ctx: ImportContext): ParsedImport {
     laboratory: column(h.cols, 'Laboratory'),
   };
   const samples = new Map<string, RawSample>();
+  const left: LeftOut[] = [...(g.left ?? []).map((x) => ({ ...x, sheet: g.name }))];
   let surrogates = 0;
   for (let r = h.row + 1; r < g.nRows; r++) {
     if ((g.rows[r] ?? []).every(isEmpty)) continue;
@@ -203,18 +209,20 @@ function parseAls(g: SheetGrid, h: Header, ctx: ImportContext): ParsedImport {
       labName: lab,
       results: [],
     }));
-    const res = result(analyte, text(g, r, c.text) || text(g, r, c.num), unit, group);
+    const res = result(analyte, text(g, r, c.text) || text(g, r, c.num), unit, group, left, { sheet: g.name, sample: s.sampleName });
     if (res) s.results.push(res);
   }
   const list = [...samples.values()].filter((s) => s.results.length);
   const warnings = surrogates ? [`Left out ${surrogates} surrogate recoveries (%) – the lab's own method checks, not results.`] : [];
-  return { kind: 'lab', labName: list[0]?.labName ?? 'ALS', labJob: list.length ? list[0].labJob : undefined, samples: list, warnings };
+  return { kind: 'lab', labName: list[0]?.labName ?? 'ALS', labJob: list.length ? list[0].labJob : undefined, samples: list, warnings, left };
 }
 
 function parseEsdat(g: SheetGrid, h: Header, ctx: ImportContext): ParsedImport {
   let cols = h.cols;
   const samples = new Map<string, RawSample>();
+  const left: LeftOut[] = [];
   let qc = 0;
+  let surrogates = 0;
   for (let r = h.row + 1; r < g.nRows; r++) {
     const row = g.rows[r] ?? [];
     if (row.every(isEmpty)) continue;
@@ -231,7 +239,13 @@ function parseEsdat(g: SheetGrid, h: Header, ctx: ImportContext): ParsedImport {
       continue;
     }
     const unit = at('Result_Unit');
-    if (unit === '%') continue;
+    const name = at('OriginalChemName', 'ChemName', 'ChemCode');
+    // the lab's surrogates and internal standards (recoveries, in %): its own method checks, not results. Other
+    // results in % – an ion balance, a dry matter – are results
+    if (/^(SUR|IS|SURR|SURROGATE)$/i.test(at('Result_Type')) || (unit === '%' && SURROGATE.test(name))) {
+      surrogates++;
+      continue;
+    }
     const info = ctx.samples.get(labKey(code));
     const tf = at('Total_or_Filtered').toUpperCase();
     const s = sampleFor(samples, code, () => ({
@@ -246,7 +260,7 @@ function parseEsdat(g: SheetGrid, h: Header, ctx: ImportContext): ParsedImport {
       labName: 'ALS',
       results: [],
     }));
-    const res = result(at('OriginalChemName', 'ChemName', 'ChemCode'), `${at('Prefix')}${at('Result')}`, unit, tf === 'F' ? 'Dissolved' : tf === 'T' ? 'Total' : undefined);
+    const res = result(name, `${at('Prefix')}${at('Result')}`, unit, tf === 'F' ? 'Dissolved' : tf === 'T' ? 'Total' : undefined, left, { sheet: g.name, sample: s.sampleName });
     if (res) s.results.push(res);
   }
   const list = [...samples.values()].filter((s) => s.results.length);
@@ -259,7 +273,8 @@ function parseEsdat(g: SheetGrid, h: Header, ctx: ImportContext): ParsedImport {
     );
   }
   if (qc) warnings.push(`Left out ${qc} laboratory QC results (blanks, spikes, duplicates and other clients' samples).`);
-  return { kind: 'lab', labName: 'ALS', labJob: list[0]?.labJob, samples: list, warnings };
+  if (surrogates) warnings.push(`Left out ${surrogates} surrogate recoveries (%) – the lab's own method checks, not results.`);
+  return { kind: 'lab', labName: 'ALS', labJob: list[0]?.labJob, samples: list, warnings, left };
 }
 
 /** Site names and dates from an ESdat sample file, by lab sample code. */

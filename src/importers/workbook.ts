@@ -18,6 +18,8 @@ export interface SheetGrid {
   pdf?: boolean;
   /** The file it came from, when several are imported at once. */
   file?: string;
+  /** A PDF report: what's on its results pages that couldn't be read as a result of a sample's (see LeftOut). */
+  left?: Array<{ sample?: string; analyte?: string; text: string; why: 'unreadable' | 'no-test' | 'two-values' | 'no-sample' }>;
 }
 
 const EMPTY: Cell = { v: null };

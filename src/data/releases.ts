@@ -11,6 +11,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.37.1',
+    date: '2026-11-16',
+    title: 'Imports: nothing left out without saying so',
+    items: [
+      'A lab’s PDF report: a row whose results sit on a different line from the test’s name was only read if the test had a unit beside its results – so pH, which has none, could be dropped. Such rows are read now, and a name wrapped onto two lines is put back together.',
+      'A result written with its unit or the temperature it was read at – “7.4 pH Units”, “412 µS/cm”, “7.4 @ 21°C” – is read; before, it was left out without a word. So is a wide unit that runs on under a certificate’s first sample.',
+      'The last step before importing accounts for every result in the file: how many go in and, for the rest, why – analytes not matched, samples with no site or date, one sample and parameter in the file twice (and which value is kept). It also lists anything in the file that isn’t blank and couldn’t be read as a result, with its sample and test. The same is shown after the import and kept in the import history.',
+      'A PDF report beside the lab’s spreadsheet used to be left out whenever the spreadsheet had its samples; now any result the spreadsheet doesn’t have is read from the PDF.',
+      'What a round is missing: pH, conductivity or turbidity read on site counts where the schedule names the lab’s, and the lab’s where it names the field’s. A round was said to be missing pH when it had it the other way.',
+      'Also: ALS ESdat files keep results in % that aren’t surrogate recoveries; test names ending “at 25°C” or “- Water” match their parameter; a row of results whose date can’t be read is said (and times written 0930 are read); a file or sheet that isn’t read is said in orange.',
+    ],
+  },
+  {
     version: '1.37.0',
     date: '2026-11-11',
     title: 'Ecology surveys',

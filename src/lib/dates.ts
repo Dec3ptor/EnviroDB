@@ -61,6 +61,9 @@ export function toExcelSerial(date: string): number {
 
 function parseTime(s: string | undefined): { hh: number; mm: number } | null {
   if (!s) return null;
+  // "0930", "1415 hrs": the 24-hour clock written without a colon
+  const clock = s.trim().match(/^([01]\d|2[0-3])([0-5]\d)(?:\s*h(?:rs?|ours)?\.?)?$/i);
+  if (clock) return { hh: Number(clock[1]), mm: Number(clock[2]) };
   const m = s.trim().match(/^(\d{1,2})(?:[:.](\d{2}))?(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?$/i);
   if (!m) return null;
   let hh = Number(m[1]);
@@ -74,6 +77,8 @@ function parseTime(s: string | undefined): { hh: number; mm: number } | null {
 }
 
 const TIME_RE = String.raw`(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?|\d{1,2}\s*(?:am|pm))`;
+/** A time after a date that is the whole of a cell: also the 24-hour clock without a colon ("10/02/2026 0930"). */
+const TIME_FULL = String.raw`(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?|\d{1,2}\s*(?:am|pm)|(?:[01]\d|2[0-3])[0-5]\d(?:\s*h(?:rs?|ours)?\.?)?)`;
 
 /**
  * Parse a free-text date. NZ convention: numeric dates are day-first (12/03/2024 = 12 March 2024).
@@ -98,7 +103,7 @@ export function parseDateString(input: string): string | null {
   }
 
   // Day-first numeric 12/03/2024, 12-03-24, 12.3.2024
-  m = s.match(new RegExp(String.raw`^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})(?:,?\s+` + TIME_RE + ')?$', 'i'));
+  m = s.match(new RegExp(String.raw`^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})(?:,?\s+` + TIME_FULL + ')?$', 'i'));
   if (m) {
     let d = +m[1], mo = +m[2];
     const y = expandYear(+m[3]);
@@ -109,7 +114,7 @@ export function parseDateString(input: string): string | null {
   }
 
   // 12-Mar-2024, 12 March 2024, 12th Mar 24, optional time
-  m = s.match(new RegExp(String.raw`^(\d{1,2})(?:st|nd|rd|th)?[-/ .,]*([A-Za-z]{3,9})\.?[-/ .,]*(\d{2}|\d{4})(?:,?\s+` + TIME_RE + ')?$', 'i'));
+  m = s.match(new RegExp(String.raw`^(\d{1,2})(?:st|nd|rd|th)?[-/ .,]*([A-Za-z]{3,9})\.?[-/ .,]*(\d{2}|\d{4})(?:,?\s+` + TIME_FULL + ')?$', 'i'));
   if (m && MONTHS[m[2].toLowerCase()]) {
     const d = +m[1], mo = MONTHS[m[2].toLowerCase()], y = expandYear(+m[3]);
     if (!isValidYmd(y, mo, d)) return null;
@@ -118,7 +123,7 @@ export function parseDateString(input: string): string | null {
   }
 
   // Mar 12, 2024 / March 12 2024
-  m = s.match(new RegExp(String.raw`^([A-Za-z]{3,9})\.? (\d{1,2})(?:st|nd|rd|th)?,? (\d{4})(?:,?\s+` + TIME_RE + ')?$', 'i'));
+  m = s.match(new RegExp(String.raw`^([A-Za-z]{3,9})\.? (\d{1,2})(?:st|nd|rd|th)?,? (\d{4})(?:,?\s+` + TIME_FULL + ')?$', 'i'));
   if (m && MONTHS[m[1].toLowerCase()]) {
     const d = +m[2], mo = MONTHS[m[1].toLowerCase()], y = +m[3];
     if (!isValidYmd(y, mo, d)) return null;

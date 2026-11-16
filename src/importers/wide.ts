@@ -13,7 +13,7 @@
 //   2026-04-01 00:00:00,Missed,,,No Result,No Result,No Result
 
 import { cellAt, cellText, cellValue, columnLetter, isEmpty, transpose, type SheetGrid } from './workbook';
-import { PROVISIONAL_NOTE, type ParsedImport, type RawSample } from './model';
+import { noteUnread, PROVISIONAL_NOTE, type LeftOut, type ParsedImport, type RawSample } from './model';
 import { extractDate, parseDateAny } from '../lib/dates';
 import { normUnit, sameDimension, splitHeaderUnit, unitDim } from '../lib/units';
 import { parseValue } from '../lib/values';
@@ -131,6 +131,8 @@ function bestShift(g: SheetGrid, headerRow: number, row: number, cols: number[],
 }
 
 const FRACTION_WORD = /dissolved|soluble|filtered|total|recoverable|acid|metals?/i;
+/** Text meant as a date that didn't read as one: a day-month-year in figures, or a month named beside a figure ("95th percentile" isn't). */
+const DATE_MEANT = /\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\b.*\d|\d.*\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b/i;
 
 /** A row's text over each of these columns, carried to the right across blanks (a category written once over its block). */
 function carried(g: SheetGrid, r: number, cols: number[]): string[] {
@@ -389,6 +391,8 @@ export function parseWide(g0: SheetGrid, cfg: WideConfig): ParsedImport {
   }
   const samples: RawSample[] = [];
   const warnings: string[] = [];
+  const left: LeftOut[] = [];
+  const badDates: string[] = [];
   let noDate = 0, missed = 0, upcoming = 0, provisional = 0, siteAbove = 0, noSite = 0;
   // a site written once over a block of rows ("ditto" below it) applies to the rows under it
   let lastSite = '';
@@ -400,7 +404,11 @@ export function parseWide(g0: SheetGrid, cfg: WideConfig): ParsedImport {
     if (!date && typeof dateCell.v === 'string') date = extractDate(dateCell.v)?.date ?? null;
     if (!date) {
       noDate++;
-      continue; // guideline / statistics / blank rows
+      // guideline / statistics / blank rows – but something in the date column that isn't a date, on a row of results,
+      // is a sample whose date wasn't understood
+      const said = cellText(dateCell);
+      if (said && DATE_MEANT.test(said) && cols.filter((c) => !parseValue(cellValue(cellAt(g, r, c.col))).missing).length >= Math.min(2, cols.length)) badDates.push(said);
+      continue;
     }
     if (cfg.timeCol !== null && date.length === 10) {
       const t = cellAt(g, r, cfg.timeCol);
@@ -452,8 +460,11 @@ export function parseWide(g0: SheetGrid, cfg: WideConfig): ParsedImport {
       for (const c of groupCols) {
         const raw = cellValue(cellAt(g, r, c.col));
         const parsed = parseValue(raw);
-        if (parsed.missing) continue;
-        s.results.push({ analyte: c.analyte, unit: c.unit, group: c.group, raw, parsed });
+        if (parsed.missing) {
+          noteUnread(left, parsed, { sheet: g0.name, sample: s.sampleName, analyte: c.analyte });
+          continue;
+        }
+        s.results.push({ analyte: c.analyte, unit: c.unit ?? parsed.unit, group: c.group, raw, parsed });
       }
       if (!s.results.length) continue;
       if (kind === 'provisional') {
@@ -474,12 +485,16 @@ export function parseWide(g0: SheetGrid, cfg: WideConfig): ParsedImport {
     for (const s of timed) if (midnightOnly || s.date!.endsWith('T00:00')) s.date = s.date!.slice(0, 10);
   }
   if (!samples.length) warnings.push('No rows with a valid date and results were found – check the date column and first data row.');
-  else if (noDate > 3) warnings.push(`${noDate} rows without a valid date were skipped (e.g. guideline or statistics rows).`);
+  else if (noDate - badDates.length > 3) warnings.push(`${noDate - badDates.length} rows without a valid date were skipped (e.g. guideline or statistics rows).`);
+  if (badDates.length) {
+    const kinds = [...new Set(badDates)];
+    warnings.push(`${badDates.length === 1 ? '1 row has' : `${badDates.length} rows have`} results and a date that couldn’t be read (${kinds.slice(0, 4).map((x) => `“${x}”`).join(', ')}${kinds.length > 4 ? ' …' : ''}) – ${badDates.length === 1 ? 'it was' : 'they were'} left out. Put the date right in the file, or type the results into the Data tab.`);
+  }
   const rows = (n: number) => (n === 1 ? '1 row' : `${n} rows`);
   if (siteAbove) warnings.push(`${rows(siteAbove)} with no site of ${siteAbove === 1 ? 'its' : 'their'} own ${siteAbove === 1 ? 'was' : 'were'} given the site above (as when a site is written once over its rows) – check on the next step.`);
   if (noSite) warnings.push(`${rows(noSite)} with results but no site ${noSite === 1 ? 'was' : 'were'} left out.`);
   if (missed) warnings.push(`${rows(missed)} marked as missed or not sampled had no results and ${missed === 1 ? 'was' : 'were'} left out.`);
   if (upcoming) warnings.push(`${rows(upcoming)} still due or waiting to be sampled ${upcoming === 1 ? 'was' : 'were'} left out.`);
   if (provisional) warnings.push(`${provisional === 1 ? '1 sample was' : `${provisional} samples were`} still with the lab – ${provisional === 1 ? 'it is' : 'they are'} imported with a note that the results may be provisional. Import the file again once the lab has finished to update them.`);
-  return { kind: 'wide', samples, warnings };
+  return { kind: 'wide', samples, warnings, left };
 }

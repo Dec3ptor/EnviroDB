@@ -178,6 +178,18 @@ export function matchParameter(name: string, index: ParamIndex, group?: string):
     const m = matchParameter(plain, index, group);
     if (m.confidence === 'exact' || m.confidence === 'high') return { ...m, confidence: 'high' };
   }
+  // "pH at 25°C", "Electrical Conductivity @ 25°C": the name without the temperature it's reported at
+  const cool = bare.replace(/\s*(?:@|\bat)\s*\d+(?:\.\d+)?\s*(?:°|º|deg(?:rees)?\.?)?\s*C\b\.?/i, '').trim();
+  if (cool && cool !== bare) {
+    const m = matchParameter(cool, index, group);
+    if (m.confidence === 'exact' || m.confidence === 'high') return { ...m, confidence: 'high' };
+  }
+  // "Conductivity (25°C) - Water", "Chloride in Water": the name without what it was measured in
+  const dry = bare.replace(/\s*(?:[-–—:,]|\bin)\s*(?:waters?|aqueous|ground\s?water|surface\s?water|waste\s?water|storm\s?water|effluent)\s*$/i, '').trim();
+  if (dry && dry !== bare) {
+    const m = matchParameter(dry, index, group);
+    if (m.confidence === 'exact' || m.confidence === 'high') return { ...m, confidence: 'high' };
+  }
 
   // Fuzzy: compare canonical keys
   const scored: Array<[string, number]> = [];

@@ -5,7 +5,7 @@
 import { readWorkbook, type SheetGrid } from './workbook';
 import { importContext, labKey, parseExport, type ImportContext, type SampleInfo } from './labExports';
 import { pdfReportGrid, pdfSampleInfo, readLabPdf, readPdfWords } from './pdfTables';
-import { planSheets, type SheetPlan } from './detect';
+import { planSheets, resultKeys, type SheetPlan } from './detect';
 import type { ParamIndex } from '../lib/matching';
 
 export interface InputFile {
@@ -82,13 +82,16 @@ export async function readImportFiles(files: InputFile[]): Promise<ReadFiles> {
 }
 
 /**
- * How each sheet is read to start with. A PDF report whose samples are all in a spreadsheet from the lab is left
- * out (the spreadsheet has the same results, exactly); so are a workbook's other sheets beside a lab export.
+ * How each sheet is read to start with. A PDF report whose results are all in a spreadsheet from the lab is left out
+ * (the spreadsheet has the same results, exactly) – and where the spreadsheet has its samples but not every result of
+ * theirs, the PDF is read for those; so are a workbook's other sheets beside a lab export.
  */
 export function defaultPlans(grids: SheetGrid[], ctx: ImportContext, index: ParamIndex): { plans: SheetPlan[]; notes: string[] } {
   const plans = planSheets(grids, index);
   const notes: string[] = [];
   const inSheets = new Map<string, string>();
+  // each result the lab's spreadsheets have: by sample and test, with the fractions it's given in
+  const have = new Map<string, Set<string>>();
   // the same lab file twice (ALS send ESdat files as CSV and as Excel): the results once
   const seen = new Map<string, string>();
   const twice = new Set<number>();
@@ -102,7 +105,14 @@ export function defaultPlans(grids: SheetGrid[], ctx: ImportContext, index: Para
       return;
     }
     if (sig) seen.set(sig, g.name);
-    for (const s of samples) if (s.labNumber) inSheets.set(labKey(s.labNumber), g.file ?? g.name);
+    for (const s of samples) {
+      if (!s.labNumber) continue;
+      inSheets.set(labKey(s.labNumber), g.file ?? g.name);
+      for (const r of s.results) {
+        const k = resultKeys(s, r);
+        have.set(k.name, (have.get(k.name) ?? new Set()).add(k.fraction));
+      }
+    }
   });
   const exportFiles = new Set(grids.filter((g, i) => !g.pdf && plans[i].mode === 'export').map((g) => g.file));
   return {
@@ -110,14 +120,32 @@ export function defaultPlans(grids: SheetGrid[], ctx: ImportContext, index: Para
       const g = grids[i];
       if (twice.has(i)) return { mode: 'skip', sheet: p.sheet, score: 0 };
       if (g.pdf && p.mode === 'export') {
-        const nums = (parseExport(g, ctx)?.samples ?? []).map((s) => labKey(s.labNumber ?? ''));
+        const samples = parseExport(g, ctx)?.samples ?? [];
+        const nums = samples.map((s) => labKey(s.labNumber ?? ''));
         const from = nums.length && nums.every((n) => inSheets.has(n)) ? inSheets.get(nums[0]) : undefined;
         if (from) {
-          notes.push(`${g.name}: the same results are in ${from}, so they're taken from there (the PDF still gives the site names and dates).`);
-          return { mode: 'skip', sheet: p.sheet, score: 0 };
+          // what the PDF has for those samples that the spreadsheet hasn't: a test it doesn't list, or a fraction of one
+          const extra = samples.flatMap((s) =>
+            s.results.flatMap((r) => {
+              const k = resultKeys(s, r);
+              const fractions = have.get(k.name);
+              const there = !!fractions && (!k.fraction || fractions.has(k.fraction) || fractions.has(''));
+              return there ? [] : [{ key: `${k.name}|${k.fraction}`, analyte: r.analyte }];
+            }),
+          );
+          if (!extra.length) {
+            notes.push(`${g.name}: the same results are in ${from}, so they're taken from there (the PDF still gives the site names and dates).`);
+            return { mode: 'skip', sheet: p.sheet, score: 0 };
+          }
+          const names = [...new Set(extra.map((x) => x.analyte))];
+          notes.push(`${g.name}: ${extra.length === 1 ? '1 result isn’t' : `${extra.length} results aren’t`} in ${from} – ${names.slice(0, 6).join(', ')}${names.length > 6 ? ` and ${names.length - 6} more` : ''} – so ${extra.length === 1 ? 'it’s' : 'they’re'} read from the PDF; the rest are taken from ${from}.`);
+          return { ...p, only: extra.map((x) => x.key) };
         }
       }
-      if (!g.pdf && p.mode !== 'export' && p.mode !== 'skip' && g.file && exportFiles.has(g.file)) return { mode: 'skip', sheet: p.sheet, score: 0 };
+      if (!g.pdf && p.mode !== 'export' && p.mode !== 'skip' && g.file && exportFiles.has(g.file)) {
+        notes.push(`${g.name}: this sheet isn’t read – the file’s results are taken from its lab export sheet. If it has other results, choose how it’s laid out below.`);
+        return { mode: 'skip', sheet: p.sheet, score: 0 };
+      }
       return p;
     }),
     notes,
