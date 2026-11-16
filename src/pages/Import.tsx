@@ -29,14 +29,16 @@ import { analyteMapKey } from '../importers/model';
 import { stableId } from '../lib/ids';
 import { buildParamIndex } from '../lib/matching';
 import { useAnalyteRows, useSiteTextRows, suggestCode } from '../importers/useImport';
-import { accountFor } from '../importers/account';
+import { accountFor, rawDepth, sampleKeyOf } from '../importers/account';
+import { depthText, parseDepth } from '../lib/depth';
 import { accountNotes, ImportAccountPanel } from '../components/ImportAccount';
 import { isQcSite } from '../lib/qc';
 import { commitImport, type CommitSummary, type ImportMapping } from '../importers/commit';
-import { createParameter, newSite, saveSite } from '../db/repo';
+import { createParameter, ensureTwin, newSite, saveSite } from '../db/repo';
+import { bareAnalyte, MATRIX_TEXT, twinOf } from '../lib/matrix';
 import { DateField, EmptyState, LevelBadge, PageHeader, paramOptions } from '../components/common';
 import { formatDate } from '../lib/dates';
-import { COMMON_UNITS, importUnit, sameDimension, unitLabel, type ConcUnit } from '../lib/units';
+import { COMMON_UNITS, importUnit, normUnit, sameDimension, unitLabel, type ConcUnit } from '../lib/units';
 import { evaluateAll } from '../lib/analysis';
 import { fmtNum } from '../lib/values';
 import { guessGroup, PARAMETER_GROUPS } from '../data/parameters';
@@ -312,6 +314,9 @@ function NewParamModal({ initial, pref, onClose, onCreated }: { initial: { name:
 }
 
 /** Straight after an import: sign the results off as reviewed, or undo the import while it's fresh. */
+/** (these previews are of the monitoring samples: quality control sites' samples aren't among them) */
+const NO_QC: ReadonlySet<string> = new Set();
+
 /** A note about a file that wasn't read (as opposed to one saying how the files were read). */
 const fileProblem = (note: string) => /left out\.|couldn't be read|couldn’t be read|no spreadsheets or PDF/i.test(note);
 
@@ -549,6 +554,21 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
   const unmatchedSites = siteRows.filter((r) => !siteMap[r.siteText]);
   const missingDates = included.filter((s) => !sampleDate(s));
   const unmatchedAnalytes = analyteRows.filter((r) => !paramMapping[r.key]);
+  // an analyte with no parameter yet: the one added for it. A soil's or a leach test's is the counterpart of the water
+  // parameter its name is for ("Arsenic (soil)"), or a parameter of that kind under the file's name
+  const twinName = (r: (typeof analyteRows)[number]): string => {
+    const t = r.match.twin!;
+    const base = t.of ? data.paramMap.get(t.of) : undefined;
+    return base ? twinOf(base, t.matrix).name : `${bareAnalyte(r.analyte) || r.analyte} (${MATRIX_TEXT[t.matrix].label})`;
+  };
+  const addFor = async (r: (typeof analyteRows)[number]) => {
+    const t = r.match.twin;
+    if (!t) return createParameter(r.analyte, importUnit(r.unit, data.project.concUnit), guessGroup(r.analyte, r.group));
+    const twin = t.of ? await ensureTwin(t.of, t.matrix) : null;
+    const m = MATRIX_TEXT[t.matrix];
+    // (it goes by the file's name among parameters of its kind, so the next file finds it)
+    return twin ?? createParameter(twinName(r), t.matrix === 'soil' && normUnit(r.unit).known ? unitLabel(r.unit) : m.unit, m.group, { matrix: t.matrix, aliases: [bareAnalyte(r.analyte) || r.analyte] });
+  };
   // every result of the file accounted for: what goes in and, for what doesn't, why
   const qcSiteIds = useMemo(() => new Set(sites.filter((x) => isQcSite(x)).map((x) => x.id)), [sites]);
   const account = useMemo(
@@ -560,13 +580,13 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
   // duplicate preview against existing data
   const dupCount = useMemo(() => {
     const bySiteDay = new Map<string, string>();
-    data.samples.forEach((s) => bySiteDay.set(`${s.siteId}|${s.date.slice(0, 10)}`, s.id));
+    data.samples.forEach((s) => bySiteDay.set(sampleKeyOf(s.siteId, s.date, s.sampleName, NO_QC, s.depth), s.id));
     let n = 0;
     for (const s of included) {
       const sid = sampleSite(s);
       const d = sampleDate(s);
       if (!sid || !d) continue;
-      const existing = bySiteDay.get(`${sid}|${d.slice(0, 10)}`);
+      const existing = bySiteDay.get(sampleKeyOf(sid, d, s.sampleName, NO_QC, rawDepth(s, sites.find((x) => x.id === sid))?.depth));
       if (!existing) continue;
       const have = new Set((data.index.allBySample.get(existing) ?? []).map((r) => r.parameterId));
       for (const r of s.results) {
@@ -582,12 +602,12 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
   const clearCount = useMemo(() => {
     const fieldBatches = new Set(data.imports.filter((b) => b.kind === 'field').map((b) => b.id));
     const bySiteDay = new Map<string, string>();
-    data.samples.forEach((s) => bySiteDay.set(`${s.siteId}|${s.date.slice(0, 10)}`, s.id));
+    data.samples.forEach((s) => bySiteDay.set(sampleKeyOf(s.siteId, s.date, s.sampleName, NO_QC, s.depth), s.id));
     const incoming = new Map<string, Set<string>>();
     for (const s of included) {
       const sid = sampleSite(s);
       const d = sampleDate(s);
-      const existing = sid && d ? bySiteDay.get(`${sid}|${d.slice(0, 10)}`) : undefined;
+      const existing = sid && d ? bySiteDay.get(sampleKeyOf(sid, d, s.sampleName, NO_QC, rawDepth(s, sites.find((x) => x.id === sid))?.depth)) : undefined;
       if (!existing) continue;
       const set = incoming.get(existing) ?? new Set<string>();
       for (const r of s.results) {
@@ -615,8 +635,8 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
       name: code !== text ? text : undefined,
       order: sites.length + 1,
       aliases: code !== text ? [text] : [],
-      // "DUP1", "Field blank" …: a quality control site, kept out of the monitoring data
-      ...(looksLikeQc(text) ? { type: QC_SITE_TYPE } : {}),
+      // "DUP1", "Field blank" …: a quality control site, kept out of the monitoring data; "TP1 0.5 m": a hole in the ground
+      ...(looksLikeQc(text) ? { type: QC_SITE_TYPE } : parseDepth(text) ? { type: 'Soil' as const } : {}),
     });
     await saveSite(s);
     setSiteMap((m) => ({ ...m, [text]: s.id }));
@@ -1032,7 +1052,22 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
                             {s.labNumber}
                           </Text>
                         </Table.Td>
-                        <Table.Td>{sid ? <Badge variant="light">{sites.find((x) => x.id === sid)?.code}</Badge> : <Badge color="red">No site</Badge>}</Table.Td>
+                        <Table.Td>
+                          {sid ? (
+                            <Group gap={6} wrap="nowrap">
+                              <Badge variant="light">{sites.find((x) => x.id === sid)?.code}</Badge>
+                              {rawDepth(s, sites.find((x) => x.id === sid)) && (
+                                <Tooltip label="The depth, read from the sample’s name: each depth at a soil or sediment site is a sample of its own">
+                                  <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                                    {depthText(rawDepth(s, sites.find((x) => x.id === sid))!.depth)}
+                                  </Text>
+                                </Tooltip>
+                              )}
+                            </Group>
+                          ) : (
+                            <Badge color="red">No site</Badge>
+                          )}
+                        </Table.Td>
                         <Table.Td>
                           <Group gap={6} wrap="nowrap">
                             <DateField size="xs" value={d?.slice(0, 10)} onChange={(v) => setDateOverrides({ ...dateOverrides, [s.key]: v ? `${v}${d && d.length > 10 ? d.slice(10) : ''}` : undefined })} w={130} error={!d} placeholder="Pick date" />
@@ -1115,17 +1150,16 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
                     setCreating(true);
                     try {
                       const next = { ...paramMapping };
-                      for (const r of unmatchedAnalytes) {
-                        const p = await createParameter(r.analyte, importUnit(r.unit, data.project.concUnit), guessGroup(r.analyte, r.group));
-                        next[r.key] = p.id;
-                      }
+                      for (const r of unmatchedAnalytes) next[r.key] = (await addFor(r)).id;
                       setParamMapping(next);
                     } finally {
                       setCreating(false);
                     }
                   }}
                 >
-                  Create {unmatchedAnalytes.length} new parameter{unmatchedAnalytes.length === 1 ? '' : 's'}
+                  {unmatchedAnalytes.every((r) => r.match.twin) && new Set(unmatchedAnalytes.map((r) => MATRIX_TEXT[r.match.twin!.matrix].group)).size === 1
+                    ? `Add ${unmatchedAnalytes.length} ${unmatchedAnalytes[0].match.twin!.matrix === 'soil' ? 'soil' : 'leach-test'} parameter${unmatchedAnalytes.length === 1 ? '' : 's'}`
+                    : `Create ${unmatchedAnalytes.length} new parameter${unmatchedAnalytes.length === 1 ? '' : 's'}`}
                 </Button>
               )}
             </Group>
@@ -1195,6 +1229,11 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
                               </Badge>
                             )}
                           </Group>
+                          {!pid && r.match.twin && (
+                            <Button size="compact-xs" variant="light" mt={4} leftSection={<IconPlus size={12} />} onClick={async () => setParamMapping({ ...paramMapping, [r.key]: (await addFor(r)).id })}>
+                              Add “{twinName(r)}”
+                            </Button>
+                          )}
                           {!pid && r.match.candidates.length > 0 && (
                             <Group gap={4} mt={4}>
                               {r.match.candidates.slice(0, 3).map((c) => (

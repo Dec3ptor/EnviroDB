@@ -8,7 +8,8 @@ import { notifications } from '@mantine/notifications';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { IconCopy, IconMathFunction } from '@tabler/icons-react';
 import { db } from '../db/db';
-import type { Parameter } from '../db/types';
+import type { Matrix, Parameter } from '../db/types';
+import { MATRIX_TEXT } from '../lib/matrix';
 import { createParameter, saveParameter } from '../db/repo';
 import { compareParams, PARAMETER_GROUPS } from '../data/parameters';
 import { COMMON_UNITS, unitLabel } from '../lib/units';
@@ -28,10 +29,12 @@ interface Draft {
   unit: string;
   decimals: number | '';
   aliases: string[];
+  /** What it's measured in: water (''), a soil or sediment, or a leach test's extract. */
+  matrix: Matrix | '';
   formula: string;
 }
 
-const draftOf = (p?: Parameter | null): Draft => ({ name: p?.name ?? '', short: p?.short ?? '', group: p?.group ?? 'Other', unit: p?.unit ?? 'mg/L', decimals: p?.decimals ?? '', aliases: p?.aliases ?? [], formula: p?.formula ?? '' });
+const draftOf = (p?: Parameter | null): Draft => ({ name: p?.name ?? '', short: p?.short ?? '', group: p?.group ?? 'Other', unit: p?.unit ?? 'mg/L', decimals: p?.decimals ?? '', aliases: p?.aliases ?? [], matrix: p?.matrix ?? '', formula: p?.formula ?? '' });
 
 /**
  * `paramId`: the parameter to change (none: a new one). `bundle`: the project it's opened from – its parameters are
@@ -138,7 +141,7 @@ export function ParameterEditor({ opened, paramId, bundle, onClose, onSaved }: {
     }
   };
   const save = async () => {
-    const patch = { name: d.name.trim(), short: d.short.trim() || undefined, group: d.group, unit: d.unit.trim(), decimals: d.decimals === '' ? undefined : Number(d.decimals), formula: formula || undefined };
+    const patch = { name: d.name.trim(), short: d.short.trim() || undefined, group: d.group, unit: d.unit.trim(), decimals: d.decimals === '' ? undefined : Number(d.decimals), formula: formula || undefined, matrix: d.matrix || undefined };
     let saved: Parameter;
     let kept: string[] = [];
     if (stored) {
@@ -169,6 +172,20 @@ export function ParameterEditor({ opened, paramId, bundle, onClose, onSaved }: {
         </Group>
         <MoreOptions label="Other names" summary={d.aliases.length ? `${d.aliases.length} – as lab files call it` : 'As lab files call it'}>
           <TagsInput value={d.aliases} onChange={(v) => setD({ ...d, aliases: v })} maxTags={200} description="New ones are added as you match names during an import." />
+        </MoreOptions>
+        <MoreOptions label="Measured in" summary={d.matrix ? MATRIX_TEXT[d.matrix].long : 'Water'} defaultOpen={!!d.matrix}>
+          <Select
+            data={[{ value: '', label: 'Water' }, ...(['soil', 'tclp', 'splp'] as const).map((m) => ({ value: m, label: MATRIX_TEXT[m].long }))]}
+            value={d.matrix}
+            onChange={(v) => {
+              const m = (v ?? '') as Matrix | '';
+              // its usual group and unit come with it, where those are still the water ones
+              setD({ ...d, matrix: m, ...(m && !d.matrix ? { group: MATRIX_TEXT[m].group, unit: /^(mg\/l|g\/m³|g\/m3|µg\/l)$/i.test(d.unit.trim()) || !d.unit.trim() ? MATRIX_TEXT[m].unit : d.unit } : {}) });
+            }}
+            allowDeselect={false}
+            maw={260}
+            description="A lab names arsenic in a soil as it names arsenic in water. A result per kilogram goes to the soil parameter, one of a TCLP or SPLP test to its extract’s – never to the water one."
+          />
         </MoreOptions>
         <Divider label="Calculated (optional)" labelPosition="left" />
         <Text size="sm" c="dimmed" mt={-6}>

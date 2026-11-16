@@ -1,6 +1,7 @@
 import { roundEdits, type RoundPatch } from '../lib/rounds';
 import type { Table } from 'dexie';
 import { normName } from '../lib/matching';
+import { twinOf } from '../lib/matrix';
 import { formulasKept } from '../lib/calculated';
 import { BUILT_IN_PARAMETERS } from '../data/parameters';
 import { db, getSettings, saveSettings } from './db';
@@ -12,14 +13,15 @@ import type {
   CalendarStatus,
   ExceedanceNote,
   GuidelineSet,
+  Matrix,
   MonitoringSchedule,
+  ObligationAttachment,
   Parameter,
   Project,
   ReportObligation,
   ReportTemplate,
   Rule,
   Site,
-  ObligationAttachment,
 } from './types';
 import { nowIso, slugify, uid } from '../lib/ids';
 import { logAudit, whoAmI } from './audit';
@@ -164,12 +166,27 @@ export async function saveParameter(p: Parameter, before?: Parameter): Promise<s
   return kept.map((k) => k.param.name);
 }
 
-export async function createParameter(name: string, unit: string, group = 'Other'): Promise<Parameter> {
+export async function createParameter(name: string, unit: string, group = 'Other', more: { matrix?: Matrix; aliases?: string[] } = {}): Promise<Parameter> {
   let id = slugify(name) || uid('p');
   if (await db.parameters.get(id)) id = `${id}-${uid().slice(0, 4)}`;
-  const p: Parameter = { id, name, group, unit, aliases: [name], order: 10000 };
+  const p: Parameter = { id, name, group, unit, aliases: [...new Set([name, ...(more.aliases ?? [])])], order: 10000, ...(more.matrix ? { matrix: more.matrix } : {}) };
   await db.parameters.put(p);
   return p;
+}
+
+/**
+ * The soil or leach-test counterpart of a water parameter ("Arsenic (soil)", mg/kg, for "Total Arsenic") – the one
+ * there is already, or added now. Two people adding it at once make the same parameter.
+ */
+export async function ensureTwin(baseId: string, matrix: Matrix): Promise<Parameter | null> {
+  const all = await db.parameters.toArray();
+  const there = all.find((p) => p.matrix === matrix && p.of === baseId);
+  if (there) return there;
+  const base = all.find((p) => p.id === baseId);
+  if (!base) return null;
+  const twin = twinOf(base, matrix);
+  await db.parameters.put(twin);
+  return twin;
 }
 
 /**
@@ -185,7 +202,8 @@ export async function addParameterAlias(paramId: string, alias: string): Promise
     const p = all.find((x) => x.id === paramId);
     if (!p) return;
     for (const other of all) {
-      if (other.id === paramId || !other.aliases.some(sameName)) continue;
+      // (arsenic in a soil goes by the name of arsenic in water: a name is one parameter's among those of its kind only)
+      if (other.id === paramId || (other.matrix ?? '') !== (p.matrix ?? '') || !other.aliases.some(sameName)) continue;
       // a built-in name taken off is remembered, so EnviroDB's own update doesn't put it back
       const builtInNames = other.builtIn ? (BUILT_IN_PARAMETERS.find((x) => x.id === other.id)?.aliases ?? []).filter(sameName).map((x) => x.toLowerCase()) : [];
       const removed = builtInNames.length ? Array.from(new Set([...(other.removedAliases ?? []), ...builtInNames])) : other.removedAliases;

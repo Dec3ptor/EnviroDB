@@ -238,7 +238,7 @@ export const BUILT_IN_PARAMETERS: Parameter[] = [
 ].map((p, i) => ({ ...p, builtIn: true, order: i }));
 
 /** Parameter groups in the order they are listed everywhere: field measurements first, then the laboratory groups. */
-export const PARAMETER_GROUPS = ['Field', 'Physical', 'General chemistry', 'Nutrients', 'Microbiology', 'Metals (dissolved)', 'Metals (total)', 'Metals (acid soluble)', 'Hydrocarbons', 'Pesticides', 'Other organics', 'PFAS', 'Ecology', 'Other'];
+export const PARAMETER_GROUPS = ['Field', 'Physical', 'General chemistry', 'Nutrients', 'Microbiology', 'Metals (dissolved)', 'Metals (total)', 'Metals (acid soluble)', 'Hydrocarbons', 'Pesticides', 'Other organics', 'PFAS', 'Ecology', 'Soil', 'Leach tests', 'Other'];
 
 const PESTICIDE = /\b(DD[DET]|BHC|HCH|lindane|aldrin|dieldrin|endrin|endosulfan|heptachlor|chlordane|methoxychlor|hexachlorobenzene|mirex|toxaphene|atrazine|simazine|glyphosate|2,4-D|MCPA|triclopyr|picloram|chlorpyrifos|diazinon|pesticide|herbicide)\b/i;
 const PAH = /naphthalene|anthracene|phenanthrene|pyrene|fluoranthene|fluorene|chrysene|acenaphth|perylene|benzo\s*[([]|indeno|\bPAH|TEQ|aromatic hydrocarbon/i;

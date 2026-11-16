@@ -5,7 +5,7 @@ import type { GuidelineSet, Parameter, Project, Result, Sample, Site } from '../
 import { analyteMapKey, type ParsedImport } from '../importers/model';
 import { compareParams } from '../data/parameters';
 import { buildIndex } from './dataIndex';
-import { buildParamIndex, matchParameter } from './matching';
+import { buildIndexes, matchAnalyte } from './matrix';
 import { flagResults, type CellFlag, type ProjectBundle } from './analysis';
 
 export const QUICK_PROJECT = 'quick-check';
@@ -36,7 +36,7 @@ export interface QuickCheck {
 
 /** The parsed files as a project to compare – sites from the samples' names, parameters matched by name. */
 export function quickCheck(parsed: ParsedImport, params: Parameter[], sets: GuidelineSet[], opts: { guidelineSetIds: string[]; hardnessAdjust: boolean; today: string }): QuickCheck {
-  const index = buildParamIndex(params);
+  const index = buildIndexes(params);
   const paramMap = new Map(params.map((p) => [p.id, p]));
   const paramOf: Record<string, string | null> = {};
   const unknown = new Map<string, QuickCheck['unknown'][number]>();
@@ -66,7 +66,7 @@ export function quickCheck(parsed: ParsedImport, params: Parameter[], sets: Guid
     raw.results.forEach((rr, j) => {
       const key = analyteMapKey(rr);
       if (!(key in paramOf)) {
-        const m = matchParameter(rr.analyte, index, rr.group);
+        const m = matchAnalyte(rr.analyte, rr.group, rr.unit, index);
         paramOf[key] = m.confidence === 'exact' || m.confidence === 'high' ? m.parameterId : null;
       }
       const pid = paramOf[key];

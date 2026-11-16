@@ -4,8 +4,9 @@ import { addParameterAlias, addSiteAlias, touchProject } from '../db/repo';
 import { stableId, uid } from '../lib/ids';
 import { isQcSite } from '../lib/qc';
 import { fractionOf, normName } from '../lib/matching';
+import { depthKey } from '../lib/depth';
 import { analyteMapKey, PROVISIONAL_NOTE, type ParsedImport } from './model';
-import { qcNameOf } from './account';
+import { qcNameOf, rawDepth, sampleKeyOf } from './account';
 import { logAudit } from '../db/audit';
 
 export interface ImportMapping {
@@ -51,9 +52,11 @@ export interface CommitSummary extends ImportBatch {
  */
 async function rememberNames(parsed: ParsedImport, mapping: ImportMapping): Promise<void> {
   const sitesByText = new Map<string, Set<string>>();
+  const siteById = new Map((await db.sites.bulkGet([...new Set(Object.values(mapping.sites).filter((x): x is string => !!x))])).filter((s): s is NonNullable<typeof s> => !!s).map((s) => [s.id, s]));
   for (const raw of parsed.samples) {
     const siteId = mapping.sites[raw.key];
-    const text = raw.siteText?.trim();
+    // (a soil sample's name without its depth: "TP1", not "TP1 0.5 m" – a name for each depth would never be met again)
+    const text = (rawDepth(raw, siteId ? siteById.get(siteId) : undefined)?.rest ?? raw.siteText)?.trim();
     if (!siteId || mapping.include[raw.key] === false || !text) continue;
     const k = text.toLowerCase();
     sitesByText.set(k, (sitesByText.get(k) ?? new Set()).add(`${siteId}\u0000${text}`));
@@ -89,8 +92,11 @@ async function rememberNames(parsed: ParsedImport, mapping: ImportMapping): Prom
 
 export async function commitImport(projectId: string, parsed: ParsedImport, mapping: ImportMapping, opts: CommitOptions): Promise<CommitSummary> {
   const params = new Map<string, Parameter>((await db.parameters.toArray()).map((p) => [p.id, p]));
-  // at a quality control site each sample is its own (DUP1 and DUP2 the same day are two samples), told apart by name
-  const qcSites = new Set((await db.sites.where('projectId').equals(projectId).toArray()).filter((s) => isQcSite(s)).map((s) => s.id));
+  // at a quality control site each sample is its own (DUP1 and DUP2 the same day are two samples), told apart by name;
+  // at a soil or sediment site each depth is
+  const projectSites = await db.sites.where('projectId').equals(projectId).toArray();
+  const siteOf = new Map(projectSites.map((s) => [s.id, s]));
+  const qcSites = new Set(projectSites.filter((s) => isQcSite(s)).map((s) => s.id));
   const qcName = (siteId: string, name?: string) => qcNameOf(siteId, name, qcSites);
   const batch: ImportBatch = {
     id: uid('imp'),
@@ -110,7 +116,7 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
     const existingSamples = await db.samples.where('projectId').equals(projectId).toArray();
     const sampleBySiteDay = new Map<string, Sample>();
     for (const s of existingSamples) {
-      const k = `${s.siteId}|${s.date.slice(0, 10)}|${qcName(s.siteId, s.sampleName)}`;
+      const k = sampleKeyOf(s.siteId, s.date, s.sampleName, qcSites, s.depth);
       if (!sampleBySiteDay.has(k)) sampleBySiteDay.set(k, s);
     }
     const touchedSampleIds = new Set<string>();
@@ -127,15 +133,17 @@ export async function commitImport(projectId: string, parsed: ParsedImport, mapp
         continue;
       }
       const qn = qcName(siteId, raw.sampleName);
-      const k = `${siteId}|${date.slice(0, 10)}|${qn}`;
+      const depth = rawDepth(raw, siteOf.get(siteId))?.depth;
+      const k = sampleKeyOf(siteId, date, raw.sampleName, qcSites, depth);
       let sample = sampleBySiteDay.get(k);
       if (!sample) {
         sample = {
-          // named after its site and day, so two people importing the same results at once make one sample
-          id: qn ? stableId('s', projectId, siteId, date.slice(0, 10), qn) : stableId('s', projectId, siteId, date.slice(0, 10)),
+          // named after its site and day (and its depth, in a soil), so two people importing the same results at once make one sample
+          id: stableId('s', projectId, siteId, date.slice(0, 10), ...(qn ? [qn] : []), ...(depth ? [`depth ${depthKey(depth)}`] : [])),
           projectId,
           siteId,
           date,
+          ...(depth ? { depth } : {}),
           sampleName: raw.sampleName,
           labName: raw.labName ?? opts.labName,
           labJob: raw.labJob ?? parsed.labJob,

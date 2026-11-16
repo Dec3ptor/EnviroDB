@@ -1,4 +1,4 @@
-import type { Parameter, Site } from '../db/types';
+import type { Matrix, Parameter, Site } from '../db/types';
 import { BUILT_IN_PARAMETERS, ELEMENT_NAMES } from '../data/parameters';
 
 /** The aliases each built-in parameter comes with (anything else on it was added by someone). */
@@ -81,7 +81,12 @@ export interface ParamIndex {
   params: Parameter[];
 }
 
-export function buildParamIndex(params: Parameter[]): ParamIndex {
+/**
+ * The names parameters go by, to match a file's analytes to. Water parameters only, unless a matrix is named: a lab
+ * calls arsenic in soil what it calls arsenic in water, and the soil parameter must never take the water result.
+ */
+export function buildParamIndex(all: Parameter[], matrix?: Matrix): ParamIndex {
+  const params = all.filter((p) => (p.matrix ?? undefined) === matrix);
   const exact = new Map<string, string>();
   const keyed = new Map<string, string[]>();
   const add = (k: string, id: string, map: Map<string, string[]>) => {
@@ -119,6 +124,11 @@ export interface ParamMatch {
   parameterId: string | null;
   confidence: 'exact' | 'high' | 'low' | 'none';
   candidates: string[];
+  /**
+   * A soil or leach-test result with no parameter of its own yet: the one to add for it – the counterpart of a water
+   * parameter (`of`), or a new one under the file's name.
+   */
+  twin?: { matrix: Matrix; of?: string };
 }
 
 function dice(a: string, b: string): number {

@@ -8,6 +8,7 @@ import { displayValue } from '../lib/analysis';
 import { describeRule } from '../lib/compliance';
 import { compareParams } from '../data/parameters';
 import { formatDate, todayStr } from '../lib/dates';
+import { depthCell } from '../lib/depth';
 import { unitLabel } from '../lib/units';
 import { MADE_BY } from '../lib/version';
 import { downloadBlob, safeFileName } from '../db/backup';
@@ -70,15 +71,17 @@ export async function exportProjectWorkbook(b: ProjectBundle, siteIds?: string[]
     const ws = wb.addWorksheet(sheetName(sh.site.code, taken));
     const title = ws.addRow([`${sh.site.code}${sh.site.name ? ` – ${sh.site.name}` : ''}`]);
     title.font = { bold: true, size: 12 };
-    ws.addRow(['Date', 'Time', 'Lab number', ...sh.params.map((p) => p.name)]).eachCell((c) => Object.assign(c, head));
-    ws.addRow(['', '', '', ...sh.params.map((p) => unitLabel(p.unit))]).eachCell((c, i) => i > 3 && Object.assign(c, dim));
+    // a soil or sediment site: each sample's depth after its time
+    const deep = sh.rows.some((r) => r.sample.depth) ? 1 : 0;
+    ws.addRow(['Date', 'Time', ...(deep ? ['Depth (m)'] : []), 'Lab number', ...sh.params.map((p) => p.name)]).eachCell((c) => Object.assign(c, head));
+    ws.addRow(['', '', ...(deep ? [''] : []), '', ...sh.params.map((p) => unitLabel(p.unit))]).eachCell((c, i) => i > 3 + deep && Object.assign(c, dim));
     for (const row of sh.rows) {
-      const xr = ws.addRow([formatDate(row.sample.date), row.sample.date.length > 10 ? row.sample.date.slice(11, 16) : '', row.sample.labNumber ?? '']);
+      const xr = ws.addRow([formatDate(row.sample.date), row.sample.date.length > 10 ? row.sample.date.slice(11, 16) : '', ...(deep ? [depthCell(row.sample.depth)] : []), row.sample.labNumber ?? '']);
       sh.params.forEach((p, i) => {
         const r = row.cells.get(p.id);
         if (!r) return;
         const dv = displayValue(r, p);
-        const cell = xr.getCell(4 + i);
+        const cell = xr.getCell(4 + deep + i);
         cell.value = r.qualifier || dv.value === null ? dv.text : dv.value;
         if (typeof cell.value === 'number' && cell.value !== 0 && Math.abs(cell.value) < 0.001) {
           const places = dv.text.split('.')[1]?.length ?? 0;
@@ -94,8 +97,9 @@ export async function exportProjectWorkbook(b: ProjectBundle, siteIds?: string[]
     ws.views = [{ state: 'frozen', xSplit: 1, ySplit: 3 }];
     ws.getColumn(1).width = 12;
     ws.getColumn(2).width = 7;
-    ws.getColumn(3).width = 13;
-    sh.params.forEach((_, i) => (ws.getColumn(4 + i).width = 13));
+    ws.getColumn(3).width = deep ? 11 : 13;
+    if (deep) ws.getColumn(4).width = 13;
+    sh.params.forEach((_, i) => (ws.getColumn(4 + deep + i).width = 13));
   }
 
   // the limits and triggers

@@ -19,6 +19,7 @@ import { fmtNum } from '../lib/values';
 import { imageSize, logoSizeMm } from '../lib/image';
 import { attachedTitle, type AttachedDoc } from '../lib/attachments';
 import { fitPage } from '../lib/pdfPages';
+import { depthText } from '../lib/depth';
 import { buildChartSpec, chartOption, chartOverlay } from '../charts/timeSeries';
 import { boxOption, boxSpec } from '../charts/moreGraphs';
 import { overlayFor } from '../lib/continuous';
@@ -642,7 +643,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
         if (!r) return { text: '–', align: 'center', color: '#999999' };
         return { text: displayValue(r, p).text, align: 'right', ...(r.calc ? { italic: true } : {}), ...flagged(flags.get(r.id)) };
       };
-      const dateHead = (s: Sample) => formatDate(s.date, { format: 'D MMM YYYY' });
+      const dateHead = (s: Sample) => `${formatDate(s.date, { format: 'D MMM YYYY' })}${s.depth ? `\n${depthText(s.depth)}` : ''}`;
       for (const g of groups) {
         const params = leaveOut(paramList(blk.parameterIds, g.samples), blk);
         if (!params.length) continue;
@@ -768,7 +769,7 @@ export function buildReport(opts: BuildOptions): ReportDoc {
               body.push([{ text: s.shortName, colSpan: 2, italic: true, fill: FILLS.guidelineRow }, { text: '' }, ...part.map((p) => ({ text: guidelineText(s, p), align: 'center' as const, italic: true, fill: FILLS.guidelineRow }))]);
             }
             const guidelineRows = body.length;
-            for (const s of g.samples) body.push([{ text: formatDate(s.date, { format: 'DD/MM/YYYY' }) }, { text: siteCode(s.siteId) }, ...part.map((p) => valueCell(s, p))]);
+            for (const s of g.samples) body.push([{ text: formatDate(s.date, { format: 'DD/MM/YYYY' }) }, { text: `${siteCode(s.siteId)}${s.depth ? ` ${depthText(s.depth)}` : ''}` }, ...part.map((p) => valueCell(s, p))]);
             calcs.forEach((c, k) => body.push([{ text: calcHead(c), colSpan: 2, italic: true, fill: FILLS.guidelineRow }, { text: '' }, ...part.map((p) => ({ ...calcCell(p, k), align: 'center' as const }))]));
             nodes.push({
               t: 'table',

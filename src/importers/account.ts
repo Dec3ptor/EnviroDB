@@ -5,6 +5,7 @@
 import type { Parameter, Site } from '../db/types';
 import { convert } from '../lib/units';
 import { formatDate } from '../lib/dates';
+import { depthKey, depthText, hasDepths, parseDepth, type Depth } from '../lib/depth';
 import { analyteMapKey, type LeftOut, type ParsedImport, type RawResult, type RawSample } from './model';
 
 export interface AccountMapping {
@@ -15,9 +16,18 @@ export interface AccountMapping {
   units?: Record<string, string | undefined>;
 }
 
-/** The sample a file's sample goes to: one a site a day – except at a quality control site, where each is its own, told apart by name. */
-export function sampleKeyOf(siteId: string, date: string, sampleName: string | undefined, qcSites: ReadonlySet<string>): string {
-  return `${siteId}|${date.slice(0, 10)}|${qcNameOf(siteId, sampleName, qcSites)}`;
+/**
+ * The sample a file's sample goes to: one a site a day – except at a quality control site, where each is its own, told
+ * apart by name, and at a soil or sediment site, where each depth is.
+ */
+export function sampleKeyOf(siteId: string, date: string, sampleName: string | undefined, qcSites: ReadonlySet<string>, depth?: Depth): string {
+  return `${siteId}|${date.slice(0, 10)}|${qcNameOf(siteId, sampleName, qcSites)}${depth ? `|${depthKey(depth)}` : ''}`;
+}
+
+/** The depth a file's sample was taken at, from its name – at a soil or sediment site (a bore's "12.5 m" is its own business). */
+export function rawDepth(raw: Pick<RawSample, 'siteText' | 'sampleName'>, site: Pick<Site, 'type'> | undefined): { depth: Depth; rest: string } | null {
+  if (!hasDepths(site)) return null;
+  return parseDepth(raw.siteText || raw.sampleName) ?? (raw.siteText ? parseDepth(raw.sampleName) : null);
 }
 export const qcNameOf = (siteId: string, name: string | undefined, qcSites: ReadonlySet<string>): string => (qcSites.has(siteId) ? (name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() : '');
 
@@ -64,6 +74,7 @@ const shown = (r: RawResult) => r.parsed.text || String(r.raw ?? '');
 /** A file's results against how they're matched: what goes in and what doesn't. `keepBoth`: results already in the project and repeats are kept beside each other. */
 export function accountFor(parsed: ParsedImport, mapping: AccountMapping, ctx: { sites: Site[]; params: ReadonlyMap<string, Parameter>; qcSites: ReadonlySet<string>; keepBoth?: boolean }): ImportAccount {
   const siteCode = new Map(ctx.sites.map((s) => [s.id, s.code]));
+  const siteOf = new Map(ctx.sites.map((s) => [s.id, s]));
   const count = (m: Map<string, number>, k: string, n: number) => m.set(k, (m.get(k) ?? 0) + n);
   const by: Record<Exclude<AccountWhy, 'twice'>, Map<string, number>> = { unticked: new Map(), 'no-site': new Map(), 'no-date': new Map(), 'no-parameter': new Map() };
   const seen = new Map<string, { sample: RawSample; result: RawResult; value: number | null }>();
@@ -88,7 +99,8 @@ export function accountFor(parsed: ParsedImport, mapping: AccountMapping, ctx: {
       count(by['no-date'], label, s.results.length);
       continue;
     }
-    const key = sampleKeyOf(siteId, date, s.sampleName, ctx.qcSites);
+    const depth = rawDepth(s, siteOf.get(siteId))?.depth;
+    const key = sampleKeyOf(siteId, date, s.sampleName, ctx.qcSites, depth);
     mergedNames.set(key, (mergedNames.get(key) ?? new Set()).add(label));
     for (const r of s.results) {
       const akey = analyteMapKey(r);
@@ -111,7 +123,7 @@ export function accountFor(parsed: ParsedImport, mapping: AccountMapping, ctx: {
         if (same) repeats++;
         else {
           clashes.push({
-            site: siteCode.get(siteId) ?? '?',
+            site: `${siteCode.get(siteId) ?? '?'}${depth ? ` ${depthText(depth)}` : ''}`,
             day: date.slice(0, 10),
             parameter: p?.name ?? pid,
             kept: shown(r),
@@ -130,8 +142,8 @@ export function accountFor(parsed: ParsedImport, mapping: AccountMapping, ctx: {
     .filter((l) => l.n > 0);
   if (clashes.length + repeats) lines.push({ why: 'twice', n: clashes.length + repeats, items: [...new Set(clashes.map((c) => `${c.site} ${formatDate(c.day)}: ${c.parameter}`))] });
   const merged = [...mergedHit].map((key) => {
-    const [siteId, day] = key.split('|');
-    return { site: siteCode.get(siteId) ?? '?', day, names: [...(mergedNames.get(key) ?? [])] };
+    const [siteId, day, , at] = key.split('|');
+    return { site: `${siteCode.get(siteId) ?? '?'}${at ? ` ${at} m` : ''}`, day, names: [...(mergedNames.get(key) ?? [])] };
   });
   return { read, going, lines, clashes, repeats, merged, left: parsed.left ?? [] };
 }

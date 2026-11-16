@@ -4,6 +4,7 @@
 
 import type { TeamKey } from '../field/lock';
 import type { PurgeLog } from '../lib/purge';
+import type { Depth } from '../lib/depth';
 
 export type ID = string;
 
@@ -203,7 +204,17 @@ export interface Parameter {
    * sample has no value of its own for it. The values are worked out as the data is shown, never stored.
    */
   formula?: string;
+  /**
+   * What it's measured in, where that isn't water: a soil or sediment (mg/kg), or the extract of a leaching test of
+   * one (TCLP, SPLP – mg/L). A lab names arsenic in soil as it names arsenic in water: its unit, or the test's name,
+   * says which parameter a result is for.
+   */
+  matrix?: Matrix;
+  /** The parameter this is the soil or leach-test counterpart of ("Total Arsenic" for "Arsenic (soil)"). */
+  of?: ID;
 }
+
+export type Matrix = 'soil' | 'tclp' | 'splp';
 
 export interface Sample {
   id: ID;
@@ -227,6 +238,11 @@ export interface Sample {
   purge?: PurgeLog;
   /** When the lab received it ('YYYY-MM-DD' or with a time), from the lab's file – for holding times. */
   receivedOn?: string;
+  /**
+   * A soil or sediment sample's depth (m below the ground or the bed) – one depth, or an interval. At a soil or
+   * sediment site each depth is a sample of its own: several a day from one pit or core.
+   */
+  depth?: Depth;
 }
 
 export type Qualifier = '' | '<' | '>';

@@ -4,6 +4,7 @@ import type { CellFlag, PivotRow } from '../lib/analysis';
 import { flagFillColour, SET_COLOURS, setColourIndex } from '../lib/highlight';
 import { displayValue } from '../lib/analysis';
 import { formatDate } from '../lib/dates';
+import { depthCell } from '../lib/depth';
 import { unitLabel } from '../lib/units';
 import { downloadBlob, safeFileName } from '../db/backup';
 
@@ -61,17 +62,20 @@ export async function exportPivotXlsx(x: PivotExport): Promise<void> {
   };
 
   if (x.layout === 'samplesAsRows') {
-    ws.addRow(['Date', 'Site', 'Lab number', ...x.columns.map((p) => p.name)]);
-    ws.addRow(['', '', '', ...x.columns.map((p) => unitLabel(p.unit))]);
+    // soil and sediment samples: their depth beside the site
+    const deep = x.rows.some((r) => r.sample.depth) ? 1 : 0;
+    ws.addRow(['Date', 'Site', ...(deep ? ['Depth (m)'] : []), 'Lab number', ...x.columns.map((p) => p.name)]);
+    ws.addRow(['', '', ...(deep ? [''] : []), '', ...x.columns.map((p) => unitLabel(p.unit))]);
     for (const row of x.rows) {
-      const xr = ws.addRow([formatDate(row.sample.date, { time: true }), row.site.code, row.sample.labNumber ?? '']);
-      x.columns.forEach((p, i) => writeCell(xr.getCell(4 + i), row.cells.get(p.id), p));
+      const xr = ws.addRow([formatDate(row.sample.date, { time: true }), row.site.code, ...(deep ? [depthCell(row.sample.depth)] : []), row.sample.labNumber ?? '']);
+      x.columns.forEach((p, i) => writeCell(xr.getCell(4 + deep + i), row.cells.get(p.id), p));
     }
     ws.views = [{ state: 'frozen', xSplit: 2, ySplit: 2 }];
     ws.getColumn(1).width = 16;
     ws.getColumn(2).width = 10;
-    ws.getColumn(3).width = 13;
-    x.columns.forEach((_, i) => (ws.getColumn(4 + i).width = 12));
+    ws.getColumn(3).width = deep ? 11 : 13;
+    if (deep) ws.getColumn(4).width = 13;
+    x.columns.forEach((_, i) => (ws.getColumn(4 + deep + i).width = 12));
   } else {
     ws.addRow(['Parameter', 'Unit', ...x.rows.map((r) => r.site.code)]);
     ws.addRow(['', '', ...x.rows.map((r) => formatDate(r.sample.date))]);
@@ -120,10 +124,11 @@ export function pivotCsv(x: Pick<PivotExport, 'columns' | 'rows'>): string {
   const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
   const lines: string[] = [];
   const anyCalc = calculatedIn(x.columns, x.rows).length > 0;
-  lines.push(['Date', 'Site', 'Lab number', ...x.columns.map((p) => `${p.name} (${unitLabel(p.unit)})`), ...(anyCalc ? ['Calculated (not measured)'] : [])].map(esc).join(','));
+  const deep = x.rows.some((r) => r.sample.depth);
+  lines.push(['Date', 'Site', ...(deep ? ['Depth (m)'] : []), 'Lab number', ...x.columns.map((p) => `${p.name} (${unitLabel(p.unit)})`), ...(anyCalc ? ['Calculated (not measured)'] : [])].map(esc).join(','));
   for (const row of x.rows) {
     lines.push(
-      [row.sample.date.replace('T', ' '), row.site.code, row.sample.labNumber ?? '', ...x.columns.map((p) => {
+      [row.sample.date.replace('T', ' '), row.site.code, ...(deep ? [String(depthCell(row.sample.depth))] : []), row.sample.labNumber ?? '', ...x.columns.map((p) => {
         const r = row.cells.get(p.id);
         return r ? displayValue(r, p).text : '';
       }), ...(anyCalc ? [x.columns.filter((p) => row.cells.get(p.id)?.calc).map((p) => p.name).join('; ')] : [])].map(esc).join(','),

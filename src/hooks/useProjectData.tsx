@@ -87,7 +87,8 @@ export function ProjectDataProvider({ projectId, children }: { projectId: string
     const monitoringSites = sortedSites.filter((s) => !isQcSite(s));
     const qcSiteIds = new Set(sortedSites.filter((s) => isQcSite(s)).map((s) => s.id));
     const isQc = (s: Sample) => !!s.qc || qcSiteIds.has(s.siteId);
-    const byDate = [...samples].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    // by day and time; samples of one site at one time – a soil's, at its depths – from the top down
+    const byDate = [...samples].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.siteId === b.siteId ? (a.depth?.top ?? -1) - (b.depth?.top ?? -1) : 0));
     const colorIdx = new Map(monitoringSites.map((s, i) => [s.id, i]));
     return {
       project,

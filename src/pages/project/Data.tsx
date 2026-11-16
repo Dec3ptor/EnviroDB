@@ -14,6 +14,7 @@ import { useProject } from '../../hooks/useProjectData';
 import { ConsentViewControl, EmptyState, GuidelinePicker, ParamPicker, PeriodPicker, SitePicker, consentPresets, defaultPeriod, type PeriodValue, DateField } from '../../components/common';
 import { consentParameterIds, countWithData, displayValue, evaluateAll, flagResults, pivot, type ConsentView, type PivotRow, type CellFlag } from '../../lib/analysis';
 import { formatDate } from '../../lib/dates';
+import { depthText, hasDepths, readDepth } from '../../lib/depth';
 import { unitLabel } from '../../lib/units';
 import { exportPivotCsv, exportPivotXlsx } from '../../reports/excel';
 import { exportProjectWorkbook } from '../../reports/workbook';
@@ -143,6 +144,8 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
   const [edits, setEdits] = useState<Record<string, string>>({});
   // a file open over the details: Escape closes it, not them
   const [fileOpen, setFileOpen] = useState(false);
+  // a soil or sediment sample's depth, as typed
+  const [depthTyped, setDepthTyped] = useState(sample?.depth ? depthText(sample.depth).replace(/ m$/, '').replace('–', '-') : '');
   if (!s) return null;
   // every result, left-out ones too (struck through)
   const results = (index.allBySample.get(s.id) ?? []).slice().sort((a, b) => {
@@ -184,6 +187,20 @@ function SampleDrawer({ sample, onClose }: { sample: Sample | null; onClose: () 
         <Group grow>
           <TextInput label="Lab job" value={s.labJob ?? ''} onChange={(e) => setDraft({ ...s, labJob: e.currentTarget.value })} />
           <TextInput label="Lab number" value={s.labNumber ?? ''} onChange={(e) => setDraft({ ...s, labNumber: e.currentTarget.value })} />
+          {(s.depth || hasDepths(sites.find((x) => x.id === s.siteId))) && (
+            <TextInput
+              label="Depth (m)"
+              placeholder="0.5, or 0.1-0.3"
+              value={depthTyped}
+              error={readDepth(depthTyped) === null ? 'A depth, or from–to' : undefined}
+              onChange={(e) => {
+                const t = e.currentTarget.value;
+                setDepthTyped(t);
+                const d = readDepth(t);
+                if (d !== null) setDraft({ ...s, depth: d });
+              }}
+            />
+          )}
         </Group>
         <Textarea label="Notes" autosize minRows={2} value={s.notes ?? ''} onChange={(e) => setDraft({ ...s, notes: e.currentTarget.value })} placeholder="e.g. sampled after heavy rain" />
         <SamplePurge sample={s} paramMap={paramMap} />
@@ -605,6 +622,7 @@ function SamplesAsRows({ rows, columns, flags, onRow, head, edit, files }: { row
                 </td>
                 <td className="sticky-col-2 open-sample" title={files.get(row.sample.id) ? `Open the sample – its files: ${files.get(row.sample.id)!.map((f) => f.name).join(', ')}` : 'Open the sample'} onClick={() => onRow(row.sample)}>
                   {row.site.code}
+                  {row.sample.depth && <span style={{ opacity: 0.65, marginLeft: 4 }}>{depthText(row.sample.depth)}</span>}
                   {files.get(row.sample.id) && <IconPaperclip size={11} className="sample-files" aria-label="Has files" />}
                 </td>
                 {columns.map((p) => (

@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import type { Parameter, Site } from '../db/types';
 import { analyteMapKey, type ParsedImport, type RawResult } from './model';
-import { buildParamIndex, matchParameter, matchSite, type ParamMatch } from '../lib/matching';
+import { matchSite, type ParamMatch } from '../lib/matching';
+import { buildIndexes, matchAnalyte } from '../lib/matrix';
 
 export interface AnalyteRow {
   key: string;
@@ -23,14 +24,15 @@ export interface SiteTextRow {
 export function useAnalyteRows(parsed: ParsedImport | null, params: Parameter[]): AnalyteRow[] {
   return useMemo(() => {
     if (!parsed) return [];
-    const index = buildParamIndex(params);
+    const indexes = buildIndexes(params);
     const map = new Map<string, AnalyteRow>();
     for (const s of parsed.samples) {
       for (const r of s.results) {
         const key = analyteMapKey(r);
         let row = map.get(key);
         if (!row) {
-          row = { key, analyte: r.analyte, group: r.group, unit: r.unit, count: 0, examples: [], match: matchParameter(r.analyte, index, r.group) };
+          // (a result per kilogram is a soil's, one of a TCLP test its extract's: each has parameters of its own)
+          row = { key, analyte: r.analyte, group: r.group, unit: r.unit, count: 0, examples: [], match: matchAnalyte(r.analyte, r.group, r.unit, indexes) };
           map.set(key, row);
         }
         row.count++;

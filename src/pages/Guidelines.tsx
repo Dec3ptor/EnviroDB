@@ -17,7 +17,8 @@ import { saveSettings } from '../db/db';
 import { uid } from '../lib/ids';
 import { downloadBlob, safeFileName } from '../db/backup';
 import { readWorkbook, cellText, cellAt } from '../importers/workbook';
-import { buildParamIndex, matchParameter } from '../lib/matching';
+import { buildIndexes, matchAnalyte } from '../lib/matrix';
+import { ensureTwin } from '../db/repo';
 import { SaveButton } from '../components/Unsaved';
 import { same } from '../sync/model';
 import { LIBRARY, SectionNav } from '../components/Shell';
@@ -69,26 +70,35 @@ export function GuidelinesPage() {
       const hdr = (g.rows[header] ?? []).map((c) => cellText(c).toLowerCase());
       const col = (re: RegExp) => hdr.findIndex((h) => re.test(h));
       const cP = Math.max(0, col(/parameter|analyte|determinand/)), cMin = col(/^min/), cMax = col(/^max|value|limit|guideline/), cU = col(/unit/), cN = col(/note|comment/), cH = col(/hardness/), cPh = col(/\bph\b/);
-      const index = buildParamIndex(params);
+      const index = buildIndexes(params);
       const values: GuidelineValue[] = [];
       const unmatched: string[] = [];
+      let added = 0;
       for (let r = header + 1; r < g.nRows; r++) {
         const name = cellText(cellAt(g, r, cP));
         if (!name) continue;
-        const m = matchParameter(name, index);
-        if (!m.parameterId) {
+        const unitText = cU >= 0 ? cellText(cellAt(g, r, cU)) : '';
+        // a value per kilogram is for the soil parameter, one for a TCLP test for its extract's – added where the
+        // library hasn't the counterpart yet
+        const m = matchAnalyte(name, undefined, unitText || undefined, index);
+        let pid = m.parameterId;
+        if (!pid && m.twin?.of) {
+          pid = (await ensureTwin(m.twin.of, m.twin.matrix))?.id ?? null;
+          if (pid) added++;
+        }
+        if (!pid) {
           unmatched.push(name);
           continue;
         }
         const max = cMax >= 0 ? parseValue(cellAt(g, r, cMax).v).value ?? undefined : undefined;
         const min = cMin >= 0 ? parseValue(cellAt(g, r, cMin).v).value ?? undefined : undefined;
         if (max === undefined && min === undefined) continue;
-        values.push({ parameterId: m.parameterId, max, min, unit: (cU >= 0 && cellText(cellAt(g, r, cU))) || 'mg/L', note: cN >= 0 ? cellText(cellAt(g, r, cN)) || undefined : undefined, hardness: cH >= 0 ? /^(y|yes|true|1)$/i.test(cellText(cellAt(g, r, cH))) || undefined : undefined, ...(cPh >= 0 && /^(y|yes|true|1)$/i.test(cellText(cellAt(g, r, cPh))) ? { ph: true } : {}) });
+        values.push({ parameterId: pid, max, min, unit: unitText || (m.twin ? (m.twin.matrix === 'soil' ? 'mg/kg' : 'mg/L') : (params.find((x) => x.id === pid)?.unit ?? 'mg/L')), note: cN >= 0 ? cellText(cellAt(g, r, cN)) || undefined : undefined, hardness: cH >= 0 ? /^(y|yes|true|1)$/i.test(cellText(cellAt(g, r, cH))) || undefined : undefined, ...(cPh >= 0 && /^(y|yes|true|1)$/i.test(cellText(cellAt(g, r, cPh))) ? { ph: true } : {}) });
       }
       const set: GuidelineSet = { id: uid('gl'), name: file.name.replace(/\.[^.]+$/, ''), shortName: file.name.replace(/\.[^.]+$/, '').slice(0, 24), family: 'Custom', builtIn: false, values, updatedAt: new Date().toISOString(), source: `Imported from ${file.name}` };
       await saveGuidelineSet(set);
       navigate(`/guidelines/${set.id}`);
-      notifications.show({ title: `Imported ${values.length} values`, message: unmatched.length ? `Not matched: ${unmatched.slice(0, 8).join(', ')}${unmatched.length > 8 ? '…' : ''}` : 'All parameters matched', color: unmatched.length ? 'orange' : 'teal' });
+      notifications.show({ title: `Imported ${values.length} values`, message: `${unmatched.length ? `Not matched: ${unmatched.slice(0, 8).join(', ')}${unmatched.length > 8 ? '…' : ''}` : 'All parameters matched'}${added ? ` · ${added} soil or leach-test parameter${added === 1 ? '' : 's'} added to the library` : ''}`, color: unmatched.length ? 'orange' : 'teal' });
     } catch (e) {
       notifications.show({ title: 'Import failed', message: (e as Error).message, color: 'red' });
     }
