@@ -18,6 +18,7 @@ import type {
   ObligationAttachment,
   Parameter,
   Project,
+  ProjectKind,
   ReportObligation,
   ReportTemplate,
   Rule,
@@ -68,6 +69,22 @@ export function newProject(patch: Partial<Project> = {}): Project {
     ...patch,
   };
 }
+
+/** How a project of a kind starts: what's on, and what it's compared with. All of it can be changed in its Setup. */
+export function projectPreset(kind: ProjectKind): Partial<Project> {
+  switch (kind) {
+    case 'land':
+      // soil isn't compared with freshwater guidelines, and has no hardness to adjust for
+      return { kind, guidelineSetIds: [], hardnessAdjust: false, ecology: undefined };
+    case 'ecology':
+      return { kind, ecology: true, guidelineSetIds: ['anzg-fw-95'], hardnessAdjust: true };
+    default:
+      return { kind: undefined, guidelineSetIds: ['anzg-fw-95'], hardnessAdjust: true, ecology: undefined };
+  }
+}
+
+/** The type a project's next site starts as: a soil site in a contaminated land project. */
+export const firstSiteType = (p: Pick<Project, 'kind'>): Site['type'] => (p.kind === 'land' ? 'Soil' : 'Surface water');
 
 export async function saveProject(p: Project, before?: Project): Promise<void> {
   await saveEdited(db.projects, { ...p, updatedAt: nowIso() }, before);

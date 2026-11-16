@@ -9,7 +9,7 @@ import { exportProjectWorkbook } from '../../reports/workbook';
 import { useProject } from '../../hooks/useProjectData';
 import { useEditable } from '../../hooks/useEditable';
 import { ProjectForm } from '../Projects';
-import { deleteProject, deleteSite, newSite, saveProject, saveSite, setProjectStatus } from '../../db/repo';
+import { deleteProject, deleteSite, firstSiteType, newSite, saveProject, saveSite, setProjectStatus } from '../../db/repo';
 import { MergeSiteModal } from '../../components/MergeDialogs';
 import type { AuditEntry, NdHandling, Project, Site } from '../../db/types';
 import { SITE_ROLES, SITE_TYPES } from '../../db/types';
@@ -106,7 +106,7 @@ function BulkSitesModal({ onClose }: { onClose: () => void }) {
   const { project, sites: monitoring, qc } = useProject();
   const sites = [...monitoring, ...qc.sites];
   const [text, setText] = useState('');
-  const [type, setType] = useState<Site['type']>('Surface water');
+  const [type, setType] = useState<Site['type']>(firstSiteType(project));
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -219,9 +219,11 @@ function ViewsCard() {
   const facts = { project, sites, sampleDates: samples.map((x) => x.date) };
   const trends = viewOff('trends', facts, settings);
   const npsfm = viewOff('npsfm', facts, settings);
+  const waste = viewOff('waste', facts, settings);
   const rows: Array<{ label: string; on: boolean; note: string }> = [
     { label: 'Trends', on: !trends, note: trends ?? 'Graphs → Trends.' },
     { label: 'NPS-FM attribute bands', on: !npsfm, note: npsfm ?? 'Compliance → NPS-FM.' },
+    { label: 'Waste acceptance', on: !waste, note: waste ?? 'Compliance → Waste acceptance.' },
     ...(['packs', 'continuous', 'field', 'ai'] as const).map((k) => {
       const f = FEATURES.find((x) => x.key === k)!;
       return { label: f.label, on: featureOn(settings, k), note: featureOn(settings, k) ? f.description : 'Switched off for the team.' };
@@ -445,7 +447,7 @@ export function SetupTab() {
             <Button variant="default" leftSection={<IconListDetails size={16} />} onClick={() => setBulk(true)}>
               Add several
             </Button>
-            <Button leftSection={<IconPlus size={16} />} onClick={() => saveSite(newSite(project.id, { code: `Site ${sites.length + 1}`, order: sites.length + 1 }))}>
+            <Button leftSection={<IconPlus size={16} />} onClick={() => saveSite(newSite(project.id, { code: `Site ${sites.length + 1}`, order: sites.length + 1, type: firstSiteType(project) }))}>
               Add site
             </Button>
           </Group>

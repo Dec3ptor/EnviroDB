@@ -9,6 +9,7 @@ import { DataTab } from './Data';
 import { QaTab } from './QA';
 import { TrendsTab } from './Trends';
 import { NpsfmTab } from './Npsfm';
+import { WasteTab } from './Waste';
 import { useProjectQa } from '../../hooks/useQa';
 import { ChartsTab } from './Charts';
 import { ComplianceTab } from './Compliance';
@@ -283,6 +284,7 @@ export function ProjectLayout() {
         <Route path="qa" element={<Shown view="qa"><QaTab /></Shown>} />
         <Route path="trends" element={<TrendsTab />} />
         <Route path="npsfm" element={<Shown view="npsfm"><NpsfmTab /></Shown>} />
+        <Route path="waste" element={<WasteTab />} />
         <Route path="charts" element={<ChartsTab />} />
         <Route
           path="map"

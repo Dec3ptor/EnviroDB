@@ -622,7 +622,10 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
   }, [included, data.samples, data.imports, data.index, siteMap, dateOverrides, paramMapping]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const createSiteFor = async (text: string) => {
-    const code = suggestCode(text);
+    // "TP1 0.5 m": a hole in the ground, sampled at depths – the site is "TP1"
+    const deep = parseDepth(text);
+    const named = deep?.rest || text;
+    const code = suggestCode(named);
     const existing = sites.find((s) => s.code.toLowerCase() === code.toLowerCase());
     if (existing) {
       setSiteMap((m) => ({ ...m, [text]: existing.id }));
@@ -632,14 +635,19 @@ export function ImportWizard({ onProject }: { projectId: string; onProject?: (pr
     const s = newSite(project.id, {
       id: stableId('site', project.id, code.toLowerCase()),
       code,
-      name: code !== text ? text : undefined,
+      name: code !== named ? named : undefined,
       order: sites.length + 1,
-      aliases: code !== text ? [text] : [],
-      // "DUP1", "Field blank" …: a quality control site, kept out of the monitoring data; "TP1 0.5 m": a hole in the ground
-      ...(looksLikeQc(text) ? { type: QC_SITE_TYPE } : parseDepth(text) ? { type: 'Soil' as const } : {}),
+      aliases: code !== named ? [named] : [],
+      // "DUP1", "Field blank" …: a quality control site, kept out of the monitoring data
+      ...(looksLikeQc(text) ? { type: QC_SITE_TYPE } : deep ? { type: 'Soil' as const } : {}),
     });
     await saveSite(s);
-    setSiteMap((m) => ({ ...m, [text]: s.id }));
+    // and the file's other names for it – its other depths – go to it too
+    setSiteMap((m) => {
+      const next = { ...m, [text]: s.id };
+      if (deep) for (const r of siteRows) if (!next[r.siteText] && parseDepth(r.siteText)?.rest === named) next[r.siteText] = s.id;
+      return next;
+    });
   };
 
   const doImport = async () => {

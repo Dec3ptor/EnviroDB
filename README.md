@@ -311,6 +311,31 @@ there as they work and show up for the others within seconds.
   taxa found with a column a survey and the indices at the foot – and says underneath what the abbreviations mean,
   where the scores are from and which taxa had none. Surveys are saved to the shared folder with the project, go
   in its project file and backups, and an issued report keeps the surveys it showed.
+- **Contaminated land: soil, depths and waste acceptance.** A lab names arsenic in a soil as it names arsenic in
+  water. EnviroDB tells them apart by how the result is given: one per kilogram (`mg/kg dry wt`) is a soil's or a
+  sediment's, one of a TCLP or SPLP test is its extract's – and each goes to a **parameter of its own** (*Arsenic
+  (soil)*, *Lead (TCLP)*), the counterpart of the water parameter, never to the water one. The first time a file
+  has them, the import's analyte step offers them in one go (*Add 12 soil parameters*); after that they're matched
+  by themselves. A parameter's *Measured in* (Library → Parameters) says which it is.
+  At a soil or sediment site **each depth is a sample of its own**: `TP1 0.1m`, `TP1 0.5m` and `TP1 1.0-1.2 m`
+  from one pit on one day are three samples at site TP1, their depths read from the names the lab reports
+  (`0.5m`, `500 mm`, `0.1-0.3`, `@ 0.5`). Making the site from the import page makes *TP1*, a soil site, and sends
+  its other depths to it. The depth shows beside the site in the Data tab, in the sample's details (where it can be
+  typed), in report tables and in the spreadsheet exports.
+  **Waste acceptance** (*Compliance → Waste acceptance*, in a project with soil or sediment sites) checks each
+  sample against a landfill class's criteria in two steps: a total within the screening value passes; over it, the
+  sample's TCLP result decides – within the leachate limit it passes, over it it doesn't, and with no TCLP result
+  the table says the test is needed and for which contaminants. A contaminant with only a total is held to it.
+  **EnviroDB has no criteria of its own**: *Paste criteria…* takes them from the guideline's table or the landfill's
+  consent – a contaminant a line, its total (mg/kg) and its leachate limit (mg/L) – and keeps them as a guideline
+  set for every project, with where they're from. Where criteria give a leachate limit and no total, the total is
+  screened at 20 × the limit (a TCLP test extracts with twenty times the sample's weight of fluid, so a total at or
+  under that can't fail it) – switch that off, or say a total beside a leachate limit is a limit of its own, under
+  *How it's worked out*. *CSV* gives the table with the reason for each outcome.
+  Soil guideline values for a land use are a guideline set like any other: values for the soil parameters, typed
+  in or imported (a value per kilogram goes to the soil parameter). A **new project** asks what it's for – consent
+  monitoring, contaminated land or ecology – which only sets how it starts: soil sites and no freshwater
+  guidelines, or the Ecology tab.
 - **Teach EnviroDB a file.** When you put a sheet's layout right on import, tick *Teach EnviroDB this layout* and
   the next file of the same shape – the words in its first rows, not the numbers – uses it by itself, for the whole
   team. The Layout step says when a taught layout is in use, with *Forget it*.
@@ -775,7 +800,7 @@ has a **ⓘ** that says what it's for and links to the section of this README.
   against guidelines with no project at all.
 - **A project** has eight tabs: *Overview* (latest results at a glance; *Sampling & reporting* for the sampling
   schedules, reporting dates and rounds), *Data* (with *QA/QC* when it's on), *Graphs* (with *Trends*), *Map*,
-  *Compliance* (with *NPS-FM*), *Reports* (with the *Client data pack*), *Files* (its documents) and *Setup* – and
+  *Compliance* (with *NPS-FM*, and *Waste acceptance* where there are soil sites), *Reports* (with the *Client data pack*), *Files* (its documents) and *Setup* – and
   *Ecology*, before Setup, in a project that has ecology surveys switched on. A tab with more than one view
   has a switch under the tabs. Its main action, *Import results*, is top right; less common ones (*Field work…*,
   *Copy for AI input* on a phone, *Download project file*) are under ⋯. Links to the old tabs still work.

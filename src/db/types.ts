@@ -66,6 +66,11 @@ export interface Project {
   qa?: boolean;
   /** Ecology surveys (an Ecology tab: what was found where, with diversity and stream health indices): off unless turned on. */
   ecology?: boolean;
+  /**
+   * What the project is for, chosen as it's made – it only sets how it starts: contaminated land has soil sites and no
+   * freshwater guidelines to begin with, an ecology project has its Ecology tab.
+   */
+  kind?: ProjectKind;
   createdAt: string;
   updatedAt: string;
 }
@@ -127,6 +132,8 @@ export interface PackSettings {
   madeAt?: string;
   madeBy?: string;
 }
+
+export type ProjectKind = 'monitoring' | 'land' | 'ecology';
 
 export const SITE_TYPES = [
   'Surface water',

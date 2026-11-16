@@ -47,7 +47,7 @@ export function presetOf(s: Pick<Settings, 'features'>): 'essentials' | 'everyth
 // ------------------------------------------------------------ a project's views
 
 /** A project's views: the tabs, and the views within them. */
-export type ProjectView = 'overview' | 'schedule' | 'data' | 'qa' | 'charts' | 'trends' | 'map' | 'compliance' | 'npsfm' | 'reports' | 'pack' | 'files' | 'ecology' | 'setup';
+export type ProjectView = 'overview' | 'schedule' | 'data' | 'qa' | 'charts' | 'trends' | 'map' | 'compliance' | 'npsfm' | 'waste' | 'reports' | 'pack' | 'files' | 'ecology' | 'setup';
 
 export interface ProjectFacts {
   project: Pick<Project, 'qa' | 'ecology'>;
@@ -77,6 +77,8 @@ export function viewOff(view: ProjectView, f: ProjectFacts, s: Pick<Settings, 'f
     case 'npsfm':
       if (!featureOn(s, 'npsfm')) return 'NPS-FM attribute bands are switched off for the team.';
       return f.sites.some((x) => siteClass(x).water !== 'none') ? null : 'The project has no surface water sites to grade.';
+    case 'waste':
+      return f.sites.some((x) => x.type === 'Soil' || x.type === 'Sediment') ? null : 'The project has no soil or sediment sites.';
     case 'pack':
       return featureOn(s, 'packs') ? null : 'Client data packs are switched off for the team.';
     case 'trends': {
@@ -94,7 +96,7 @@ export const PROJECT_TABS: Array<{ value: ProjectView; label: string; views: Arr
   { value: 'data', label: 'Data', views: [{ value: 'data', label: 'Results' }, { value: 'qa', label: 'QA/QC' }] },
   { value: 'charts', label: 'Graphs', views: [{ value: 'charts', label: 'Graphs' }, { value: 'trends', label: 'Trends' }] },
   { value: 'map', label: 'Map', views: [{ value: 'map', label: 'Map' }] },
-  { value: 'compliance', label: 'Compliance', views: [{ value: 'compliance', label: 'Consent' }, { value: 'npsfm', label: 'NPS-FM' }] },
+  { value: 'compliance', label: 'Compliance', views: [{ value: 'compliance', label: 'Consent' }, { value: 'npsfm', label: 'NPS-FM' }, { value: 'waste', label: 'Waste acceptance' }] },
   { value: 'reports', label: 'Reports', views: [{ value: 'reports', label: 'Reports' }, { value: 'pack', label: 'Client data pack' }] },
   { value: 'files', label: 'Files', views: [{ value: 'files', label: 'Files' }] },
   { value: 'ecology', label: 'Ecology', views: [{ value: 'ecology', label: 'Ecology' }] },

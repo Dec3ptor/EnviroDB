@@ -11,6 +11,8 @@ import { readWorkbook } from '../src/importers/workbook';
 import { depthText } from '../src/lib/depth';
 import { matchSite } from '../src/lib/matching';
 import { bareAnalyte, buildIndexes, matchAnalyte, matrixOf, twinOf } from '../src/lib/matrix';
+import { saveCriteria } from '../src/db/waste';
+import { wasteCheck, wasteCriteria } from '../src/lib/waste';
 
 const csvGrid = async (text: string, name = 'soil.csv') => (await readWorkbook(new TextEncoder().encode(text).buffer as ArrayBuffer, name))[0];
 const all = () => db.parameters.toArray();
@@ -170,5 +172,67 @@ describe('a lab’s soil results imported', () => {
     // two samples of one bore on one day: said, as it is for any water site
     expect(account.going).toBe(1);
     expect(account.clashes).toHaveLength(1);
+  });
+});
+
+describe('waste acceptance criteria kept as a guideline set', () => {
+  it('each contaminant’s total goes to its soil parameter and its leachate limit to its TCLP one – added where the library hasn’t them', async () => {
+    // (made-up numbers, to test the plumbing)
+    const { set, added } = await saveCriteria('Test landfill', 'A made-up table', [{ name: 'Lead', total: 100, leach: 5 }, { name: 'Arsenic', leach: 0.5 }, { name: 'Unobtainium', total: 7, leach: 0.1 }]);
+    expect(set).toMatchObject({ name: 'Test landfill', source: 'A made-up table', family: 'Custom', builtIn: false, matrix: 'Waste' });
+    const params = new Map((await all()).map((p) => [p.id, p]));
+    expect(set.values.map((v) => [params.get(v.parameterId)!.name, v.max, v.unit])).toEqual([
+      ['Lead (soil)', 100, 'mg/kg'],
+      ['Lead (TCLP)', 5, 'mg/L'],
+      ['Arsenic (TCLP)', 0.5, 'mg/L'],
+      ['Unobtainium (soil)', 7, 'mg/kg'],
+      ['Unobtainium (TCLP)', 0.1, 'mg/L'],
+    ]);
+    // lead's soil and TCLP parameters were there from the import above; arsenic's TCLP one and the unknown pair are new
+    expect(added).toBe(3);
+    const criteria = wasteCriteria(set, params);
+    expect(criteria.map((c) => [c.name, c.screen, c.leach])).toEqual([['Arsenic', 10, 0.5], ['Lead', 100, 5], ['Unobtainium', 7, 0.1]]);
+    // the unknown contaminant's two parameters pair up, and a file's results find them
+    const ix = buildIndexes(await all());
+    expect(matchAnalyte('Unobtainium', undefined, 'mg/kg', ix).parameterId).toBe(criteria[2].soilId);
+    expect(matchAnalyte('TCLP Unobtainium', undefined, 'mg/L', ix).parameterId).toBe(criteria[2].leachId);
+
+    // added to: a contaminant already there takes the new value, the others stay
+    const more = await saveCriteria('', undefined, [{ name: 'Lead', total: 250 }], set);
+    expect(more.added).toBe(0);
+    expect(more.set.values).toHaveLength(5);
+    expect(more.set.values.find((v) => v.parameterId === 'pb-t-soil')!.max).toBe(250);
+    expect(more.set.name).toBe('Test landfill');
+
+    // and the samples imported above, against it: 230 mg/kg of lead at 0.1 m is within 250; 1,100 at 0.5 m is over, and its TCLP 2.4 is within 5
+    const project = (await db.projects.toArray()).find((p) => p.code === 'CL-1')!;
+    const sites = await db.sites.where('projectId').equals(project.id).toArray();
+    const samples = (await db.samples.where('projectId').equals(project.id).toArray()).sort((a, b) => (a.depth?.top ?? 9) - (b.depth?.top ?? 9));
+    const res = await db.results.where('projectId').equals(project.id).toArray();
+    const rows = wasteCheck(samples, (id) => res.filter((r) => r.sampleId === id), (id) => sites.find((x) => x.id === id), wasteCriteria(more.set, params));
+    const lead = (i: number) => rows[i].cells.find((x) => x.criterion.name === 'Lead')!.status;
+    expect(samples.map((x) => x.depth?.top)).toEqual([0.1, 0.5, 1, undefined]);
+    expect([lead(0), lead(1), lead(2)]).toEqual(['pass', 'pass-leach', 'pass']);
+    // arsenic has a leachate limit only: 12 and 45 mg/kg against 20 × 0.5 = 10 → a TCLP result is needed for both
+    expect(rows.slice(0, 3).map((r) => r.verdict)).toEqual(['test', 'test', 'meets']);
+    expect(rows[1].summary).toBe('TCLP needed: Arsenic');
+  });
+});
+
+describe('a kind of project', () => {
+  it('sets how it starts – and nothing after', async () => {
+    const { projectPreset, firstSiteType } = await import('../src/db/repo');
+    expect(newProject({ name: 'x' })).toMatchObject({ guidelineSetIds: ['anzg-fw-95'], hardnessAdjust: true });
+    const land = newProject({ name: 'Old depot', ...projectPreset('land') });
+    expect(land).toMatchObject({ kind: 'land', guidelineSetIds: [], hardnessAdjust: false });
+    expect(firstSiteType(land)).toBe('Soil');
+    const eco = newProject({ name: 'Stream', ...projectPreset('ecology') });
+    expect(eco).toMatchObject({ kind: 'ecology', ecology: true, guidelineSetIds: ['anzg-fw-95'] });
+    expect(firstSiteType(eco)).toBe('Surface water');
+    // chosen, then changed back before it's made: as a monitoring project
+    const back = { ...land, ...projectPreset('monitoring') };
+    expect(back.kind).toBeUndefined();
+    expect(back.guidelineSetIds).toEqual(['anzg-fw-95']);
+    expect(firstSiteType(back)).toBe('Surface water');
   });
 });

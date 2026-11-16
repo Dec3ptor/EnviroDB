@@ -11,6 +11,19 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: '1.38.0',
+    date: '2026-11-16',
+    title: 'Contaminated land: soil parameters, sample depths, waste acceptance',
+    items: [
+      'Soil and sediment results have parameters of their own. A lab names arsenic in a soil as it names arsenic in water; a result per kilogram now goes to “Arsenic (soil)” and one of a TCLP or SPLP test to its extract’s parameter – never to the water one. The import’s analyte step adds the ones a file needs in one go; after that they’re matched by themselves.',
+      'At a soil or sediment site each depth is its own sample: “TP1 0.1m”, “TP1 0.5m” and “TP1 1.0-1.2 m” from one pit on one day are three samples at TP1, the depths read from the lab’s sample names. The depth shows in the Data tab, the sample’s details, report tables and the spreadsheet exports.',
+      'Waste acceptance (Compliance, in a project with soil sites): each sample against a landfill class’s criteria in two steps – a total within the screening value passes; over it, the TCLP result decides, and where there’s none the table says the test is needed and for what.',
+      'EnviroDB has no criteria of its own: paste them from the guideline or the landfill’s consent – a contaminant a line, its total and its leachate limit – and they’re kept as a guideline set with where they’re from. A leachate limit with no total is screened at 20 × the limit (the test’s own dilution), which can be switched off.',
+      'A new project asks what it’s for – consent monitoring, contaminated land or ecology. It only sets how the project starts: soil sites and no freshwater guidelines, or the Ecology tab.',
+      'Importing guideline values: a value per kilogram goes to the soil parameter (added if the library hasn’t it yet).',
+    ],
+  },
+  {
     version: '1.37.1',
     date: '2026-11-16',
     title: 'Imports: nothing left out without saying so',

@@ -5,8 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { IconFileImport, IconFlask, IconPlus, IconSearch } from '@tabler/icons-react';
 import { db } from '../db/db';
-import { newProject, saveProject } from '../db/repo';
-import type { Project } from '../db/types';
+import { newProject, projectPreset, saveProject } from '../db/repo';
+import type { Project, ProjectKind } from '../db/types';
 import { EmptyState, GuidelinePicker, MoreOptions, PageHeader } from '../components/common';
 import { createDemoProject } from '../db/demo';
 import { importProjectPackage, readJsonFile } from '../db/backup';
@@ -85,9 +85,31 @@ export function NewProjectButton(props: ButtonProps) {
       </Button>
       <Modal opened={opened} onClose={() => setOpened(false)} title="New project" size="lg">
         <Stack>
+          <div>
+            <Text size="sm" fw={500} mb={4}>
+              What it’s for
+            </Text>
+            <SegmentedControl
+              value={p.kind ?? 'monitoring'}
+              onChange={(v) => setP({ ...p, ...projectPreset(v as ProjectKind) })}
+              data={[
+                { value: 'monitoring', label: 'Consent monitoring' },
+                { value: 'land', label: 'Contaminated land' },
+                { value: 'ecology', label: 'Ecology' },
+              ]}
+            />
+            <Text size="xs" c="dimmed" mt={4}>
+              {p.kind === 'land'
+                ? 'Starts with soil sites – each depth its own sample – and no freshwater guidelines. Soil and TCLP results get parameters of their own as you import them; Compliance has the waste acceptance check.'
+                : p.kind === 'ecology'
+                  ? 'Starts with an Ecology tab for surveys – stream invertebrates, fish, birds, eDNA – beside the water quality.'
+                  : 'Water quality against a consent’s limits and triggers.'}{' '}
+              It only sets how the project starts.
+            </Text>
+          </div>
           <ProjectForm value={p} onChange={setP} />
           <Text size="xs" c="dimmed">
-            Next you'll add monitoring sites, consent limits / triggers and reporting dates. All of this can be changed later.
+            Next you'll add {p.kind === 'land' ? 'the sampling locations' : 'monitoring sites'}, consent limits / triggers and reporting dates. All of this can be changed later.
           </Text>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setOpened(false)}>
